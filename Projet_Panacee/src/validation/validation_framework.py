@@ -11,17 +11,10 @@ Fonctionnalités :
 """
 import logging
 import numpy as np
-import torch
-from typing import Dict, List, Tuple, Callable, Optional
+from typing import Dict, List, Callable, Optional
 from dataclasses import dataclass, field
 from sklearn.model_selection import KFold, StratifiedKFold
-from sklearn.metrics import (
-    roc_auc_score, roc_curve, auc, f1_score, precision_recall_curve,
-    brier_score_loss, log_loss, mean_squared_error, r2_score,
-)
 from scipy import stats
-from pathlib import Path
-import json
 
 logger = logging.getLogger("panacee.validation")
 
@@ -188,7 +181,7 @@ class CrossValidator:
         y: np.ndarray,
         model_factory: Callable,
         metric_fn: Callable,
-        train_sizes: List[float] = None,
+        train_sizes: List[float] | None = None,
     ) -> Dict:
         """
         Génère une courbe d'apprentissage (taille vs performance).

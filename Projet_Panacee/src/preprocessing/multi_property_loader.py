@@ -96,7 +96,7 @@ def download_dataset(name: str, save_dir: str) -> dict:
     return paths
 
 
-def download_all_phase3_data(base_dir: str = None) -> dict:
+def download_all_phase3_data(base_dir: str | None = None) -> dict:
     """
     Télécharge tous les datasets nécessaires pour Phase 3.
 
@@ -224,7 +224,7 @@ class MultiPropertyDataset(Dataset):
             if found_cols:
                 self.available_props[group_name] = found_cols
 
-        print(f"  Propriétés disponibles :")
+        print("  Propriétés disponibles :")
         for group, cols in self.available_props.items():
             print(f"    {group}: {len(cols)} colonnes")
 
@@ -233,7 +233,7 @@ class MultiPropertyDataset(Dataset):
         self.labels_list = []
         self.valid_indices = []
 
-        print(f"  Construction des graphes...")
+        print("  Construction des graphes...")
         n_fail = 0
         for idx in range(len(self.df)):
             smiles = str(self.df.iloc[idx][self.smiles_column])

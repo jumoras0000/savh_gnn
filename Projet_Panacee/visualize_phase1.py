@@ -112,7 +112,7 @@ min_val_epoch = epochs[val_losses.index(min_val_loss)]
 convergence_improvement = ((train_losses[0] - train_losses[-1]) / train_losses[0] * 100)
 generalization_gap = val_losses[-1] - train_losses[-1]
 
-print(f"\n📊 STATISTIQUES D'ENTRAÎNEMENT:")
+print("\n📊 STATISTIQUES D'ENTRAÎNEMENT:")
 print(f"   • Loss initiale (train): {train_losses[0]:.6f}")
 print(f"   • Loss finale (train): {train_losses[-1]:.6f}")
 print(f"   • Amélioration: {convergence_improvement:.2f}%")
@@ -120,21 +120,21 @@ print(f"   • Meilleure val_loss: {min_val_loss:.6f} (époque {min_val_epoch})"
 print(f"   • Écart généralisation: {generalization_gap:.6f}")
 
 # === ANALYSE DE QUALITÉ ===
-print(f"\n🎯 ANALYSE DE QUALITÉ:")
+print("\n🎯 ANALYSE DE QUALITÉ:")
 if convergence_improvement > 30:
     print(f"   ✓ Bon apprentissage ({convergence_improvement:.1f}% d'amélioration)")
 else:
     print(f"   ⚠️  Apprentissage modéré ({convergence_improvement:.1f}% d'amélioration)")
 
 if abs(generalization_gap) < 0.001:
-    print(f"   ✓ Excellente généralisation (écart ~0)")
+    print("   ✓ Excellente généralisation (écart ~0)")
 elif generalization_gap < 0.01:
     print(f"   ✓ Bonne généralisation (écart = {generalization_gap:.5f})")
 else:
     print(f"   ⚠️  Overfitting détecté (écart = {generalization_gap:.5f})")
 
 if len(history) >= 100:
-    print(f"   ✓ Entraînement complet (100+ épisodes)")
+    print("   ✓ Entraînement complet (100+ épisodes)")
 elif len(history) >= 50:
     print(f"   ✓ Entraînement substantiel ({len(history)} épisodes)")
 else:

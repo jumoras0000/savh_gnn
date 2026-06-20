@@ -65,7 +65,7 @@ class PanaceeAnalyzer:
       - generate_report()     → rapport complet
     """
 
-    def __init__(self, checkpoint_path: str = None, device: str = None):
+    def __init__(self, checkpoint_path: str | None = None, device: str | None = None):
         """
         Args:
             checkpoint_path: chemin vers panacee_phase3_complete.pth
@@ -295,7 +295,7 @@ class PanaceeAnalyzer:
         emb_tensor = torch.cat(embeddings, dim=0).unsqueeze(0)  # [1, N, D]
 
         # Padding si nécessaire
-        if N < self.max_molecules:
+        if self.max_molecules > N:
             pad = torch.zeros(1, self.max_molecules - N, emb_tensor.shape[-1],
                               device=self.device)
             emb_padded = torch.cat([emb_tensor, pad], dim=1)
@@ -438,7 +438,7 @@ class PanaceeAnalyzer:
         smiles_list: List[str],
         combo_size: int = 2,
         top_k: int = 5,
-        output_file: str = None,
+        output_file: str | None = None,
     ) -> str:
         """
         Génère un rapport complet d'analyse.
@@ -673,7 +673,7 @@ class PanaceeAnalyzer:
         use_web: bool = False,
         mcts_iterations: int = 300,
         indication: str = "",
-        output_file: str = None,
+        output_file: str | None = None,
     ) -> Dict:
         """
         Analyse avancée combinant tous les algorithmes.

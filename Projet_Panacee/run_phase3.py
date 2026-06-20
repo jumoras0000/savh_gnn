@@ -16,13 +16,12 @@ Pré-requis :
 import sys
 import os
 os.environ['PYTHONIOENCODING'] = 'utf-8'
-import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import CHECKPOINT_DIR, EXTERNAL_DIR, PHASE3
+from src.config import CHECKPOINT_DIR, PHASE3
 
 
 def check_prerequisites():
@@ -43,29 +42,22 @@ def check_prerequisites():
 
 
 def check_dependencies():
-    """Vérifie que les dépendances sont installées."""
+    """Vérifie que les dépendances sont installées (via find_spec, sans importer)."""
+    import importlib.util as _u
     errors = []
 
-    try:
+    if _u.find_spec("torch") is None:
+        errors.append("  ✗ PyTorch non installé")
+    else:
         import torch
         if not torch.cuda.is_available():
             print("  ⚠ CUDA non disponible, entraînement sur CPU (plus lent)")
-    except ImportError:
-        errors.append("  ✗ PyTorch non installé")
 
-    try:
-        import torch_geometric
-    except ImportError:
+    if _u.find_spec("torch_geometric") is None:
         errors.append("  ✗ torch-geometric non installé")
-
-    try:
-        import deepchem
-    except ImportError:
+    if _u.find_spec("deepchem") is None:
         errors.append("  ✗ DeepChem non installé (pip install deepchem)")
-
-    try:
-        import sklearn
-    except ImportError:
+    if _u.find_spec("sklearn") is None:
         errors.append("  ✗ scikit-learn non installé")
 
     return errors

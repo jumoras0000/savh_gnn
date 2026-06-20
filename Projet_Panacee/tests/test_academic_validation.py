@@ -12,7 +12,6 @@ import numpy as np
 import torch
 from pathlib import Path
 import tempfile
-import json
 import logging
 import time
 import sys
@@ -34,13 +33,11 @@ from src.validation import (
     CalibrationAnalyzer,
     UncertaintyDecomposition,
     ConfidenceThreshold,
-    SelectivePrediction,
     MarkdownReportGenerator,
     LaTeXReportGenerator,
     PerformanceProfiler,
     MemoryProfiler,
     GPUMonitor,
-    ScalabilityAnalyzer,
 )
 
 logger = logging.getLogger("test_validation")
@@ -307,9 +304,9 @@ def test_experiment_logger():
             assert metrics[1]["accuracy"] == 0.8
 
         logger.info("✓ Experiment logging completed")
-    except (OSError, PermissionError) as e:
+    except (OSError, PermissionError):
         # Windows file locking edge case, not critical
-        logger.info(f"✓ Experiment logging (skipped due to Windows file locking)")
+        logger.info("✓ Experiment logging (skipped due to Windows file locking)")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -483,7 +480,6 @@ def test_gpu_monitor():
 
 def run_all_tests():
     """Lance tous les tests."""
-    import time
 
     print("\n" + "="*60)
     print("  TESTS DES OUTILS DE VALIDATION ACADÉMIQUE")

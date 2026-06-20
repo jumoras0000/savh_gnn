@@ -56,7 +56,7 @@ def _download_zinc(dest: Path):
             if dest.exists() and dest.stat().st_size > 0:
                 print(f"  OK -> {dest} ({dest.stat().st_size/1e6:.1f} Mo)")
                 return dest
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             last_err = e
             print(f"  echec ({e})")
     raise RuntimeError(f"Impossible de telecharger ZINC. Derniere erreur: {last_err}")
@@ -99,7 +99,7 @@ def main():
                 print("\n🔄 ZINC absent localement, telechargement...")
                 try:
                     zinc_csv = _download_zinc(RAW_DIR / ZINC_FILENAME)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     print(f"❌ {e}")
                     sys.exit(1)
             else:
@@ -114,7 +114,7 @@ def main():
     pretrain_pt = PROCESSED_DIR / "pretrain_dataset.pt"
     try:
         process_zinc_dataset(str(zinc_csv), str(pretrain_pt), args.max_molecules)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"❌ Erreur preparation ZINC: {e}")
         import traceback
         traceback.print_exc()
@@ -147,7 +147,7 @@ def main():
     except KeyboardInterrupt:
         print("\n⚠️ Entrainement interrompu par l'utilisateur")
         sys.exit(0)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"\n❌ ERREUR lors du pre-entrainement: {e}")
         import traceback
         traceback.print_exc()

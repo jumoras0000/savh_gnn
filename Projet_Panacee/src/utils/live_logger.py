@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 class LiveLogger:
-    def __init__(self, path, meta: dict = None):
+    def __init__(self, path, meta: dict | None = None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # Réinitialise le fichier et écrit une ligne meta en tête

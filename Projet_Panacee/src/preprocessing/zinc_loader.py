@@ -14,7 +14,7 @@ from tqdm import tqdm
 RDLogger.DisableLog("rdApp.*")
 
 
-def load_zinc_smiles(csv_path: str, max_molecules: int = None):
+def load_zinc_smiles(csv_path: str, max_molecules: int | None = None):
     """Charge les SMILES bruts depuis le CSV ZINC."""
     print(f"Chargement de {csv_path} ...")
     df = pd.read_csv(csv_path)
@@ -38,7 +38,7 @@ def canonize_smiles(smiles: str):
         return None
 
 
-def process_zinc_dataset(csv_path: str, output_path: str, max_molecules: int = None):
+def process_zinc_dataset(csv_path: str, output_path: str, max_molecules: int | None = None):
     """Charge → canonise → déduplique → sauvegarde (.pt)."""
     raw = load_zinc_smiles(csv_path, max_molecules)
 

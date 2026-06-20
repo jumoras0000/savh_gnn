@@ -142,11 +142,8 @@ def collate_toxicity_batch(batch):
 # ══════════════════════════════════════════════════════════════════════
 
 def _download_dataset(loader_fn, name, save_dir):
-    try:
-        import deepchem as dc
-    except ImportError as e:
-        raise ImportError("pip install deepchem") from e
-
+    # deepchem est déjà importé par l'appelant (download_tox21_data/sider) qui
+    # fournit loader_fn=dc.molnet.* — pas de garde redondante ici.
     save_path = Path(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
 

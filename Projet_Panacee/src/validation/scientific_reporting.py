@@ -230,7 +230,7 @@ class MarkdownReportGenerator:
         sections: Dict[str, str],
         tables: Dict[str, List[Dict]],
         figures: Dict[str, Path],
-        metadata: Dict[str, str] = None,
+        metadata: Dict[str, str] | None = None,
     ) -> Path:
         """
         Génère un document Markdown.
@@ -322,7 +322,7 @@ class ResultSummarizer:
     @staticmethod
     def summarize_metrics(
         metrics: Dict[str, float],
-        uncertainty: Dict[str, float] = None,
+        uncertainty: Dict[str, float] | None = None,
     ) -> str:
         """
         Génère un résumé textuel des métriques.
@@ -369,7 +369,7 @@ class ResultSummarizer:
         std: float,
         ci_lower: float,
         ci_upper: float,
-        p_value: float = None,
+        p_value: float | None = None,
     ) -> str:
         """
         Génère une déclaration statistique académiquement correcte.

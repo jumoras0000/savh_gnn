@@ -362,7 +362,7 @@ class MultiObjectiveOptimizer:
         self.maximize = maximize
         self.solutions: List[Solution] = []
 
-    def add_solution(self, index: int, objectives: List[float], metadata: Dict = None):
+    def add_solution(self, index: int, objectives: List[float], metadata: Dict | None = None):
         """Ajoute une solution évaluée."""
         self.solutions.append(Solution(
             index=index,
@@ -584,7 +584,7 @@ class ChainOfThought:
 
     def add_step(
         self, name: str, description: str, score: float,
-        evidence: List[str] = None, sub_scores: Dict[str, float] = None
+        evidence: List[str] | None = None, sub_scores: Dict[str, float] | None = None
     ):
         """Ajoute une étape de raisonnement."""
         step = ReasoningStep(
@@ -597,7 +597,7 @@ class ChainOfThought:
         self.steps.append(step)
         self._scores[name] = score
 
-    def get_final_score(self, weights: Dict[str, float] = None) -> float:
+    def get_final_score(self, weights: Dict[str, float] | None = None) -> float:
         """
         Score final pondéré de la chaîne de pensée.
 
@@ -687,7 +687,7 @@ class AdvancedMolecularReasoner:
         nn_reasoner: nn.Module,
         encoder: nn.Module,
         device: torch.device,
-        dose_levels: List[float] = None,
+        dose_levels: List[float] | None = None,
     ):
         self.nn_reasoner = nn_reasoner
         self.encoder = encoder
@@ -708,7 +708,7 @@ class AdvancedMolecularReasoner:
     def full_analysis(
         self,
         mol_embeddings: torch.Tensor,
-        mol_names: List[str] = None,
+        mol_names: List[str] | None = None,
         indication: str = "",
         use_mcts: bool = False,
         use_bayesian: bool = True,

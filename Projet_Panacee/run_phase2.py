@@ -10,7 +10,6 @@ Usage :
 import sys
 import os
 os.environ['PYTHONIOENCODING'] = 'utf-8'
-import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -71,7 +70,7 @@ def main():
             paths = download_tox21_data(str(tox21_dir))
             train_csv = train_csv or paths["train"]
             val_csv = val_csv or paths["val"]
-            print(f"✓ Données Tox21 téléchargées")
+            print("✓ Données Tox21 téléchargées")
         except Exception as e:
             print(f"❌ ERREUR lors du téléchargement: {e}")
             print("   Vérifiez que DeepChem est installé: pip install deepchem")
