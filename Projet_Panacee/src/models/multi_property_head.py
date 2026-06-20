@@ -170,25 +170,33 @@ class MultiPropertyLoss(nn.Module):
             target = targets[name]
             weight = self.task_weights.get(name, 1.0)
 
-            # Masquer les NaN
+            # Aligner les dimensions defensivement (robustesse si data != tete)
+            if pred.shape != target.shape and pred.dim() == target.dim() == 2:
+                m = min(pred.shape[1], target.shape[1])
+                pred = pred[:, :m]
+                target = target[:, :m]
+
+            # Masquer les NaN SANS aplatir (preserve le broadcast de pos_weight)
             valid_mask = ~torch.isnan(target)
             if valid_mask.sum() == 0:
                 continue
-
-            pred_valid = pred[valid_mask]
-            target_valid = target[valid_mask]
+            target_safe = torch.where(valid_mask, target, torch.zeros_like(target))
 
             if name in ("toxicity", "bioavailability", "metabolic_stability"):
-                # Classification : BCE
+                # Classification : BCE par element (reduction='none' -> masque ensuite)
                 if name == "toxicity" and self.tox_pos_weight is not None:
-                    loss = F.binary_cross_entropy_with_logits(
-                        pred_valid, target_valid, pos_weight=self.tox_pos_weight
+                    per = F.binary_cross_entropy_with_logits(
+                        pred, target_safe, pos_weight=self.tox_pos_weight, reduction="none",
                     )
                 else:
-                    loss = F.binary_cross_entropy_with_logits(pred_valid, target_valid)
+                    per = F.binary_cross_entropy_with_logits(
+                        pred, target_safe, reduction="none",
+                    )
             else:
                 # Régression : Huber loss (robuste aux outliers)
-                loss = F.huber_loss(pred_valid, target_valid, delta=1.0)
+                per = F.huber_loss(pred, target_safe, delta=1.0, reduction="none")
+
+            loss = (per * valid_mask.float()).sum() / valid_mask.sum().clamp(min=1)
 
             loss_details[name] = loss.item()
             total_loss = total_loss + weight * loss

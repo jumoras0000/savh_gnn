@@ -18,6 +18,11 @@ tox21.csv/
 t2m9jr5z96sbf2ld0gl8qot8mnh8/
 arborescence_ASTA_*.txt
 
+# Artefacts runtime (téléchargements + logs temps réel)
+Projet_Panacee/data/external/
+Projet_Panacee/data/processed/
+*.jsonl
+
 # Virtual environment
 .venv/
 venv/

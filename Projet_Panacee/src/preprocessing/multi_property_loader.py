@@ -204,7 +204,8 @@ class MultiPropertyDataset(Dataset):
                        "esol_ESOL predicted log solubility in mols per litre"],
         "lipophilicity": ["lipo_exp"],
         "bioavailability": ["bbbp_p_np"],
-        "metabolic_stability": ["clintox_CT_TOX", "clintox_FDA_APPROVED"],
+        # 1 seule colonne pour matcher la tete (1-dim) : CT_TOX = toxicite clinique
+        "metabolic_stability": ["clintox_CT_TOX"],
     }
 
     def __init__(self, dataframe: pd.DataFrame, smiles_column: str = "smiles"):

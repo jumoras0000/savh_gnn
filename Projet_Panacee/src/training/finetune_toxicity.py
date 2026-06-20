@@ -36,6 +36,8 @@ from src.models.toxicity_classifier import ToxicityClassifier, MultiTaskBCELoss
 from src.preprocessing.toxicity_loader import ToxicityDataset, collate_toxicity_batch
 from src.preprocessing.scaffold_split import scaffold_kfold
 from src.utils.ema import ModelEMA
+from src.utils.live_logger import LiveLogger
+from src.validation.clinical_metrics import summarize as clinical_summarize
 from src.config import (
     DEVICE, NUM_WORKERS, PIN_MEMORY,
     ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
@@ -307,6 +309,11 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
     no_improve = 0
     history = []
     freeze_epochs = PHASE2["freeze_encoder_epochs"]
+    # Logger temps reel (lu par le dashboard pendant l'entrainement)
+    live = LiveLogger(Path(save_dir) / "live_metrics.jsonl",
+                      meta={"phase": "phase2", "tag": tag, "epochs_total": args.epochs,
+                            "num_tasks": num_tasks, "task_names": task_names,
+                            "conv_type": CONV_TYPE, "ema": use_ema})
     t0 = time.time()
 
     for epoch in range(1, args.epochs + 1):
@@ -328,7 +335,7 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
         if ema is not None:
             ema.store(model)
             ema.copy_to(model)
-        val_m, _, _ = evaluate(model, val_loader, criterion, device)
+        val_m, val_logits, val_targets = evaluate(model, val_loader, criterion, device)
         if ema is not None:
             ema.restore(model)
 
@@ -342,6 +349,28 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
         )
         history.append({"epoch": epoch, "train": train_m, "val": val_m,
                         "lr_encoder": lr_enc, "lr_head": lr_head})
+
+        # Métriques cliniques temps réel (sécurité : FNR / sensibilité / dangers)
+        try:
+            import torch as _torch
+            clin = clinical_summarize(
+                _torch.sigmoid(val_logits).cpu().numpy(),
+                val_targets.cpu().numpy(), task_names=task_names,
+            )
+            agg = clin["aggregate"]
+            live.log({
+                "epoch": epoch, "train_loss": train_m["loss"], "val_loss": val_m["loss"],
+                "train_auc": train_m["roc_auc"], "val_auc": val_m["roc_auc"],
+                "val_f1": val_m["f1"], "lr_enc": lr_enc, "lr_head": lr_head,
+                "best_auc": max(best_auc, val_m["roc_auc"]),
+                "macro_sensitivity": agg["macro_sensitivity"],
+                "macro_specificity": agg["macro_specificity"],
+                "macro_fnr": agg["macro_fnr"], "n_danger": agg["n_danger"],
+                "n_warn": agg["n_warn"],
+                "per_task_auc": {t["task"]: t["roc_auc"] for t in clin["tasks"]},
+            })
+        except Exception:
+            pass  # le logging ne doit jamais casser l'entrainement
 
         # state_dict a sauvegarder = EMA si actif, sinon poids courants
         if ema is not None:

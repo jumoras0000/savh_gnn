@@ -96,6 +96,18 @@ savh_gnn/
 
 ---
 
+## 📊 Tableau de bord (suivi temps réel + sécurité médicale)
+
+```bash
+pip install -r dashboard/requirements.txt
+cd Projet_Panacee && streamlit run dashboard/app.py
+```
+Suit l'entraînement **en temps réel** (loss, AUC, **sensibilité**, **FNR**), affiche
+les **métriques cliniques par endpoint** et des **alertes DANGER** quand le modèle
+laisse passer des composés toxiques (faux négatifs). Détails : [dashboard/README.md](Projet_Panacee/dashboard/README.md).
+
+---
+
 ## 🧪 Tester en local (vérifier que tout marche)
 
 ```bash

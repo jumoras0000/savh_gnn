@@ -1,0 +1,6 @@
+# Dependances du tableau de bord Panacee
+# Installation : pip install -r dashboard/requirements.txt
+streamlit>=1.30
+pandas>=2.0
+# Optionnel : rafraichissement automatique en temps reel
+streamlit-autorefresh>=1.0
