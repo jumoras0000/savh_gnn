@@ -32,6 +32,7 @@ from src.config import (
     DEVICE, NUM_WORKERS, PIN_MEMORY,
     ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
     HIDDEN_DIM, NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT,
+    CONV_TYPE, ATTENTION_HEADS,
     PHASE1, CHECKPOINT_DIR, LOG_DIR,
 )
 
@@ -98,10 +99,11 @@ class WarmupCosineScheduler:
 # Train / Eval loops
 # ======================================================================
 
-def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch):
+def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=None):
     model.train()
     total_loss = 0.0
     n_atoms = 0
+    use_amp = scaler is not None and scaler.is_enabled()
 
     pbar = tqdm(loader, desc=f"[Train] Epoch {epoch}")
     for batch_graph, masked_indices, masked_features in pbar:
@@ -109,15 +111,27 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch):
         masked_features = masked_features.to(device)
 
         optimizer.zero_grad()
-        preds = model(
-            batch_graph.x, batch_graph.edge_index, batch_graph.edge_attr,
-            batch_graph.batch, masked_indices,
-        )
-
-        loss = nn.MSELoss()(preds, masked_features)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        optimizer.step()
+        if use_amp:
+            with torch.cuda.amp.autocast():
+                preds = model(
+                    batch_graph.x, batch_graph.edge_index, batch_graph.edge_attr,
+                    batch_graph.batch, masked_indices,
+                )
+                loss = nn.MSELoss()(preds.float(), masked_features)
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            preds = model(
+                batch_graph.x, batch_graph.edge_index, batch_graph.edge_attr,
+                batch_graph.batch, masked_indices,
+            )
+            loss = nn.MSELoss()(preds, masked_features)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
 
         total_loss += loss.item() * masked_features.size(0)
         n_atoms += masked_features.size(0)
@@ -163,6 +177,8 @@ def main():
     p.add_argument("--mask_prob", type=float, default=PHASE1["mask_prob"])
     p.add_argument("--patience", type=int, default=PHASE1["patience"])
     p.add_argument("--max_molecules", type=int, default=None)
+    p.add_argument("--objective", type=str, default="mgm", choices=["mgm", "graphcl"],
+                   help="mgm = masked graph modeling | graphcl = contrastif")
     p.add_argument("--device", type=str, default=str(DEVICE))
     args = p.parse_args()
 
@@ -177,7 +193,13 @@ def main():
     smiles_list = data["smiles"]
     if args.max_molecules:
         smiles_list = smiles_list[: args.max_molecules]
-    print(f"  {len(smiles_list)} molecules")
+    print(f"  {len(smiles_list)} molecules | objectif = {args.objective}")
+
+    # -- Branche GraphCL (pre-entrainement contrastif) --
+    if args.objective == "graphcl":
+        from src.training.graphcl import run_graphcl_pretraining
+        run_graphcl_pretraining(smiles_list, args, device, args.save_dir, PHASE1)
+        return
 
     split = int(len(smiles_list) * (1 - PHASE1["val_split"]))
     train_ds = PretrainDataset(smiles_list[:split], args.mask_prob)
@@ -200,6 +222,8 @@ def main():
         edge_dim=BOND_FEATURE_DIM,
         output_dim=OUTPUT_DIM,
         dropout=DROPOUT,
+        conv_type=CONV_TYPE,
+        attention_heads=ATTENTION_HEADS,
     )
     mgm_head = MGMHead(hidden_dim=HIDDEN_DIM, atom_dim=ATOM_FEATURE_DIM)
     model = MaskedGraphModel(encoder, mgm_head).to(device)
@@ -214,6 +238,12 @@ def main():
     scheduler = WarmupCosineScheduler(
         optimizer, PHASE1["warmup_epochs"], args.epochs, PHASE1["lr_min"],
     )
+
+    # -- AMP (mixed precision) : gros gain de vitesse sur GPU P100 --
+    use_amp = (device.type == "cuda")
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    if use_amp:
+        print("  AMP (mixed precision) active")
 
     # -- Boucle d'entrainement --
     best_val_loss = float("inf")
@@ -230,7 +260,7 @@ def main():
         lr = scheduler.get_last_lr()[0]
 
         train_loss = train_one_epoch(
-            model, train_loader, optimizer, device, PHASE1["grad_clip"], epoch,
+            model, train_loader, optimizer, device, PHASE1["grad_clip"], epoch, scaler,
         )
         val_loss = evaluate(model, val_loader, device)
 

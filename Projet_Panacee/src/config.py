@@ -59,6 +59,10 @@ NUM_GNN_LAYERS = 6
 OUTPUT_DIM = 256
 DROPOUT = 0.2                # augmenté de 0.1 à 0.2 pour meilleure régularisation
 
+# Type de convolution : "attention" (GATv2 edge-aware, recommandé) ou "mpnn" (Gilmer)
+CONV_TYPE = "attention"
+ATTENTION_HEADS = 4         # nombre de têtes d'attention (doit diviser HIDDEN_DIM)
+
 # ══════════════════════════════════════════════════════════════════════
 # PHASE 1 — PRÉ-ENTRAÎNEMENT MGM
 # ══════════════════════════════════════════════════════════════════════

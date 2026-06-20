@@ -35,6 +35,7 @@ from src.config import (
     DEVICE, NUM_WORKERS, PIN_MEMORY,
     ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
     HIDDEN_DIM, NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT,
+    CONV_TYPE, ATTENTION_HEADS,
     PHASE3, CHECKPOINT_DIR, LOG_DIR, EXTERNAL_DIR,
 )
 from src.utils.gpu_manager import get_gpu_manager
@@ -346,6 +347,7 @@ def main():
         atom_dim=ATOM_FEATURE_DIM, hidden_dim=HIDDEN_DIM,
         num_layers=NUM_GNN_LAYERS, edge_dim=BOND_FEATURE_DIM,
         output_dim=OUTPUT_DIM, dropout=DROPOUT,
+        conv_type=CONV_TYPE, attention_heads=ATTENTION_HEADS,
     )
 
     # Charger les poids Phase 2
@@ -547,15 +549,28 @@ def main():
     model.load_state_dict(best_ckpt["model_state_dict"])
     model.eval()
 
-    # Pré-calculer les embeddings de toutes les molécules
-    print("  Calcul des embeddings moléculaires...")
+    # Pré-calculer les embeddings + une "qualité pharmacologique" par molécule.
+    # qualité = (1 - toxicité moyenne prédite) pondérée par l'efficacité prédite.
+    # → sert de signal d'auto-supervision plus pertinent que la pure diversité.
+    print("  Calcul des embeddings + qualité prédite...")
     all_embeddings = []
+    all_quality = []
     with torch.no_grad():
         for batch_data, _ in tqdm(train_loader, desc="  Embeddings"):
             batch_data = batch_data.to(device)
             emb = model.encode(batch_data)
+            preds = model(batch_data)
+
+            tox = torch.sigmoid(preds["toxicity"]).mean(dim=1)        # [B] tox moyenne
+            quality = 1.0 - tox                                        # moins toxique = mieux
+            if "efficacy" in preds:
+                eff = torch.sigmoid(preds["efficacy"]).view(-1)        # [B]
+                quality = quality * (0.5 + 0.5 * eff)                  # pondère par l'efficacité
+
             all_embeddings.append(emb.cpu())
+            all_quality.append(quality.cpu())
     all_embeddings = torch.cat(all_embeddings)
+    all_quality = torch.cat(all_quality).clamp(0.0, 1.0)
     print(f"  {all_embeddings.shape[0]} embeddings calculés, dim={all_embeddings.shape[1]}")
 
     # Entraîner le raisonneur sur des combinaisons aléatoires
@@ -590,12 +605,14 @@ def main():
             reasoner_optimizer.zero_grad()
             output = reasoner(combo_emb, mask)
 
-            # Auto-supervision : le score de succès cible est basé
-            # sur la diversité des embeddings (heuristique)
+            # Auto-supervision (proxy de synergie, en attendant des données
+            # réelles type DrugComb) : combine la QUALITÉ pharmacologique prédite
+            # des molécules (faible toxicité / bonne efficacité) et leur DIVERSITÉ
+            # structurelle. Une bonne combinaison = molécules de qualité + complémentaires.
+            quality = all_quality[indices].mean().item()
             diversity = torch.pdist(combo_emb[0, :n_mols]).mean().item()
-            success_target = torch.tensor(
-                [[min(diversity / 5.0, 1.0)]], device=device
-            )
+            success = 0.7 * quality + 0.3 * min(diversity / 5.0, 1.0)
+            success_target = torch.tensor([[success]], device=device)
 
             targets = {"success_labels": success_target}
             loss, _ = reasoner_criterion(output, targets)

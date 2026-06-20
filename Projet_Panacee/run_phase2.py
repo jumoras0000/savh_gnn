@@ -32,20 +32,27 @@ def main():
     p.add_argument("--smiles_column", type=str, default="smiles", help="SMILES column name")
     p.add_argument("--save_dir", type=str, default=str(CHECKPOINT_DIR / "phase2"), help="Save directory")
     p.add_argument("--patience", type=int, default=PHASE2["patience"], help="Early stopping patience")
+    p.add_argument("--max_molecules", type=int, default=None, help="Limite de molecules (runs rapides Kaggle)")
+    p.add_argument("--cv_folds", type=int, default=0, help="Cross-validation scaffold (0=split simple)")
+    p.add_argument("--ema", type=int, default=1, help="1=EMA des poids actif, 0=desactive")
     args = p.parse_args()
 
     # --- Etape 0 : Verifications preliminaires ---
     print("="*80)
     print("🚀 PHASE 2 - FINE-TUNING TOXICITE")
     print("="*80)
-    
-    # Vérifier le modèle pré-entraîné
+
+    # Modèle pré-entraîné Phase 1 : OPTIONNEL.
+    # S'il est absent, on fine-tune un encodeur initialisé aléatoirement.
+    # Cela permet à la Phase 2 de tourner seule sur Kaggle (SKIP_PHASE1=True).
     pretrained_model = args.pretrained_model or str(CHECKPOINT_DIR / "phase1" / PHASE1["checkpoint_name"])
-    if not os.path.exists(pretrained_model):
-        print(f"❌ ERREUR: Modèle pré-entraîné introuvable: {pretrained_model}")
-        print("   Lancez d'abord Phase 1: python train_phase1.py")
-        sys.exit(1)
-    print(f"✓ Modèle Phase 1 trouvé: {pretrained_model}")
+    if os.path.exists(pretrained_model):
+        print(f"✓ Modèle Phase 1 trouvé: {pretrained_model}")
+    else:
+        print(f"⚠️  Pas de checkpoint Phase 1 ({pretrained_model})")
+        print("   → Fine-tuning depuis un encodeur aléatoire (Phase 2 autonome).")
+        print("   → Pour de meilleurs résultats, lance d'abord: python run_phase1.py --download")
+        pretrained_model = None
 
     # --- Etape 1 : obtenir les CSV ---
     train_csv = args.train_csv
@@ -105,13 +112,17 @@ def main():
             "finetune_toxicity.py",
             "--train_csv", train_csv,
             "--val_csv", val_csv,
-            "--pretrained_model", str(pretrained_model),
             "--epochs", str(args.epochs),
             "--batch_size", str(args.batch_size),
             "--smiles_column", args.smiles_column,
             "--save_dir", args.save_dir,
             "--patience", str(args.patience),
         ]
+        if pretrained_model is not None:
+            sys.argv += ["--pretrained_model", str(pretrained_model)]
+        if args.max_molecules is not None:
+            sys.argv += ["--max_molecules", str(args.max_molecules)]
+        sys.argv += ["--cv_folds", str(args.cv_folds), "--ema", str(args.ema)]
         ft_main()
     except KeyboardInterrupt:
         print("\n⚠️ Entraînement interrompu par l'utilisateur")

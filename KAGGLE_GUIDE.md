@@ -47,7 +47,7 @@ Puis copie le code du fichier `Kaggle_Setup_Training.ipynb` dans ton notebook Ka
 ### 4️⃣ Lancer l'entraînement
 
 1. **Run all** (Ctrl+Alt+Enter) ou exécute cell par cell
-2. **Attends** ~1-2h pour Phase 2 sur P100 ✅
+2. **Attends** ~30-45min pour Phase 2 sur P100 (AMP activé) ✅
 3. Vérifie la console pour les erreurs
 
 ### 5️⃣ Télécharger les résultats
@@ -168,7 +168,7 @@ Si tu atteins la limite de Kaggle:
 ### 4. Exporter le modèle
 ```python
 import torch
-model = torch.load('checkpoints/phase2/best_model.pth')
+model = torch.load('checkpoints/phase2/best_toxicity_model.pth')
 # Utilise-le localement sur VSCode
 ```
 
@@ -183,7 +183,7 @@ Epoch 1/5:
   ...
 Epoch 5/5:
   Train Loss: 0.28, Val Loss: 0.32, AUC: 0.88
-  ✅ Best model saved → checkpoints/phase2/best_model.pth
+  ✅ Best model saved → checkpoints/phase2/best_toxicity_model.pth
 ```
 
 ### Checkpoints créés
@@ -193,7 +193,7 @@ checkpoints/
 │   ├── sovereign_encoder_v1.pth (si Phase 1 lancée)
 │   └── ...
 ├── phase2/
-│   ├── best_model.pth ✅ (toxicité fine-tuned)
+│   ├── best_toxicity_model.pth ✅ (toxicité fine-tuned)
 │   ├── last_model.pth
 │   └── ...
 └── phase3/

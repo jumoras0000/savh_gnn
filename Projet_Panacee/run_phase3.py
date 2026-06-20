@@ -26,15 +26,14 @@ from src.config import CHECKPOINT_DIR, EXTERNAL_DIR, PHASE3
 
 
 def check_prerequisites():
-    """Vérifie que les phases précédentes sont terminées."""
+    """Vérifie que la Phase 2 est terminée (Phase 3 part de l'encodeur Phase 2).
+
+    NB : la Phase 1 n'est PAS requise — la Phase 2 fournit l'encodeur fine-tuné,
+    qu'elle ait été pré-entraînée (Phase 1) ou non.
+    """
     errors = []
 
-    phase1_ckpt = CHECKPOINT_DIR / "phase1" / "sovereign_encoder_v1.pth"
     phase2_ckpt = CHECKPOINT_DIR / "phase2" / "best_toxicity_model.pth"
-
-    if not phase1_ckpt.exists():
-        errors.append(f"  ✗ Phase 1 manquante : {phase1_ckpt}")
-        errors.append("    → Lancez : python run_phase1.py")
 
     if not phase2_ckpt.exists():
         errors.append(f"  ✗ Phase 2 manquante : {phase2_ckpt}")

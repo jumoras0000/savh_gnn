@@ -71,20 +71,10 @@ class MaskedGraphModel(nn.Module):
 
     def _encode_nodes(self, x, edge_index, edge_attr, batch):
         """
-        Repasse la logique d'encodage mais s'arrête AVANT le pooling
-        pour retourner les embeddings par nœud.
+        Embeddings par nœud (AVANT pooling global), via l'encodeur.
+        Délègue à MolecularEncoder.encode_nodes (logique unique, conv-agnostique).
         """
-        h = self.encoder.atom_embedding(x)
-        for conv, norm, drop in zip(
-            self.encoder.convs, self.encoder.norms, self.encoder.drops
-        ):
-            h_res = h
-            h = conv(h, edge_index, edge_attr)
-            h = norm(h)
-            h = torch.nn.functional.silu(h)
-            h = drop(h)
-            h = h + h_res
-        return h  # [N_total, hidden_dim]
+        return self.encoder.encode_nodes(x, edge_index, edge_attr)  # [N_total, hidden_dim]
 
     def forward(self, x, edge_index, edge_attr, batch, masked_atom_indices):
         # 1. Embeddings par nœud (avant pooling)

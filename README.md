@@ -21,20 +21,19 @@
 
 👉 **[Guide Complet Kaggle →](KAGGLE_GUIDE.md)**
 
-### Option 2: Localement (GPU RTX/A100)
+### Option 2: Localement (GPU NVIDIA + CUDA)
 
 ```bash
 # Setup
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 pip install torch-geometric
+pip install rdkit deepchem
 pip install -r Projet_Panacee/requirements.txt
 
-# Phase 2 (Toxicité)
+# Phase 2 (Toxicité) — fonctionne SANS Phase 1 (encodeur from scratch)
 cd Projet_Panacee
-python run_phase2.py --download --epochs 5
+python run_phase2.py --download
 ```
-
-👉 **[Setup Guide →](Projet_Panacee/INSTALL_CUDA_PYTORCH_QUADROM1000M.py)**
 
 ---
 
@@ -117,24 +116,24 @@ python run_phase1.py --download --epochs 10
 
 ---
 
-### Phase 2️⃣ - Fine-tuning Toxicité (PRINCIPAL)
-**Durée:** 30-45min | **GPU:** P100 | **Données:** Tox21 (auto-téléchargé)
+### Phase 2️⃣ - Fine-tuning Toxicité (PRINCIPAL) — **autonome**
+**Durée:** ~30-45min | **GPU:** P100 (AMP activé) | **Données:** Tox21 (auto-téléchargé)
 
 ```bash
-python run_phase2.py --download --epochs 5 --batch_size 32
+# Tourne SANS Phase 1 (encodeur initialisé aléatoirement si pas de checkpoint).
+python run_phase2.py --download
+# Run de test rapide : python run_phase2.py --download --epochs 10 --max_molecules 2000
 ```
 
-**Objectif:** Fine-tune l'encodeur pour prédire la toxicité
+**Objectif:** Fine-tune l'encodeur pour prédire la toxicité (12 tâches Tox21)
 
-**Données téléchargées automatiquement:**
-- Tox21 (12 assays de toxicité)
-- SIDER (réactions adverses)
+**Données téléchargées automatiquement:** Tox21 (12 assays) via DeepChem (scaffold split)
 
-**Output:** `checkpoints/phase2/best_model.pth`
+**Output:** `checkpoints/phase2/best_toxicity_model.pth`
 
 **Métriques attendues:**
-- AUC-ROC: ~0.85-0.90
-- Loss: ~0.30-0.35
+- AUC-ROC: ~0.80-0.88 (with Phase 1 pré-entraînement: un peu plus haut)
+- Early stopping sur ROC-AUC moyen (patience 20)
 
 ---
 
@@ -158,9 +157,9 @@ python run_phase3.py --epochs 10 --batch_size 16
 Input (SMILES)
     ↓ [GraphBuilder]
 Graphe Moléculaire (Atomes + Liaisons)
-    ↓ [Message Passing Layers × 4]
+    ↓ [Message Passing Layers × 6 + résidus]
 Embeddings Atomes
-    ↓ [Global Mean Pooling]
+    ↓ [Triple Pooling appris (mean + sum + max, gating)]
 Embedding Molécule (256D)
 ```
 
@@ -213,15 +212,15 @@ pip install -r requirements.txt
 ### Entraîner une phase
 ```bash
 cd Projet_Panacee
-python run_phase2.py --download --epochs 5
+python run_phase2.py --download
 ```
 
 ### Prédire sur nouvelles molécules
 ```python
-from src.models.encoder import MessagePassingEncoder
+from src.models.encoder import MolecularEncoder
 import torch
 
-model = torch.load('checkpoints/phase2/best_model.pth')
+ckpt = torch.load('checkpoints/phase2/best_toxicity_model.pth', weights_only=False)
 smiles = ["CC(=O)O", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C"]
 # ... process SMILES → predictions
 ```

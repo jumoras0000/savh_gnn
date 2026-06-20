@@ -5,6 +5,18 @@
 *.h5
 *.pt
 *.pth
+*.tsv
+*.lst
+*.dmp
+*.docx
+
+# Datasets / dumps locaux (recherche, non nécessaires à l'entraînement GNN)
+index/
+meddra_all_se.tsv/
+OFFSIDES.csv/
+tox21.csv/
+t2m9jr5z96sbf2ld0gl8qot8mnh8/
+arborescence_ASTA_*.txt
 
 # Virtual environment
 .venv/
