@@ -1,0 +1,40 @@
+# Large data files
+*.csv
+*.pdb
+*.pkl
+*.h5
+*.pt
+*.pth
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archives
+archive/
+archive_cleanup/
+*.zip
+*.tar.gz
+
+# Misc
+.claude/
+Nouveau dossier/
