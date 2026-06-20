@@ -8,12 +8,10 @@ Fonctionnalités :
   - Mixed precision (FP16) si supporté
   - Gestion mémoire avec garbage collection
 """
-import os
 import gc
-import sys
 import torch
 import logging
-from typing import Optional, Tuple
+from typing import Optional
 
 logger = logging.getLogger("panacee.gpu")
 
@@ -170,7 +168,7 @@ class GPUManager:
             print(f"  Compute Cap : {info.get('compute_capability', 'N/A')}")
             print(f"  FP16/AMP    : {'Oui' if self._supports_fp16 else 'Non'}")
         else:
-            print(f"  Mode CPU (pas de GPU)")
+            print("  Mode CPU (pas de GPU)")
 
 
 # Singleton global

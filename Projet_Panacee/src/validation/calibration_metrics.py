@@ -9,13 +9,13 @@ Analyse approfondie de la calibration et de l'incertitude.
   - Reliability metrics
 """
 import numpy as np
-import torch
 from typing import Dict, Tuple, List, Optional
-from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
+from sklearn.metrics import brier_score_loss, log_loss
 from scipy import stats
-import matplotlib.pyplot as plt
 from pathlib import Path
 import logging
+# NB: matplotlib est importé paresseusement dans reliability_diagram (tracé
+# optionnel) pour que ce module de MÉTRIQUES s'importe même sans matplotlib.
 
 logger = logging.getLogger("panacee.calibration")
 
@@ -57,7 +57,6 @@ class CalibrationAnalyzer:
             1.0 = complètement décalibré
         """
         bin_edges = np.linspace(0, 1, self.n_bins + 1)
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
         total_samples = len(y_true)
         ece = 0.0
@@ -171,6 +170,7 @@ class CalibrationAnalyzer:
         }
 
         if save_path:
+            import matplotlib.pyplot as plt  # import paresseux (tracé optionnel)
             fig, ax = plt.subplots(figsize=(8, 8))
             ax.plot([0, 1], [0, 1], "k--", label="Perfect calibration")
             ax.scatter(bin_confs, bin_accs, s=bin_counts, alpha=0.6, label="Model")
@@ -297,11 +297,20 @@ class ConfidenceThreshold:
             coverages.append(float(coverage))
             accuracies.append(float(accuracy))
 
+        # AUC sur (couverture, accuracy) : trier par couverture croissante,
+        # sinon np.trapz sur des x décroissants renvoie une aire négative.
+        auc_val = 0.0
+        if len(coverages) >= 2:
+            order = np.argsort(coverages)
+            cov_sorted = np.array(coverages)[order]
+            acc_sorted = np.array(accuracies)[order]
+            auc_val = float(np.trapz(acc_sorted, cov_sorted))
+
         return {
             "thresholds": thresholds[: len(coverages)].tolist(),
             "coverages": coverages,
             "accuracies": accuracies,
-            "area_under_curve": float(np.trapz(accuracies, coverages)) if coverages else 0.0,
+            "area_under_curve": auc_val,
         }
 
     @staticmethod

@@ -9,7 +9,6 @@ Intègre des règles expertes validées pour évaluer les molécules :
   - Interactions médicamenteuses connues
   - Propriétés physico-chimiques
 """
-import math
 import logging
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
@@ -209,9 +208,15 @@ class ADMETEvaluator:
         scores.update(ADMETEvaluator.evaluate_metabolism(profile))
         scores.update(ADMETEvaluator.evaluate_excretion(profile))
 
-        # Score ADMET global
+        # Score ADMET global : les métriques de RISQUE (haut = mauvais) sont
+        # inversées pour ne pas gonfler le score d'une mauvaise molécule.
         if scores:
-            scores["admet_global"] = sum(scores.values()) / len(scores)
+            risk_keys = {"cyp_inhibition_risk"}
+            contributions = [
+                (1.0 - v) if k in risk_keys else v
+                for k, v in scores.items()
+            ]
+            scores["admet_global"] = sum(contributions) / len(contributions)
 
         return scores
 

@@ -21,7 +21,6 @@ from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
 
 logger = logging.getLogger("panacee.advanced_reasoner")
@@ -766,7 +765,7 @@ class AdvancedMolecularReasoner:
 
         cot.add_step(
             name="uncertainty_estimation",
-            description=f"Estimation d'incertitude par MC Dropout (5 passes)",
+            description="Estimation d'incertitude par MC Dropout (5 passes)",
             score=max(0, 1 - uncertainty * 5),  # Haute certitude = bon score
             sub_scores={
                 "incertitude_épistémique": uncertainty,

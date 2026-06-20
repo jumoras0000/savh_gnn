@@ -29,9 +29,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.validation import (
     SeedManager, EnvironmentManager,
     CrossValidator, AblationStudy, BaselineComparison, SignificanceTest,
-    CalibrationAnalyzer, UncertaintyDecomposition,
-    MarkdownReportGenerator, PerformanceProfiler, MemoryProfiler,
-    ModelVersionManager, ExperimentLogger, HyperparameterConfig,
+    CalibrationAnalyzer, MarkdownReportGenerator, PerformanceProfiler, MemoryProfiler,
+    ModelVersionManager,
 )
 
 logging.basicConfig(
@@ -98,7 +97,6 @@ def prepare_data():
 def create_classifiers():
     """Crée les modèles à tester."""
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-    from sklearn.linear_model import LogisticRegression
     
     def base_model():
         return RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
@@ -246,7 +244,7 @@ def calibration_analysis():
     logger.info(f"✓ ECE (Expected Calibration Error): {report['ece']:.4f}")
     logger.info(f"✓ MCE (Maximum Calibration Error): {report['mce']:.4f}")
     logger.info(f"✓ Brier Score: {report['brier_score']:.4f}")
-    logger.info(f"  (ECE < 0.1 is well-calibrated)")
+    logger.info("  (ECE < 0.1 is well-calibrated)")
     
     return report
 
@@ -302,7 +300,7 @@ def generate_report(cv_results, ablation_results, baseline_results):
         - Baseline: Comparaison avec modèles simples
         - Calibration: ECE, Brier, Log-loss
         """,
-        "Results": f"""
+        "Results": """
         Cross-validation results show consistent performance across folds.
         Ablation studies demonstrate importance of key components.
         Model exceeds baseline performances significantly.
@@ -426,7 +424,7 @@ def main():
     logger.info("\nOutputs:")
     logger.info(f"  - Report: {report_path}")
     logger.info(f"  - Model version: {version.version_id}")
-    logger.info(f"  - Model directory: models/")
+    logger.info("  - Model directory: models/")
     logger.info("\nProchaines étapes:")
     logger.info("  1. Réviser le rapport")
     logger.info("  2. Ajouter références bibliographiques")

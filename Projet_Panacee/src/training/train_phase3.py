@@ -40,7 +40,7 @@ from src.config import (
 )
 from src.utils.gpu_manager import get_gpu_manager
 from src.utils.error_handler import (
-    setup_logging, HealthMonitor, emergency_save, safe_execution,
+    setup_logging, HealthMonitor, emergency_save,
 )
 
 
@@ -417,7 +417,7 @@ def main():
     freeze_epochs = PHASE3["freeze_encoder_epochs"]
 
     print(f"\n{'='*80}")
-    print(f"▶️ ENTRAÎNEMENT MULTI-PROPRIÉTÉS")
+    print("▶️ ENTRAÎNEMENT MULTI-PROPRIÉTÉS")
     print(f"  {args.epochs} epochs, freeze_encoder={freeze_epochs}, patience={args.patience}")
     print(f"  Device: {device}")
     print(f"{'='*80}\n")
@@ -543,7 +543,7 @@ def main():
 
     # ── Étape 7 : Entraîner le Raisonneur IA ─────────────────────────
     print(f"\n{'='*80}")
-    print(f"🧠 ENTRAÎNEMENT DU MODULE IA DE RAISONNEMENT")
+    print("🧠 ENTRAÎNEMENT DU MODULE IA DE RAISONNEMENT")
     print(f"{'='*80}\n")
 
     # Charger le meilleur modèle multi-propriétés
@@ -630,7 +630,7 @@ def main():
 
     # ── Étape 8 : Sauvegarder le modèle complet ──────────────────────
     print(f"\n{'='*80}")
-    print(f"💾 SAUVEGARDE DU MODÈLE COMPLET")
+    print("💾 SAUVEGARDE DU MODÈLE COMPLET")
     print(f"{'='*80}")
 
     # Recharger le meilleur checkpoint et ajouter le raisonneur

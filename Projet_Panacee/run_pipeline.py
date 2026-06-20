@@ -101,7 +101,7 @@ def print_status():
         exists = check_checkpoint(str(path))
         status = "COMPLETED" if exists else "A FAIRE"
         icon = "[OK]" if exists else "[  ]"
-        print(f"  {icon} {name}")
+        print(f"  {icon} {name} — {status}")
         if exists:
             stat = os.stat(str(path))
             size_mb = stat.st_size / 1e6
@@ -113,7 +113,7 @@ def print_status():
             print(f"        Checkpoint manquant : {path}")
 
     # Modules disponibles
-    print(f"\n  MODULES AVANCÉS:")
+    print("\n  MODULES AVANCÉS:")
     modules = [
         ("GPU Manager", "src/utils/gpu_manager.py"),
         ("Error Handler", "src/utils/error_handler.py"),
@@ -127,7 +127,7 @@ def print_status():
         print(f"  {icon} {name} ({path})")
 
     # GPU
-    print(f"\n  MATÉRIEL:")
+    print("\n  MATÉRIEL:")
     try:
         import torch
         if torch.cuda.is_available():
@@ -135,9 +135,9 @@ def print_status():
             free, total = torch.cuda.mem_get_info(0)
             print(f"  [OK] GPU: {name} ({total/1e9:.1f} GB VRAM, {free/1e9:.1f} GB libre)")
         else:
-            print(f"  [  ] GPU: CUDA non disponible, mode CPU")
+            print("  [  ] GPU: CUDA non disponible, mode CPU")
     except Exception:
-        print(f"  [  ] GPU: information indisponible")
+        print("  [  ] GPU: information indisponible")
 
     print(f"\n  PRÊT POUR L'ANALYSE: {'OUI' if all_done else 'NON'}")
     if not all_done:
@@ -249,7 +249,7 @@ def main():
     if args.analyze:
         ckpt3 = str(CHECKPOINT_DIR / "phase3" / "panacee_phase3_complete.pth")
         if not check_checkpoint(ckpt3):
-            print(f"  ERREUR: Phase 3 non complétée. Lancez --phase3 d'abord.")
+            print("  ERREUR: Phase 3 non complétée. Lancez --phase3 d'abord.")
             sys.exit(1)
 
         # Charger les SMILES

@@ -25,7 +25,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from itertools import combinations
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -41,7 +41,6 @@ from src.config import (
     PHASE3, CHECKPOINT_DIR,
 )
 from src.utils.gpu_manager import get_gpu_manager
-from src.utils.error_handler import safe_execution
 
 logger = logging.getLogger("panacee.analysis")
 
@@ -84,7 +83,7 @@ class PanaceeAnalyzer:
                 f"Lancez d'abord : python run_phase3.py --download"
             )
 
-        print(f"🔬 Chargement du modèle Panacée Phase 3...")
+        print("🔬 Chargement du modèle Panacée Phase 3...")
         print(f"   Checkpoint : {checkpoint_path}")
         print(f"   Device : {self.device}")
 
@@ -136,8 +135,8 @@ class PanaceeAnalyzer:
         self.dose_levels = r_config.get("dose_levels", PHASE3["dose_levels"])
         self.max_molecules = r_config.get("max_molecules", PHASE3["max_molecules_combo"])
 
-        print(f"   ✓ Modèle chargé avec succès")
-        print(f"   ✓ Raisonneur IA prêt")
+        print("   ✓ Modèle chargé avec succès")
+        print("   ✓ Raisonneur IA prêt")
 
     # ──────────────────────────────────────────────────────────────────
     # Prédiction de propriétés
@@ -588,7 +587,7 @@ class PanaceeAnalyzer:
     ) -> str:
         """Génère une interprétation textuelle des résultats."""
         lines = []
-        lines.append(f"=== ANALYSE IA PANACÉE ===")
+        lines.append("=== ANALYSE IA PANACÉE ===")
         lines.append(f"Confiance du modèle : {round(confidence * 100, 1)}%")
         lines.append(f"Score de réussite prédit : {round(success * 100, 1)}%")
         lines.append(f"Sécurité combinée : {round(safety, 1)}%")
@@ -644,7 +643,7 @@ class PanaceeAnalyzer:
         if tox_alerts:
             print(f"     ⚠ Toxicité détectée : {', '.join(tox_alerts)}")
         else:
-            print(f"     ✅ Pas de toxicité détectée")
+            print("     ✅ Pas de toxicité détectée")
 
     def _print_combo_summary(self, combo: Dict):
         """Affiche un résumé d'une combinaison."""
@@ -760,7 +759,7 @@ class PanaceeAnalyzer:
             return report
 
         # ── 2. Recherche des meilleures combinaisons ──
-        print(f"\n── ÉTAPE 2 : Analyse combinatoire ──")
+        print("\n── ÉTAPE 2 : Analyse combinatoire ──")
 
         if use_mcts and len(valid_smiles) > 6:
             # Pour les grands ensembles, utiliser MCTS
@@ -800,7 +799,7 @@ class PanaceeAnalyzer:
 
         # ── 3. Optimisation multi-objectif de Pareto ──
         if use_pareto and individual:
-            print(f"\n── ÉTAPE 3 : Optimisation Pareto ──")
+            print("\n── ÉTAPE 3 : Optimisation Pareto ──")
             try:
                 from src.models.advanced_reasoner import MultiObjectiveOptimizer
 
@@ -848,7 +847,7 @@ class PanaceeAnalyzer:
 
         # ── 4. Raisonnement avancé sur la meilleure combinaison ──
         if best_combos:
-            print(f"\n── ÉTAPE 4 : Raisonnement avancé ──")
+            print("\n── ÉTAPE 4 : Raisonnement avancé ──")
             top_combo = best_combos[0]
             try:
                 from src.models.advanced_reasoner import AdvancedMolecularReasoner
@@ -890,7 +889,7 @@ class PanaceeAnalyzer:
 
         # ── 5. Vérification web (optionnel) ──
         if use_web and best_combos:
-            print(f"\n── ÉTAPE 5 : Vérification bases de données ──")
+            print("\n── ÉTAPE 5 : Vérification bases de données ──")
             try:
                 from src.knowledge.web_search import WebResearchEngine
                 engine = WebResearchEngine()

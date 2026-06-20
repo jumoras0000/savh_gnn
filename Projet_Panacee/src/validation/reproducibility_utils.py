@@ -22,7 +22,6 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 import subprocess
 import hashlib
-from packaging import version
 
 logger = logging.getLogger("panacee.reproducibility")
 
@@ -143,8 +142,8 @@ class EnvironmentManager:
 
             if hasattr(torch.cuda, "get_device_properties"):
                 props = torch.cuda.get_device_properties(0)
-                gpu_info["total_memory"] = props.total_memory / (1024**3),
-                gpu_info["compute_capability"] = props.major, props.minor
+                gpu_info["total_memory_gb"] = props.total_memory / (1024**3)
+                gpu_info["compute_capability"] = f"{props.major}.{props.minor}"
 
         # Packages installed
         packages = {}

@@ -15,9 +15,9 @@ import urllib.parse
 import urllib.request
 import ssl
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from src.utils.error_handler import safe_execution, WebSearchError
+from src.utils.error_handler import safe_execution
 
 logger = logging.getLogger("panacee.web_search")
 
@@ -175,11 +175,6 @@ class PubChemSearch:
             Liste de composés similaires avec leurs propriétés
         """
         encoded = urllib.parse.quote(smiles, safe="")
-        url = (
-            f"{PubChemSearch.BASE_URL}/compound/similarity/smiles/{encoded}"
-            f"/property/IUPACName,MolecularWeight,CanonicalSMILES,XLogP"
-            f"/JSON?Threshold={threshold}&MaxRecords={max_results}"
-        )
 
         # Similarity search is async on PubChem - submit then poll
         submit_url = (

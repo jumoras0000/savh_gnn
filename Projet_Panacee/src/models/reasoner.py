@@ -16,7 +16,6 @@ Inspiré de :
   - Drug-Drug Interaction prediction (Ryu 2018)
   - Drug combination synergy prediction (Preuer 2018)
 """
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -87,6 +86,8 @@ class SynergyAnalyzer(nn.Module):
         """
         B, N, D = mol_embeddings.shape
         synergy_matrix = torch.zeros(B, N, N, device=mol_embeddings.device)
+        # valid[:, i] = 1 si la molécule i est réelle (pas du padding)
+        valid = (~mask).float() if mask is not None else None
 
         for i in range(N):
             for j in range(i + 1, N):
@@ -98,6 +99,9 @@ class SynergyAnalyzer(nn.Module):
                 ], dim=-1)  # [B, 3D]
 
                 score = torch.sigmoid(self.interaction_mlp(combined).squeeze(-1))
+                if valid is not None:
+                    # Annuler la synergie si l'une des deux molécules est du padding
+                    score = score * valid[:, i] * valid[:, j]
                 synergy_matrix[:, i, j] = score
                 synergy_matrix[:, j, i] = score  # symétrique
 
@@ -234,8 +238,9 @@ class MolecularReasoner(nn.Module):
         # 1. Projeter dans l'espace du raisonneur
         x = self.input_projection(mol_embeddings)  # [B, N, hidden_dim]
 
-        # 2. Ajouter positional embeddings
-        positions = torch.arange(N, device=x.device).unsqueeze(0).expand(B, -1)
+        # 2. Ajouter positional embeddings (clamp si N > max_molecules -> pas d'IndexError)
+        positions = torch.arange(N, device=x.device).clamp(max=self.max_molecules - 1)
+        positions = positions.unsqueeze(0).expand(B, -1)
         x = x + self.position_embedding(positions)
 
         # 3. Passer dans les couches Transformer

@@ -26,8 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from dashboard.data_io import (
-    find_live_files, load_run, epochs_series, per_task_auc_table,
-    compare_to_expected, EXPECTED,
+    find_live_files, load_run, compare_to_expected, EXPECTED,
 )
 
 # Auto-refresh optionnel (sans dépendance dure)

@@ -112,7 +112,7 @@ Exemples :
         sys.exit(1)
 
     # ── Lister les molécules ──
-    print(f"\n📋 Molécules à analyser :")
+    print("\n📋 Molécules à analyser :")
     for i, smi in enumerate(smiles_list, 1):
         display = smi if len(smi) <= 60 else smi[:57] + "..."
         print(f"   {i}. {display}")
@@ -181,7 +181,7 @@ Exemples :
         traceback.print_exc()
         sys.exit(1)
 
-    print(f"\n✅ Analyse terminée")
+    print("\n✅ Analyse terminée")
     print(f"📄 Rapport : {output_file}")
 
 

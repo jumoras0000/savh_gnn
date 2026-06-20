@@ -11,11 +11,10 @@ import os
 import sys
 import time
 import logging
-import traceback
 import functools
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, Any, Type
+from typing import Callable, Optional, Any
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
