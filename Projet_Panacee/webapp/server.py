@@ -374,36 +374,40 @@ async def sse_events(run_id, root, poll=2.0, is_disconnected=None, max_idle_tick
     else:
         yield _sse("waiting", {"id": run_id, "msg": "en attente du run…"})
 
-    while True:
-        if is_disconnected is not None and await is_disconnected():
-            break
-        path = service.resolve_run(run_id, root)
-        if path is not None:
-            meta, epochs = read_live(path)
-            if len(epochs) > sent:
-                for e in epochs[sent:]:
-                    yield _sse("epoch", e)
-                sent = len(epochs)
-                # Pousser aussi le verdict/statut agrégés à jour
-                latest = epochs[-1]
-                yield _sse("status", {
-                    "status": service._run_status(path, epochs, meta),
-                    "verdict": service.clinical_verdict(latest),
-                    "compare": service.compare_to_expected(latest),
-                    "n_points": sent,
-                    "epochs_total": meta.get("epochs_total"),
-                })
-                idle_ticks = 0
-                continue  # relire tout de suite (rattrape les rafales d'epochs)
+    # Arrêt serveur / déconnexion client → on sort proprement (pas de trace).
+    try:
+        while True:
+            if is_disconnected is not None and await is_disconnected():
+                break
+            path = service.resolve_run(run_id, root)
+            if path is not None:
+                meta, epochs = read_live(path)
+                if len(epochs) > sent:
+                    for e in epochs[sent:]:
+                        yield _sse("epoch", e)
+                    sent = len(epochs)
+                    # Pousser aussi le verdict/statut agrégés à jour
+                    latest = epochs[-1]
+                    yield _sse("status", {
+                        "status": service._run_status(path, epochs, meta),
+                        "verdict": service.clinical_verdict(latest),
+                        "compare": service.compare_to_expected(latest),
+                        "n_points": sent,
+                        "epochs_total": meta.get("epochs_total"),
+                    })
+                    idle_ticks = 0
+                    continue  # relire tout de suite (rattrape les rafales d'epochs)
+                else:
+                    idle_ticks += 1
+                    if idle_ticks % 5 == 0:
+                        yield _sse("ping", {"t": idle_ticks})
             else:
                 idle_ticks += 1
-                if idle_ticks % 5 == 0:
-                    yield _sse("ping", {"t": idle_ticks})
-        else:
-            idle_ticks += 1
-        if max_idle_ticks is not None and idle_ticks >= max_idle_ticks:
-            break
-        await asyncio.sleep(poll)
+            if max_idle_ticks is not None and idle_ticks >= max_idle_ticks:
+                break
+            await asyncio.sleep(poll)
+    except (asyncio.CancelledError, GeneratorExit):
+        return  # arrêt normal (Ctrl+C ou onglet fermé)
 
 
 async def api_stream(request):
