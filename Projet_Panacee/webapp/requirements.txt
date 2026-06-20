@@ -1,0 +1,11 @@
+# Backend du tableau de bord web Panacée (REST + SSE temps réel)
+# Léger : pas de FastAPI, on s'appuie sur Starlette + uvicorn.
+starlette>=0.40
+uvicorn>=0.30
+
+# Pour l'onglet "Métriques cliniques" (évaluation d'un checkpoint), le projet
+# principal fournit déjà : torch, torch-geometric, rdkit, deepchem, scikit-learn,
+# numpy, pandas. Voir Projet_Panacee/requirements.txt.
+
+# Dépendances de DEV uniquement (tests) :
+#   httpx>=0.27   # requis par starlette.testclient.TestClient

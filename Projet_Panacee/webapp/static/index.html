@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Panacée — Console de signes vitaux</title>
+  <!-- Polices distinctives (dégradation gracieuse hors-ligne) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- ===================== Barre d'instrument ===================== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">Panacée</span>
+      <span class="sub">Vital&nbsp;Signs&nbsp;Monitor</span>
+    </div>
+    <div class="ecg-wrap"><canvas id="ecg"></canvas></div>
+    <select id="runSelect" class="run-select" title="Run d'entraînement"></select>
+    <span id="statusPill" class="status-pill" data-state="idle">
+      <span class="dot"></span><span id="statusText">EN ATTENTE</span>
+    </span>
+    <span class="conn">SSE&nbsp;<b id="connText">—</b></span>
+  </header>
+
+  <main class="wrap">
+    <!-- ===================== Verdict clinique ===================== -->
+    <section id="verdict" class="verdict" data-level="NA">
+      <div class="icon" id="verdictIcon">🩺</div>
+      <div class="v-body">
+        <h2 id="verdictTitle">En attente de données d'entraînement</h2>
+        <ul id="verdictReasons"></ul>
+      </div>
+    </section>
+
+    <!-- ===================== KPI ===================== -->
+    <section class="kpis">
+      <div class="kpi" id="kpiEpoch">
+        <div class="label">Epoch</div>
+        <div class="value">—<span class="unit" id="epochTotal"></span></div>
+        <div class="tag" id="etaTag">&nbsp;</div>
+        <div class="progress"><i id="epochBar"></i></div>
+      </div>
+      <div class="kpi" id="kpiAuc">
+        <div class="label">ROC-AUC (val)</div>
+        <div class="value">—</div>
+        <canvas class="spark"></canvas>
+      </div>
+      <div class="kpi" id="kpiSens">
+        <div class="label">Sensibilité</div>
+        <div class="value">—</div>
+        <canvas class="spark"></canvas>
+      </div>
+      <div class="kpi" id="kpiFnr">
+        <div class="label">FNR · faux négatifs</div>
+        <div class="value">—</div>
+        <canvas class="spark"></canvas>
+      </div>
+      <div class="kpi" id="kpiDanger">
+        <div class="label">Endpoints en DANGER</div>
+        <div class="value">—</div>
+        <div class="tag" id="dangerTag">toxiques manqués</div>
+      </div>
+    </section>
+
+    <!-- ===================== Onglets ===================== -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="evo">📈 Évolution</button>
+      <button class="tab" data-tab="clin">🏥 Métriques cliniques</button>
+      <button class="tab" data-tab="sec">🚨 Sécurité</button>
+      <button class="tab" data-tab="cmp">🔬 Comparaison</button>
+    </nav>
+
+    <!-- ---------- Évolution ---------- -->
+    <section class="panel-view active" id="view-evo">
+      <div id="evoEmpty" class="empty" style="display:none">
+        <div class="big">🫀</div>
+        En attente du lancement de l'entraînement…<br>
+        Lance <code>python run_phase2.py --download</code> ou
+        <code>python -m webapp.run --demo</code> pour une démonstration.
+      </div>
+      <div id="evoCharts">
+        <div class="grid-2">
+          <div class="card">
+            <h3>Perte (train / val)</h3>
+            <div class="hint">Convergence de l'apprentissage — divergence train/val = surapprentissage.</div>
+            <div class="chart-box"><canvas id="chartLoss"></canvas></div>
+            <div class="legend">
+              <span style="color:var(--blue)"><i style="background:var(--blue)"></i>train_loss</span>
+              <span style="color:var(--vital)"><i style="background:var(--vital)"></i>val_loss</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>ROC-AUC (train / val)</h3>
+            <div class="hint">Pouvoir discriminant. Cible val ≥ 0.85 (ligne pointillée).</div>
+            <div class="chart-box"><canvas id="chartAuc"></canvas></div>
+            <div class="legend">
+              <span style="color:var(--blue)"><i style="background:var(--blue)"></i>train_auc</span>
+              <span style="color:var(--vital)"><i style="background:var(--vital)"></i>val_auc</span>
+              <span style="color:var(--warn)"><i class="dash" style="color:var(--warn)"></i>cible</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>🫀 Signes vitaux de sécurité — Sensibilité &amp; FNR</h3>
+          <div class="hint">Le FNR (faux négatifs = molécules toxiques déclarées « sûres ») est l'indicateur le plus critique. Zone rouge = danger.</div>
+          <div class="chart-box" style="height:260px"><canvas id="chartSafety"></canvas></div>
+          <div class="legend">
+            <span style="color:var(--ok)"><i style="background:var(--ok)"></i>sensibilité (↑ mieux)</span>
+            <span style="color:var(--danger)"><i style="background:var(--danger)"></i>FNR (↓ mieux)</span>
+            <span style="color:var(--warn)"><i class="dash" style="color:var(--warn)"></i>seuils danger/cible</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Métriques cliniques ---------- -->
+    <section class="panel-view" id="view-clin">
+      <div class="card">
+        <h3>Évaluation approfondie par endpoint toxicologique</h3>
+        <div class="hint">Charge un checkpoint Phase 2 + un CSV de validation, calcule toutes les métriques médicales (sensibilité, spécificité, FNR, précision, F1, ROC-AUC, PR-AUC, calibration ECE).</div>
+        <div class="form-row">
+          <div class="field">
+            <label>Checkpoint (.pth)</label>
+            <input id="evalCkpt" type="text" placeholder="checkpoints/phase2/best_toxicity_model.pth" />
+          </div>
+          <div class="field">
+            <label>CSV de validation</label>
+            <input id="evalCsv" type="text" placeholder="data/external/tox21/tox21_val.csv" />
+          </div>
+          <button class="btn" id="evalBtn">Évaluer</button>
+        </div>
+        <div id="evalAgg" style="margin-top:16px"></div>
+      </div>
+      <div class="card">
+        <h3>Détail par endpoint</h3>
+        <div class="hint" id="clinSource">Source : dernier point temps réel (per-task AUC). Lance une évaluation pour le détail complet.</div>
+        <div style="overflow-x:auto"><table id="clinTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ---------- Sécurité ---------- -->
+    <section class="panel-view" id="view-sec">
+      <div class="card">
+        <h3>🚨 Alertes de sécurité médicale</h3>
+        <div class="hint">Un faux négatif = molécule TOXIQUE prédite « sûre » → risque clinique majeur. Les endpoints sont triés par gravité.</div>
+        <div id="alerts"></div>
+      </div>
+      <div class="card">
+        <h3>Barème de gravité</h3>
+        <div class="barème" id="barème"></div>
+      </div>
+    </section>
+
+    <!-- ---------- Comparaison ---------- -->
+    <section class="panel-view" id="view-cmp">
+      <div class="card">
+        <h3>Attendu vs obtenu</h3>
+        <div class="hint">Confrontation des résultats du dernier epoch aux cibles cliniques visées.</div>
+        <div style="overflow-x:auto"><table id="cmpTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h3>ROC-AUC par endpoint vs cible</h3>
+        <div class="hint">Barres sous la ligne = endpoints sous la cible (0.85). Rouge = sous le seuil de danger (0.60).</div>
+        <div class="chart-box" style="height:280px"><canvas id="chartPerTask"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Comparaison des runs</h3>
+        <div class="hint">Tous les runs détectés sous la racine des checkpoints.</div>
+        <div style="overflow-x:auto"><table id="runsTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

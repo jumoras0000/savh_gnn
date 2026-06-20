@@ -1,0 +1,217 @@
+# -*- coding: utf-8 -*-
+"""
+Backend du tableau de bord Panacée — application ASGI Starlette.
+
+Pourquoi Starlette ? Il est déjà présent (avec uvicorn) dans l'environnement,
+fournit du routage propre, des réponses JSON et surtout du **streaming SSE**
+(Server-Sent Events) idéal pour pousser les métriques en temps réel vers le
+navigateur pendant l'entraînement — sans WebSocket ni dépendance réseau lourde.
+
+Endpoints REST :
+    GET  /                      → frontend (SPA autonome)
+    GET  /api/health            → ping
+    GET  /api/runs              → liste des runs (résumés)
+    GET  /api/run?id=<run_id>   → détail complet d'un run
+    GET  /api/compare           → comparaison de tous les runs
+    GET  /api/config            → cibles attendues + seuils de danger
+    POST /api/evaluate          → métriques cliniques par endpoint (checkpoint+csv)
+    GET  /api/stream?id=<run_id>→ flux SSE temps réel (tail du live_metrics.jsonl)
+
+Le « root » des runs est configurable via la variable d'env PANACEE_CKPT_ROOT
+(défaut : checkpoints/).
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse, FileResponse, PlainTextResponse
+from starlette.routing import Route, Mount
+from starlette.staticfiles import StaticFiles
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from webapp import service
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def _ckpt_root() -> str:
+    """Racine des runs (configurable, relative au dossier du projet par défaut)."""
+    return os.environ.get("PANACEE_CKPT_ROOT", str(PROJECT_ROOT / "checkpoints"))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Pages
+# ──────────────────────────────────────────────────────────────────────
+
+async def index(request):
+    idx = STATIC_DIR / "index.html"
+    if not idx.exists():
+        return PlainTextResponse("Frontend manquant (static/index.html).", status_code=500)
+    return FileResponse(idx)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# API REST
+# ──────────────────────────────────────────────────────────────────────
+
+async def health(request):
+    import time
+    return JSONResponse({"status": "ok", "time": time.time(),
+                         "root": _ckpt_root()})
+
+
+async def api_config(request):
+    return JSONResponse({"expected": service.EXPECTED, "thresholds": service.THRESHOLDS})
+
+
+async def api_runs(request):
+    root = _ckpt_root()
+    return JSONResponse({"root": root, "runs": service.list_runs(root)})
+
+
+async def api_run(request):
+    root = _ckpt_root()
+    run_id = request.query_params.get("id", "")
+    path = service.resolve_run(run_id, root)
+    if path is None:
+        return JSONResponse({"error": f"run introuvable: {run_id}"}, status_code=404)
+    return JSONResponse(service.get_run(path, root))
+
+
+async def api_compare(request):
+    root = _ckpt_root()
+    return JSONResponse({"runs": service.compare_runs(root)})
+
+
+async def api_evaluate(request):
+    """Évaluation approfondie : charge un checkpoint + un CSV et calcule les
+    métriques cliniques par endpoint (sensibilité, FNR, ECE, alertes)."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+
+    ckpt = body.get("checkpoint", "")
+    val_csv = body.get("val_csv", "")
+    max_mol = body.get("max_molecules")
+
+    if not ckpt or not Path(ckpt).exists():
+        return JSONResponse({"error": f"checkpoint introuvable: {ckpt}"}, status_code=404)
+    if not val_csv or not Path(val_csv).exists():
+        return JSONResponse({"error": f"CSV introuvable: {val_csv}"}, status_code=404)
+
+    # L'inférence torch est bloquante → on l'exécute dans un thread
+    def _run():
+        from src.validation.clinical_metrics import evaluate_checkpoint
+        return evaluate_checkpoint(ckpt, val_csv, max_molecules=max_mol)
+
+    try:
+        res = await asyncio.to_thread(_run)
+    except Exception as e:  # pragma: no cover - dépend de l'env torch
+        return JSONResponse({"error": f"évaluation impossible: {e}"}, status_code=500)
+    return JSONResponse(res)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# SSE temps réel — tail du live_metrics.jsonl
+# ──────────────────────────────────────────────────────────────────────
+
+def _sse(event: str, data) -> bytes:
+    payload = json.dumps(data, default=str)
+    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+
+
+async def sse_events(run_id, root, poll=2.0, is_disconnected=None, max_idle_ticks=None):
+    """
+    Générateur d'événements SSE (extrait de la route → directement testable).
+
+    Émet un snapshot initial puis pousse chaque nouvel epoch dès qu'il apparaît
+    dans le fichier. S'arrête si `is_disconnected()` est vrai (client parti) ou
+    après `max_idle_ticks` itérations sans nouveauté (borne utile pour les tests).
+    """
+    from src.utils.live_logger import read_live
+
+    sent = 0
+    idle_ticks = 0
+    # Snapshot initial (toujours, même si le run n'existe pas encore)
+    path = service.resolve_run(run_id, root)
+    if path is not None:
+        data = service.get_run(path, root)
+        yield _sse("snapshot", data)
+        sent = len(data["epochs"])
+    else:
+        yield _sse("waiting", {"id": run_id, "msg": "en attente du run…"})
+
+    while True:
+        if is_disconnected is not None and await is_disconnected():
+            break
+        path = service.resolve_run(run_id, root)
+        if path is not None:
+            meta, epochs = read_live(path)
+            if len(epochs) > sent:
+                for e in epochs[sent:]:
+                    yield _sse("epoch", e)
+                sent = len(epochs)
+                # Pousser aussi le verdict/statut agrégés à jour
+                latest = epochs[-1]
+                yield _sse("status", {
+                    "status": service._run_status(path, epochs, meta),
+                    "verdict": service.clinical_verdict(latest),
+                    "compare": service.compare_to_expected(latest),
+                    "n_points": sent,
+                    "epochs_total": meta.get("epochs_total"),
+                })
+                idle_ticks = 0
+                continue  # relire tout de suite (rattrape les rafales d'epochs)
+            else:
+                idle_ticks += 1
+                if idle_ticks % 5 == 0:
+                    yield _sse("ping", {"t": idle_ticks})
+        else:
+            idle_ticks += 1
+        if max_idle_ticks is not None and idle_ticks >= max_idle_ticks:
+            break
+        await asyncio.sleep(poll)
+
+
+async def api_stream(request):
+    """Route SSE : enveloppe sse_events() dans une StreamingResponse."""
+    from starlette.responses import StreamingResponse
+
+    root = _ckpt_root()
+    run_id = request.query_params.get("id", "")
+    poll = float(request.query_params.get("poll", "2.0"))
+    gen = sse_events(run_id, root, poll, is_disconnected=request.is_disconnected)
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(gen, media_type="text/event-stream", headers=headers)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Application
+# ──────────────────────────────────────────────────────────────────────
+
+routes = [
+    Route("/", index),
+    Route("/api/health", health),
+    Route("/api/config", api_config),
+    Route("/api/runs", api_runs),
+    Route("/api/run", api_run),
+    Route("/api/compare", api_compare),
+    Route("/api/evaluate", api_evaluate, methods=["POST"]),
+    Route("/api/stream", api_stream),
+    Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
+]
+
+app = Starlette(routes=routes)
