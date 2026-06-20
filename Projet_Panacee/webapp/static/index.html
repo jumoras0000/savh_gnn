@@ -73,6 +73,7 @@
       <button class="tab" data-tab="cmp">🔬 Comparaison</button>
       <button class="tab" data-tab="train">🎛️ Entraînement</button>
       <button class="tab" data-tab="research">🧪 Recherche</button>
+      <button class="tab" data-tab="screen">🧬 Criblage VIH</button>
       <button class="tab" data-tab="info">ℹ️ Guide</button>
     </nav>
 
@@ -254,14 +255,66 @@
         <div class="form-row">
           <button class="btn" id="rsPredict">🔬 Analyser (propriétés + risque)</button>
           <button class="btn ghost" id="rsCombo">🔗 Analyser la combinaison (synergie/doses)</button>
+          <button class="btn ghost" id="rsExport">⬇️ Exporter (JSON)</button>
+          <span id="rsMode" class="upmsg"></span>
         </div>
       </div>
       <div id="rsResults"></div>
       <div id="rsComboResult"></div>
     </section>
 
+    <!-- ---------- Criblage virtuel (VIH) ---------- -->
+    <section class="panel-view" id="view-screen">
+      <div class="card">
+        <h3>🧬 Criblage virtuel — identifier des candidats médicaments</h3>
+        <div class="hint">Classe une bibliothèque de molécules selon un objectif. L'efficacité <b>anti-VIH</b> requiert un modèle Phase 3 ; <b>sécurité</b> requiert Phase 2/3 ; <b>drug-likeness</b> (QED) fonctionne sans modèle. Équivalent in-silico d'un criblage à haut débit (HTS).</div>
+        <div class="form-row">
+          <div class="field">
+            <label>Bibliothèque de référence</label>
+            <select id="scLib" class="picker"></select>
+          </div>
+          <div class="field">
+            <label>Objectif</label>
+            <select id="scObjective" class="picker">
+              <option value="efficacy">Efficacité anti-VIH (Phase 3)</option>
+              <option value="safety">Sécurité / faible toxicité (Phase 2-3)</option>
+              <option value="drug_likeness" selected>Drug-likeness · QED (sans modèle)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Checkpoint (optionnel)</label>
+            <select id="scCkpt" class="picker"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label>…ou colle ta propre bibliothèque (SMILES, un par ligne)</label>
+          <textarea id="scSmiles" rows="3" placeholder="laisse vide pour utiliser la bibliothèque de référence sélectionnée"></textarea>
+        </div>
+        <div class="form-row">
+          <button class="btn" id="scRun">🧬 Lancer le criblage</button>
+          <button class="btn ghost" id="scExport">⬇️ Exporter (CSV)</button>
+          <span id="scMeta" class="upmsg"></span>
+        </div>
+      </div>
+      <div class="card" id="scResultCard" style="display:none">
+        <h3>Classement des candidats</h3>
+        <div class="hint" id="scHint"></div>
+        <div style="overflow-x:auto"><table id="scTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
     <!-- ---------- Guide / info ---------- -->
     <section class="panel-view" id="view-info">
+      <div class="card">
+        <h3>🚀 Tout ce que vous pouvez faire</h3>
+        <div class="hint">Catalogue complet des fonctionnalités de l'application + du modèle.</div>
+        <div id="capabilities"></div>
+      </div>
+      <div class="card">
+        <h3>🔬 Équivalence laboratoire</h3>
+        <div class="hint">À quoi correspond chaque analyse in-silico « à la paillasse ».</div>
+        <div style="overflow-x:auto"><table id="labTable"><thead></thead><tbody></tbody></table></div>
+      </div>
       <div class="grid-2">
         <div class="card">
           <h3>Pourquoi ces métriques ?</h3>

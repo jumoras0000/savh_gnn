@@ -42,7 +42,9 @@ Options : `--host 0.0.0.0 --port 8080`, `--root <dossier_checkpoints>`,
 - **Évolution** : courbes loss / AUC (train vs val) et **signes vitaux de sécurité** (sensibilité & FNR) avec lignes de cible et zone de danger, plus un panneau **Observation & risque** (lecture automatique des métriques).
 - **Métriques cliniques** : tableau par endpoint toxicologique (sensibilité, spécificité, FNR, précision, F1, ROC-AUC, PR-AUC, ECE). Les checkpoints et CSV sont **listés automatiquement** (sélecteurs) — plus besoin de saisir un chemin — et on peut **importer un fichier** (.pth / .csv).
 - **🎛️ Entraînement** : lance / arrête une phase (1, 2 ou 3) directement depuis l'UI, avec console de logs et statut. Le suivi temps réel bascule automatiquement sur le run lancé.
-- **🧪 Recherche** : analyse de **molécules réelles** (SMILES) → toxicité, efficacité, solubilité, lipophilicité, biodisponibilité, stabilité, drug-likeness + **évaluation de risque** par molécule. Plusieurs molécules → **combinaison** (synergie, doses optimales, score de réussite via le MolecularReasoner).
+- **🧪 Recherche** : analyse de **molécules réelles** (SMILES) → **structure 2D**, **descripteurs RDKit** (MW, LogP, TPSA, HBD/HBA, QED, Lipinski) *toujours disponibles sans modèle*, puis toxicité / efficacité / ADME selon le modèle dispo. **Mode adaptatif** : Phase 3 (complet) → Phase 2 (toxicité seule) → descripteurs seuls. Évaluation de **risque** par molécule + **export JSON**. Combinaison → synergie / doses / score (MolecularReasoner, Phase 3).
+- **🧬 Criblage VIH** : *virtual screening* — classe une bibliothèque (de référence, collée, ou importée) par **efficacité anti-VIH** (Phase 3), **sécurité** (Phase 2-3) ou **drug-likeness/QED** (sans modèle). Bibliothèques intégrées (antirétroviraux de référence, médicaments courants). **Export CSV**. Équivalent in-silico d'un criblage à haut débit (HTS).
+- **ℹ️ Guide** enrichi : catalogue complet des capacités + **équivalence laboratoire** de chaque analyse (ce que ça représente « à la paillasse »).
 - **Sécurité** : alertes DANGER/WARN triées par gravité + barème.
 - **Comparaison** : *attendu vs obtenu*, ROC-AUC par endpoint vs cible, et comparaison de tous les runs.
 - **ℹ️ Guide** : explication de chaque métrique, lecture du risque, flux de travail recommandé.
@@ -70,8 +72,13 @@ Le frontend s'adapte aux clés présentes (l'onglet Sécurité reste pertinent l
 | GET  | `/api/train/status`   | Statut de l'entraînement (état, pid, logs) |
 | POST | `/api/train/start`    | Lance une phase (`{phase, epochs, max_molecules, …}`) |
 | POST | `/api/train/stop`     | Arrête l'entraînement en cours |
-| POST | `/api/predict`        | Propriétés + risque de molécules (`{smiles, checkpoint?}`) |
+| POST | `/api/predict`        | Propriétés + risque + descripteurs (`{smiles, checkpoint?}`, mode adaptatif) |
 | POST | `/api/combo`          | Synergie / doses d'une combinaison (`{smiles[], checkpoint?}`) |
+| POST | `/api/descriptors`    | Descripteurs RDKit (sans modèle) (`{smiles}`) |
+| GET  | `/api/depict?smiles=` | Structure 2D (SVG) |
+| GET  | `/api/libraries`      | Bibliothèques de molécules de référence |
+| POST | `/api/screen`         | Criblage virtuel (`{library` ou `smiles, objective, checkpoint?}`) |
+| GET  | `/api/capabilities`   | Catalogue des capacités + équivalence laboratoire |
 | GET  | `/api/stream?id=<id>` | Flux **SSE** temps réel (snapshot + epochs + statut) |
 
 ## Tests

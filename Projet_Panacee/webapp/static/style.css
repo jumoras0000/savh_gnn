@@ -380,9 +380,27 @@ textarea { resize: vertical; line-height: 1.5; }
 .info-block hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
 .info-block .warn-note { color: var(--warn); font-family: var(--mono); font-size: 12px; }
 
+/* Carte molécule à 3 colonnes (structure / descripteurs / modèle+risque) */
+.mol-grid3 { display: grid; grid-template-columns: 240px 1fr 1fr; gap: 18px; margin-top: 6px; }
+.mol-struct {
+  background: #fff; border-radius: var(--radius-sm); padding: 8px;
+  display: flex; align-items: center; justify-content: center; min-height: 180px;
+}
+.mol-struct img { max-width: 100%; height: auto; }
+.smi-cell { font-size: 10.5px; max-width: 280px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--vital); }
+
+/* Capacités (Guide) */
+.cap-group { margin-bottom: 14px; }
+.cap-title { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--vital);
+  letter-spacing: .5px; margin-bottom: 6px; }
+.cap-group ul { list-style: none; padding-left: 4px; }
+.cap-group li { font-size: 12.5px; color: var(--muted); padding-left: 16px; position: relative; margin-bottom: 4px; }
+.cap-group li::before { content: "▸"; position: absolute; left: 0; color: var(--faint); }
+
 @media (max-width: 1000px) {
   .kpis { grid-template-columns: repeat(2, 1fr); }
   .grid-2 { grid-template-columns: 1fr; }
-  .mol-grid { grid-template-columns: 1fr; }
+  .mol-grid, .mol-grid3 { grid-template-columns: 1fr; }
   .ecg-wrap { display: none; }
 }

@@ -562,6 +562,8 @@ function setupTabs() {
       requestAnimationFrame(() => { renderEvolution(); renderCompare(); });
       if (tab === "train") pollTrain();
       if (tab === "clin" || tab === "research") loadFiles();
+      if (tab === "screen") { loadFiles(); loadLibraries(); }
+      if (tab === "info") loadCapabilities();
     });
   });
 }
@@ -619,9 +621,11 @@ async function loadFiles() {
   const csvs = state.files.csvs || [];
   fillPicker("evalCkpt", cks, "rel");
   fillPicker("evalCsv", csvs, "rel");
-  // Recherche : privilégier les checkpoints Phase 3
+  // Recherche / criblage : privilégier les checkpoints Phase 3 puis Phase 2
   const phase3 = cks.filter(c => /phase3/i.test(c.rel));
-  fillPicker("rsCkpt", (phase3.length ? phase3 : cks), "rel");
+  const preferred = phase3.length ? phase3 : cks;
+  fillPicker("rsCkpt", preferred, "rel");
+  fillPicker("scCkpt", preferred, "rel");
 }
 
 function fillPicker(id, items, key) {
@@ -744,6 +748,11 @@ function setupResearch() {
     } catch (e) { box.innerHTML = errCard(e.message); }
   });
 
+  document.getElementById("rsExport").addEventListener("click", () => {
+    if (!state.lastPredict) { flashToast("Lance d'abord une analyse.", true); return; }
+    downloadFile("analyse_molecules.json", JSON.stringify(state.lastPredict, null, 2), "application/json");
+  });
+
   document.getElementById("rsCombo").addEventListener("click", async () => {
     const smiles = document.getElementById("rsSmiles").value.trim();
     const checkpoint = document.getElementById("rsCkpt").value || null;
@@ -765,6 +774,8 @@ function errCard(msg) {
 }
 
 function renderPredictions(res) {
+  state.lastPredict = res;
+  document.getElementById("rsMode").textContent = res.note ? `Mode : ${res.note}` : "";
   const box = document.getElementById("rsResults");
   const cards = (res.results || []).map(r => moleculeCard(r)).join("");
   const inv = (res.invalid && res.invalid.length)
@@ -775,26 +786,50 @@ function renderPredictions(res) {
 function moleculeCard(r) {
   const risk = r.risk || { level: "OK", observations: [] };
   const tox = r.toxicity || {};
-  const toxic = Object.entries(tox).filter(([, d]) => d.toxique).map(([k]) => k);
-  const rows = [
-    ["Sécurité", (r.safety_score ?? "—") + "%"],
-    ["Efficacité", (r.efficacy?.probabilite_activite ?? "—") + "%"],
-    ["Solubilité (LogS)", `${r.solubility?.log_s ?? "—"} · ${r.solubility?.interpretation ?? ""}`],
-    ["Lipophilie (LogP)", `${r.lipophilicity?.log_p ?? "—"} · ${r.lipophilicity?.interpretation ?? ""}`],
-    ["Biodisponibilité", (r.bioavailability?.probabilite ?? "—") + "%"],
-    ["Stabilité métab.", (r.metabolic_stability?.probabilite ?? "—") + "%"],
-    ["Drug-likeness", r.drug_likeness?.score_global ?? "—"],
+  const d = r.descriptors || {};
+  const hasModel = r.safety_score != null || Object.keys(tox).length > 0;
+  const toxic = Object.entries(tox).filter(([, x]) => x.toxique).map(([k]) => k);
+
+  const modelRows = [
+    ["Sécurité", r.safety_score != null ? r.safety_score + "%" : "—"],
+    ["Efficacité (anti-VIH)", r.efficacy?.probabilite_activite != null ? r.efficacy.probabilite_activite + "%" : "—"],
+    ["Solubilité (LogS)", r.solubility ? `${r.solubility.log_s} · ${r.solubility.interpretation}` : "—"],
+    ["Lipophilie (LogP préd.)", r.lipophilicity ? `${r.lipophilicity.log_p} · ${r.lipophilicity.interpretation}` : "—"],
+    ["Biodisponibilité", r.bioavailability?.probabilite != null ? r.bioavailability.probabilite + "%" : "—"],
+    ["Stabilité métab.", r.metabolic_stability?.probabilite != null ? r.metabolic_stability.probabilite + "%" : "—"],
+    ["Drug-likeness (modèle)", r.drug_likeness?.score_global ?? "—"],
+  ];
+  const descRows = [
+    ["Formule", d.formula ?? "—"],
+    ["Masse molaire", d.mw != null ? d.mw + " g/mol" : "—"],
+    ["LogP (calc.)", d.logp ?? "—"],
+    ["TPSA", d.tpsa != null ? d.tpsa + " Å²" : "—"],
+    ["Donneurs/Accepteurs H", `${d.hbd ?? "—"} / ${d.hba ?? "—"}`],
+    ["Liaisons rotatives", d.rotatable_bonds ?? "—"],
+    ["Cycles (arom.)", `${d.rings ?? "—"} (${d.aromatic_rings ?? "—"})`],
+    ["QED", d.qed ?? "—"],
+    ["Lipinski", d.lipinski_pass != null ? (d.lipinski_pass ? `✅ OK (${d.lipinski_violations} viol.)` : `❌ ${d.lipinski_violations} violations`) : "—"],
   ];
   const obs = (risk.observations || []).map(o =>
     `<div class="obs ${o.level}"><span class="o-ico">${o.level === "DANGER" ? "🔴" : o.level === "WARN" ? "🟠" : "🟢"}</span><span class="o-text">${esc(o.text)}</span></div>`).join("");
+
+  const modelBlock = hasModel ? `
+      <div class="o-head">Prédictions du modèle</div>
+      <table class="mol-tbl">${modelRows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(String(v))}</td></tr>`).join("")}</table>
+      <div class="o-head" style="margin-top:10px">Toxicité Tox21</div>
+      ${toxic.length ? `<div class="tox-alert">⚠ ${toxic.map(esc).join(", ")}</div>` : `<div class="tox-ok">✅ aucun endpoint toxique</div>`}` : "";
+
   return `<div class="card mol">
     <h3><span class="badge ${risk.level}">${risk.level}</span>
-      <span class="smi">${esc(r.smiles)}</span></h3>
-    <div class="mol-grid">
-      <table class="mol-tbl">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(String(v))}</td></tr>`).join("")}</table>
+      <span class="smi">${esc(d.canonical || r.smiles)}</span></h3>
+    <div class="mol-grid3">
+      <div class="mol-struct"><img loading="lazy" alt="structure" src="/api/depict?smiles=${encodeURIComponent(r.smiles)}" /></div>
+      <div>
+        <div class="o-head">Descripteurs (RDKit)</div>
+        <table class="mol-tbl">${descRows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(String(v))}</td></tr>`).join("")}</table>
+      </div>
       <div class="mol-side">
-        <div class="o-head">Toxicité Tox21</div>
-        ${toxic.length ? `<div class="tox-alert">⚠ ${toxic.map(esc).join(", ")}</div>` : `<div class="tox-ok">✅ aucun endpoint toxique</div>`}
+        ${modelBlock}
         <div class="o-head" style="margin-top:10px">Observation &amp; risque</div>
         ${obs}
       </div>
@@ -826,12 +861,101 @@ function renderCombo(res) {
   </div>`;
 }
 
+/* ---------- export ---------- */
+function downloadFile(name, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function toCSV(rows, cols) {
+  const head = cols.join(",");
+  const body = rows.map(r => cols.map(c => {
+    const v = r[c] == null ? "" : String(r[c]).replace(/"/g, '""');
+    return /[",\n]/.test(v) ? `"${v}"` : v;
+  }).join(",")).join("\n");
+  return head + "\n" + body;
+}
+
+/* ====================================================================
+   Criblage virtuel (VIH)
+   ==================================================================== */
+async function loadLibraries() {
+  let libs;
+  try { libs = await fetchJSON("/api/libraries"); } catch (e) { return; }
+  state.libraries = libs;
+  const sel = document.getElementById("scLib");
+  sel.innerHTML = Object.entries(libs).map(([k, v]) =>
+    `<option value="${esc(k)}">${esc(v.label)} (${v.count})</option>`).join("");
+}
+
+function setupScreening() {
+  document.getElementById("scRun").addEventListener("click", async () => {
+    const objective = document.getElementById("scObjective").value;
+    const checkpoint = document.getElementById("scCkpt").value || null;
+    const smiles = document.getElementById("scSmiles").value.trim();
+    const library = document.getElementById("scLib").value;
+    const body = smiles ? { objective, checkpoint, smiles } : { objective, checkpoint, library };
+    const meta = document.getElementById("scMeta");
+    meta.innerHTML = '<span class="spinner"></span> Criblage…';
+    try {
+      const res = await fetchJSON("/api/screen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      renderScreen(res); meta.textContent = "";
+    } catch (e) { meta.textContent = ""; document.getElementById("scResultCard").style.display = "block";
+      document.getElementById("scHint").innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span>`;
+      document.querySelector("#scTable tbody").innerHTML = ""; document.querySelector("#scTable thead").innerHTML = ""; }
+  });
+  document.getElementById("scExport").addEventListener("click", () => {
+    const r = state.lastScreen;
+    if (!r || !r.ranked || !r.ranked.length) { flashToast("Lance d'abord un criblage.", true); return; }
+    const cols = ["rank", "name", "smiles", "score", "mw", "logp", "qed", "lipinski_pass", "safety_score", "risk"];
+    downloadFile(`criblage_${r.objective}.csv`, toCSV(r.ranked, cols), "text/csv");
+  });
+}
+
+function renderScreen(res) {
+  state.lastScreen = res;
+  document.getElementById("scResultCard").style.display = "block";
+  document.getElementById("scHint").textContent =
+    `${res.objective_label} · mode ${res.mode} · ${res.n_valid}/${res.n_input} molécules valides`;
+  const thead = document.querySelector("#scTable thead");
+  const tbody = document.querySelector("#scTable tbody");
+  thead.innerHTML = "<tr><th>#</th><th>Nom</th><th>SMILES</th><th>Score</th><th>MW</th><th>LogP</th><th>QED</th><th>Lipinski</th><th>Risque</th></tr>";
+  tbody.innerHTML = (res.ranked || []).map(r => `<tr data-level="${r.risk || ""}">
+    <td>${r.rank}</td><td>${esc(r.name || "—")}</td>
+    <td class="smi-cell">${esc(r.smiles)}</td>
+    <td><b>${r.score}</b></td><td>${r.mw}</td><td>${r.logp}</td><td>${r.qed ?? "—"}</td>
+    <td>${r.lipinski_pass ? "✅" : "❌"}</td>
+    <td>${r.risk ? `<span class="badge ${r.risk}">${r.risk}</span>` : "—"}</td></tr>`).join("")
+    || `<tr><td colspan="9" style="color:var(--faint)">Aucun résultat.</td></tr>`;
+}
+
+/* ====================================================================
+   Guide : capacités + équivalence laboratoire
+   ==================================================================== */
+async function loadCapabilities() {
+  let data;
+  try { data = await fetchJSON("/api/capabilities"); } catch (e) { return; }
+  document.getElementById("capabilities").innerHTML = (data.capabilities || []).map(g =>
+    `<div class="cap-group"><div class="cap-title">${esc(g.group)}</div>
+      <ul>${g.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`).join("");
+  const thead = document.querySelector("#labTable thead");
+  const tbody = document.querySelector("#labTable tbody");
+  thead.innerHTML = "<tr><th>Analyse</th><th>In silico (cette app)</th><th>Équivalent laboratoire</th></tr>";
+  tbody.innerHTML = (data.lab_equivalence || []).map(r =>
+    `<tr><td>${esc(r.analyse)}</td><td>${esc(r.in_silico)}</td><td>${esc(r.labo)}</td></tr>`).join("");
+}
+
 /* ====================================================================
    Démarrage
    ==================================================================== */
 async function main() {
   ecgInit(); setupTabs(); setupRunSelect(); setupEval();
-  setupFiles(); setupTraining(); setupResearch();
+  setupFiles(); setupTraining(); setupResearch(); setupScreening();
   await loadConfig();
   renderBarème();
   await loadFiles();

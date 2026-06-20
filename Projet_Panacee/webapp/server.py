@@ -218,6 +218,103 @@ async def api_combo(request):
     return JSONResponse(res, status_code=code)
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Cheminformatique (sans modèle) : descripteurs, structure, bibliothèques
+# ──────────────────────────────────────────────────────────────────────
+
+async def api_descriptors(request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    smiles = _parse_smiles(body.get("smiles"))
+    if not smiles:
+        return JSONResponse({"error": "aucun SMILES fourni"}, status_code=400)
+
+    def _run():
+        from webapp import cheminfo
+        return [cheminfo.descriptors(s) for s in smiles]
+
+    try:
+        res = await asyncio.to_thread(_run)
+    except Exception as e:  # pragma: no cover
+        return JSONResponse({"error": f"RDKit indisponible: {e}"}, status_code=500)
+    return JSONResponse({"results": res})
+
+
+async def api_depict(request):
+    """SVG 2D d'une molécule (?smiles=...&w=..&h=..)."""
+    smi = request.query_params.get("smiles", "")
+    if not smi:
+        return PlainTextResponse("smiles manquant", status_code=400)
+    w = int(request.query_params.get("w", "260") or 260)
+    h = int(request.query_params.get("h", "200") or 200)
+
+    def _run():
+        from webapp import cheminfo
+        return cheminfo.depict_svg(smi, w, h)
+
+    try:
+        svg = await asyncio.to_thread(_run)
+    except Exception as e:  # pragma: no cover
+        return PlainTextResponse(f"RDKit indisponible: {e}", status_code=500)
+    if svg is None:
+        return PlainTextResponse("SMILES invalide", status_code=404)
+    from starlette.responses import Response
+    return Response(svg, media_type="image/svg+xml",
+                    headers={"Cache-Control": "max-age=3600"})
+
+
+async def api_libraries(request):
+    def _run():
+        from webapp import cheminfo
+        return cheminfo.list_libraries()
+
+    try:
+        res = await asyncio.to_thread(_run)
+    except Exception as e:  # pragma: no cover
+        return JSONResponse({"error": f"RDKit indisponible: {e}"}, status_code=500)
+    return JSONResponse(res)
+
+
+async def api_capabilities(request):
+    from webapp.catalog import CAPABILITIES, LAB_EQUIVALENCE
+    return JSONResponse({"capabilities": CAPABILITIES, "lab_equivalence": LAB_EQUIVALENCE})
+
+
+async def api_screen(request):
+    """Criblage virtuel d'une bibliothèque (objectif : drug_likeness/safety/efficacy)."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+
+    objective = body.get("objective", "drug_likeness")
+    checkpoint = body.get("checkpoint") or None
+    lib_name = body.get("library")
+
+    molecules = body.get("molecules")
+    if not molecules and body.get("smiles"):
+        molecules = _parse_smiles(body.get("smiles"))
+
+    def _run():
+        from webapp import cheminfo, research
+        mols = molecules
+        if lib_name:
+            mols = cheminfo.library(lib_name)
+        if not mols:
+            return {"error": "aucune molécule (fournir smiles, molecules ou library)"}
+        return research.screen(mols, objective=objective, checkpoint=checkpoint)
+
+    try:
+        res = await asyncio.to_thread(_run)
+    except FileNotFoundError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except Exception as e:  # pragma: no cover
+        return JSONResponse({"error": f"criblage impossible: {e}"}, status_code=500)
+    return JSONResponse(res, status_code=400 if res.get("error") else 200)
+
+
 async def api_evaluate(request):
     """Évaluation approfondie : charge un checkpoint + un CSV et calcule les
     métriques cliniques par endpoint (sensibilité, FNR, ECE, alertes)."""
@@ -344,6 +441,11 @@ routes = [
     Route("/api/train/stop", api_train_stop, methods=["POST"]),
     Route("/api/predict", api_predict, methods=["POST"]),
     Route("/api/combo", api_combo, methods=["POST"]),
+    Route("/api/descriptors", api_descriptors, methods=["POST"]),
+    Route("/api/depict", api_depict),
+    Route("/api/libraries", api_libraries),
+    Route("/api/screen", api_screen, methods=["POST"]),
+    Route("/api/capabilities", api_capabilities),
     Route("/api/stream", api_stream),
     Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
 ]

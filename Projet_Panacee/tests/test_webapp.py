@@ -232,6 +232,73 @@ def test_observations_in_run(client):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Cheminformatique (RDKit, sans modèle) : descripteurs, structure, biblio
+# ──────────────────────────────────────────────────────────────────────
+
+rdkit = pytest.importorskip("rdkit", reason="RDKit requis pour la cheminformatique")
+
+
+def test_descriptors_endpoint(client):
+    j = client.post("/api/descriptors", json={"smiles": "CCO\nCC(=O)O"}).json()
+    assert len(j["results"]) == 2
+    eth = j["results"][0]
+    assert eth["valid"] and eth["mw"] > 40 and "qed" in eth
+    # SMILES invalide → valid False
+    bad = client.post("/api/descriptors", json={"smiles": "xyz123!!!"}).json()
+    assert bad["results"][0]["valid"] is False
+
+
+def test_depict_svg(client):
+    r = client.get("/api/depict", params={"smiles": "CCO"})
+    assert r.status_code == 200
+    assert "image/svg+xml" in r.headers["content-type"]
+    assert "<svg" in r.text or "<?xml" in r.text
+    assert client.get("/api/depict", params={"smiles": "nonsense!!!"}).status_code == 404
+
+
+def test_libraries_endpoint(client):
+    j = client.get("/api/libraries").json()
+    assert "hiv_reference" in j and "reference_drugs" in j
+    assert j["reference_drugs"]["count"] >= 3
+    assert all("smiles" in m for m in j["reference_drugs"]["molecules"])
+
+
+def test_capabilities_endpoint(client):
+    j = client.get("/api/capabilities").json()
+    assert len(j["capabilities"]) >= 4
+    assert any("VIH" in str(g) or "Criblage" in str(g) for g in j["capabilities"])
+    assert len(j["lab_equivalence"]) >= 6
+    assert all({"analyse", "in_silico", "labo"} <= set(r) for r in j["lab_equivalence"])
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Criblage virtuel
+# ──────────────────────────────────────────────────────────────────────
+
+def test_screen_drug_likeness_no_model(client):
+    """Objectif drug_likeness = QED RDKit → fonctionne sans modèle, classé."""
+    j = client.post("/api/screen", json={"library": "reference_drugs",
+                                         "objective": "drug_likeness"}).json()
+    assert j["n_valid"] >= 3
+    scores = [r["score"] for r in j["ranked"]]
+    assert scores == sorted(scores, reverse=True)
+    assert j["ranked"][0]["rank"] == 1
+
+
+def test_screen_custom_smiles(client):
+    j = client.post("/api/screen", json={"smiles": "CCO\nCC(=O)Oc1ccccc1C(=O)O",
+                                         "objective": "drug_likeness"}).json()
+    assert j["n_valid"] == 2 and j["mode"] == "descriptors"
+
+
+def test_screen_efficacy_requires_phase3(client):
+    # checkpoint explicite introuvable → 404 immédiat (sans charger de modèle)
+    r = client.post("/api/screen", json={"library": "reference_drugs",
+                                         "objective": "efficacy", "checkpoint": "nope.pth"})
+    assert r.status_code == 404
+
+
+# ──────────────────────────────────────────────────────────────────────
 # SSE temps réel
 #
 # NB : on pilote le générateur sse_events() DIRECTEMENT plutôt que via le
