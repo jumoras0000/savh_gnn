@@ -1,13 +1,13 @@
-# Dependances Projet Panacee v2
+# Dependances Projet Panacee v3
 #
-# ETAPE 1 – Installer PyTorch avec CUDA :
-#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# Installation (dans l'ordre) :
+#   1) PyTorch :
+#        GPU CUDA 12.1 : pip install torch --index-url https://download.pytorch.org/whl/cu121
+#        CPU           : pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   2) PyTorch Geometric : pip install torch-geometric
+#   3) Le reste          : pip install -r requirements.txt
 #
-# ETAPE 2 – Installer PyG :
-#   pip install torch-geometric
-#
-# ETAPE 3 – Le reste :
-#   pip install -r requirements.txt
+# NB Kaggle : torch + CUDA sont deja preinstalles, ne pas reinstaller torch.
 
 # Core
 torch>=2.0.0
@@ -15,45 +15,27 @@ torch-geometric>=2.3.0
 numpy>=1.24.0
 scipy>=1.10.0
 
-# Chimie
-rdkit-pypi>=2022.9.0
+# Chimie moleculaire (paquet officiel ; PAS rdkit-pypi qui est deprecie)
+rdkit>=2023.3.1
 
 # ML / metriques
 scikit-learn>=1.3.0
 pandas>=2.0.0
 
-# Toxicite (Phase 2 – telecharge Tox21/SIDER)
+# Datasets toxicite / multi-proprietes (Tox21, ESOL, Lipo, BBBP, ClinTox, HIV)
 deepchem>=2.7.0
 
 # Utilitaires
 tqdm>=4.65.0
+psutil>=5.9.0
+packaging>=23.0
+python-dotenv>=1.0.0
 
 # Visualisation (optionnel)
 matplotlib>=3.7.0
+
+# Recherche web / connaissances (optionnel, Phase 3 avancee)
+requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
-
-# Pour les structures moléculaires
-# NOTE: rdkit-pypi peut avoir des problèmes avec Python 3.11+
-# Si l'installation échoue, utilisez conda: conda install -c conda-forge rdkit
-# OU installez manuellement: pip install rdkit-pypi==2022.9.5
 biopython>=1.81
-
-# Gestion de configuration
-python-dotenv>=1.0.0
-
-# Profiling & système
-psutil>=5.9.0
-packaging>=23.0
-
-# Pour le pré-entraînement (Phase 1)
-# Note: torch-geometric nécessite une installation spéciale
-# pip install torch-geometric -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
-# (adapter selon votre version de PyTorch et CUDA)
-
-# Installation recommandée (après avoir installé PyTorch):
-# 1. Vérifier votre version PyTorch: python -c "import torch; print(torch.__version__)"
-# 2. Installer torch-geometric selon votre version:
-#    - PyTorch 2.0 + CUDA 11.8: pip install torch-geometric -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
-#    - PyTorch 2.0 + CUDA 12.1: pip install torch-geometric -f https://data.pyg.org/whl/torch-2.0.0+cu121.html
-#    - CPU uniquement: pip install torch-geometric

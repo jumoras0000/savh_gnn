@@ -89,15 +89,35 @@ savh_gnn/
     │   ├── processed/
     │   └── external/
     │
-    └── results/                         # Résultats + plots
-
-└── PanaceeColab/                        # Version Colab du pipeline
-    ├── Notebook_00_Setup.ipynb
-    ├── Notebook_01_Phase1_Pretrain.ipynb
-    ├── Notebook_02_Phase2_Toxicity.ipynb
-    ├── Notebook_03_Phase3_MultiProp.ipynb
-    └── (code source Python parallèle)
+    ├── results/                         # Résultats + plots
+    └── tests/
+        └── test_smoke.py               # Smoke-test rapide du pipeline
 ```
+
+---
+
+## 🧪 Tester en local (vérifier que tout marche)
+
+```bash
+cd Projet_Panacee
+python -m tests.test_smoke          # ~quelques secondes, sans deepchem
+```
+Doit afficher `==> SMOKE TEST OK`. Pour un vrai mini-entraînement :
+```bash
+python run_phase2.py --download --epochs 2 --max_molecules 400 --batch_size 16
+```
+
+---
+
+## ⚙️ Options avancées
+
+| Option | Effet |
+|--------|-------|
+| `CONV_TYPE` dans `src/config.py` | `"attention"` (GATv2, défaut) ou `"mpnn"` |
+| `run_phase2.py --cv_folds 5` | Cross-validation par scaffold (métriques honnêtes) |
+| `run_phase2.py --ema 0` | Désactive l'EMA des poids |
+| `run_phase1.py --objective graphcl` | Pré-entraînement contrastif GraphCL au lieu de MGM |
+| `--max_molecules N` | Sous-ensemble pour runs rapides (toutes les phases) |
 
 ---
 

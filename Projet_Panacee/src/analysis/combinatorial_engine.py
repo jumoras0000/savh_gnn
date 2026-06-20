@@ -37,6 +37,7 @@ from src.preprocessing.graph_builder import smiles_to_graph
 from src.config import (
     DEVICE, ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
     HIDDEN_DIM, NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT,
+    CONV_TYPE, ATTENTION_HEADS,
     PHASE3, CHECKPOINT_DIR,
 )
 from src.utils.gpu_manager import get_gpu_manager
@@ -99,6 +100,8 @@ class PanaceeAnalyzer:
             edge_dim=config.get("bond_feature_dim", BOND_FEATURE_DIM),
             output_dim=config.get("output_dim", OUTPUT_DIM),
             dropout=config.get("dropout", DROPOUT),
+            conv_type=config.get("conv_type", CONV_TYPE),
+            attention_heads=config.get("attention_heads", ATTENTION_HEADS),
         )
 
         # Reconstruire le modèle multi-propriétés
@@ -927,9 +930,6 @@ class PanaceeAnalyzer:
 
         gpu.clear_memory()
         return report
-
-        for dose in combo.get("dose_recommendations", []):
-            print(f"     Dose {dose['smiles'][:30]}... : {dose['dose_optimale_mg_kg']} mg/kg")
 
 
 # ══════════════════════════════════════════════════════════════════════

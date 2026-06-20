@@ -513,6 +513,8 @@ def main():
                 "dropout": DROPOUT,
                 "atom_feature_dim": ATOM_FEATURE_DIM,
                 "bond_feature_dim": BOND_FEATURE_DIM,
+                "conv_type": CONV_TYPE,
+                "attention_heads": ATTENTION_HEADS,
             },
         }
         torch.save(ckpt_data, latest_path)
