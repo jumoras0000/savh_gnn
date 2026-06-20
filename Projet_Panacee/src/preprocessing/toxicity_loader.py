@@ -133,7 +133,7 @@ class ToxicityDataset(Dataset):
 # ══════════════════════════════════════════════════════════════════════
 
 def collate_toxicity_batch(batch):
-    graphs, labels = zip(*batch)
+    graphs, labels = zip(*batch, strict=False)
     return Batch.from_data_list(graphs), torch.stack(labels)
 
 
@@ -144,8 +144,8 @@ def collate_toxicity_batch(batch):
 def _download_dataset(loader_fn, name, save_dir):
     try:
         import deepchem as dc
-    except ImportError:
-        raise ImportError("pip install deepchem")
+    except ImportError as e:
+        raise ImportError("pip install deepchem") from e
 
     save_path = Path(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)

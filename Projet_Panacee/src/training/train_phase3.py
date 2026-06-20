@@ -62,7 +62,7 @@ class WarmupCosineScheduler:
         else:
             progress = (epoch - self.warmup) / max(1, self.total - self.warmup)
             alpha = 0.5 * (1.0 + np.cos(np.pi * progress))
-        for pg, blr in zip(self.optimizer.param_groups, self.base_lrs):
+        for pg, blr in zip(self.optimizer.param_groups, self.base_lrs, strict=False):
             pg["lr"] = self.lr_min + (blr - self.lr_min) * alpha
 
     def get_last_lr(self):

@@ -285,7 +285,7 @@ class Solution:
 def dominates(a: Solution, b: Solution, maximize: List[bool]) -> bool:
     """Vérifie si la solution a domine b."""
     at_least_one_better = False
-    for i, (va, vb) in enumerate(zip(a.objectives, b.objectives)):
+    for i, (va, vb) in enumerate(zip(a.objectives, b.objectives, strict=False)):
         if maximize[i]:
             if va < vb:
                 return False

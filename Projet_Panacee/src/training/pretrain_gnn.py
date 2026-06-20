@@ -64,7 +64,7 @@ class PretrainDataset(Dataset):
 
 def collate_fn(batch):
     from torch_geometric.data import Batch
-    graphs, indices, features = zip(*batch)
+    graphs, indices, features = zip(*batch, strict=False)
     batch_graph = Batch.from_data_list(graphs)
     all_features = torch.cat(features, dim=0)
     return batch_graph, list(indices), all_features
@@ -88,7 +88,7 @@ class WarmupCosineScheduler:
         else:
             progress = (epoch - self.warmup_epochs) / max(1, self.total_epochs - self.warmup_epochs)
             alpha = 0.5 * (1.0 + np.cos(np.pi * progress))
-        for pg, base_lr in zip(self.optimizer.param_groups, self.base_lrs):
+        for pg, base_lr in zip(self.optimizer.param_groups, self.base_lrs, strict=False):
             pg["lr"] = self.lr_min + (base_lr - self.lr_min) * alpha
 
     def get_last_lr(self):

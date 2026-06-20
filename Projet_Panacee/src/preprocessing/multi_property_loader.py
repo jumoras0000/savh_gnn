@@ -46,8 +46,8 @@ def download_dataset(name: str, save_dir: str) -> dict:
     """
     try:
         import deepchem as dc
-    except ImportError:
-        raise ImportError("DeepChem requis : pip install deepchem")
+    except ImportError as e:
+        raise ImportError("DeepChem requis : pip install deepchem") from e
 
     os.makedirs(save_dir, exist_ok=True)
     loaders = {
@@ -296,7 +296,7 @@ def collate_multi_property(batch):
     Collate function pour MultiPropertyDataset.
     Retourne : (PyG Batch, dict de labels empilés)
     """
-    graphs, labels_list = zip(*batch)
+    graphs, labels_list = zip(*batch, strict=False)
 
     # Batch des graphes
     pyg_batch = Batch.from_data_list(list(graphs))

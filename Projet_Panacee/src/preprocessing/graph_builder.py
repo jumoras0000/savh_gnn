@@ -65,7 +65,9 @@ def smiles_to_graph(smiles: str):
         ]
         atom_features.append(features)
 
-    x = torch.tensor(atom_features, dtype=torch.float)
+    # Clamp [0,1] : garantit l'invariant de normalisation même pour les cas
+    # limites (hybridation OTHER=7 -> 7/6>1, degré/valence atypiques, etc.)
+    x = torch.tensor(atom_features, dtype=torch.float).clamp_(0.0, 1.0)
 
     # ── Arêtes (bidirectionnelles) ────────────────────────────────────
     edge_src, edge_dst, edge_attr_list = [], [], []

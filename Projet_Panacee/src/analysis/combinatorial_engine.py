@@ -46,8 +46,8 @@ logger = logging.getLogger("panacee.analysis")
 
 try:
     from torch_geometric.data import Batch
-except ImportError:
-    raise ImportError("torch_geometric requis : pip install torch-geometric")
+except ImportError as e:
+    raise ImportError("torch_geometric requis : pip install torch-geometric") from e
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -830,14 +830,14 @@ class PanaceeAnalyzer:
                 for sol in front:
                     pareto_results.append({
                         "smiles": sol.metadata.get("smiles", ""),
-                        "objectives": dict(zip(optimizer.objective_names, sol.objectives)),
+                        "objectives": dict(zip(optimizer.objective_names, sol.objectives, strict=False)),
                     })
 
                 report["pareto_front"] = pareto_results
                 if best_compromise:
                     report["pareto_best_compromise"] = {
                         "smiles": best_compromise.metadata.get("smiles", ""),
-                        "objectives": dict(zip(optimizer.objective_names, best_compromise.objectives)),
+                        "objectives": dict(zip(optimizer.objective_names, best_compromise.objectives, strict=False)),
                     }
                     print(f"  Front de Pareto: {len(front)} solutions non-dominées")
                     print(f"  Meilleur compromis: {best_compromise.metadata.get('smiles', '')[:40]}...")

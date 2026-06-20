@@ -176,7 +176,7 @@ class MolecularEncoder(nn.Module):
     def encode_nodes(self, x, edge_index, edge_attr):
         """Embeddings par nœud (avant pooling) — réutilisé par la tête MGM (Phase 1)."""
         h = self.atom_embedding(x)
-        for conv, norm, drop in zip(self.convs, self.norms, self.drops):
+        for conv, norm, drop in zip(self.convs, self.norms, self.drops, strict=False):
             h_res = h
             h = conv(h, edge_index, edge_attr)
             h = norm(h)

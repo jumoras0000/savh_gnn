@@ -84,7 +84,7 @@ class GraphCLDataset(Dataset):
 
 
 def collate_two_views(batch):
-    v1, v2 = zip(*batch)
+    v1, v2 = zip(*batch, strict=False)
     return Batch.from_data_list(list(v1)), Batch.from_data_list(list(v2))
 
 

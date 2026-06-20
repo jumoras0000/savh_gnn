@@ -171,6 +171,34 @@ def test_known_interactions():
           len(check_known_interactions(["warfarin"])) == 0)
 
 
+def test_gradual_unfreeze():
+    from src.models.encoder import MolecularEncoder
+    from src.models.toxicity_classifier import ToxicityClassifier
+    enc = MolecularEncoder(num_layers=3)
+    model = ToxicityClassifier(encoder=enc, num_tasks=12, freeze_encoder=True)
+
+    check("atom_embedding gelé au départ",
+          all(not p.requires_grad for p in model.encoder.atom_embedding.parameters()))
+
+    # Dégel complet (epoch >> freeze + n_layers)
+    model.gradual_unfreeze(epoch=100, total_freeze_epochs=2)
+    check("atom_embedding dégelé au dégel complet (bug corrigé)",
+          all(p.requires_grad for p in model.encoder.atom_embedding.parameters()))
+    check("pool_gate dégelé au dégel complet (bug corrigé)",
+          all(p.requires_grad for p in model.encoder.pool_gate.parameters()))
+    check("toutes les convs dégelées",
+          all(p.requires_grad for p in model.encoder.convs.parameters()))
+
+
+def test_graph_features_clamped():
+    from src.preprocessing.graph_builder import smiles_to_graph
+    # Molécule variée (cycles, hétéroatomes) -> features doivent rester dans [0,1]
+    for smi in ["CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "O=S(=O)(O)c1ccccc1", "[O-][N+](=O)c1ccccc1"]:
+        g = smiles_to_graph(smi)
+        check(f"features ∈ [0,1] pour {smi[:18]}",
+              g is not None and float(g.x.min()) >= 0.0 and float(g.x.max()) <= 1.0)
+
+
 if __name__ == "__main__":
     print("== ADMET risk inversion =="); test_admet_risk_inversion()
     print("== calibration =="); test_calibration()
@@ -179,5 +207,7 @@ if __name__ == "__main__":
     print("== latex report =="); test_latex_report()
     print("== profiling CPU =="); test_profiling_cpu()
     print("== known interactions =="); test_known_interactions()
+    print("== gradual unfreeze =="); test_gradual_unfreeze()
+    print("== graph features clamp =="); test_graph_features_clamped()
     print("\n" + ("==> BUGFIX TESTS OK" if _ok else "==> ECHEC"))
     sys.exit(0 if _ok else 1)

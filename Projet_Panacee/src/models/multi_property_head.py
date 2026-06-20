@@ -110,6 +110,13 @@ class MultiPropertyPredictor(nn.Module):
                     p.requires_grad = True
             for p in self.encoder.projection.parameters():
                 p.requires_grad = True
+            # Au dégel complet, dégeler aussi l'embedding d'entrée et le gating
+            # du pooling (sinon ces sous-modules ne s'entraînent JAMAIS).
+            if layers_to_unfreeze >= n_layers:
+                for p in self.encoder.atom_embedding.parameters():
+                    p.requires_grad = True
+                for p in self.encoder.pool_gate.parameters():
+                    p.requires_grad = True
 
     def encode(self, batch):
         """Retourne l'embedding moléculaire."""
