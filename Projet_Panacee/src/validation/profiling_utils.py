@@ -211,7 +211,9 @@ class MemoryProfiler:
         )
 
         self.snapshots.append((label, stats))
-        logger.debug(f"Memory snapshot ({label}): CPU={rss_mb:.1f}MB, GPU={gpu_mem_mb:.1f}MB")
+        # gpu_mem_mb peut être None (CPU) : ne pas le formater avec :.1f
+        gpu_str = f"{gpu_mem_mb:.1f}MB" if gpu_mem_mb is not None else "N/A"
+        logger.debug(f"Memory snapshot ({label}): CPU={rss_mb:.1f}MB, GPU={gpu_str}")
 
         return stats
 

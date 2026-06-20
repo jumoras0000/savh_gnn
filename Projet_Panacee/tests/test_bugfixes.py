@@ -136,10 +136,48 @@ def test_env_snapshot():
         check("snapshot sauvé en JSON valide", p.exists() and isinstance(json.load(open(p)), dict))
 
 
+# ──────────────────────────────────────────────────────────────────────
+def test_latex_report():
+    from src.validation.scientific_reporting import LaTeXReportGenerator
+
+    esc = LaTeXReportGenerator._escape_latex
+    # Échappement simple, SANS double-échappement des backslashes introduits
+    check("échappe '&' en '\\&'", esc("a & b") == r"a \& b")
+    check("échappe '_' et '%' proprement (pas de textbackslash parasite)",
+          esc("a_b 100%") == r"a\_b 100\%" and "textbackslash" not in esc("a_b 100%"))
+    check("backslash réel -> textbackslash",
+          esc("x\\y") == r"x\textbackslash{}y")
+
+    with tempfile.TemporaryDirectory() as d:
+        gen = LaTeXReportGenerator(Path(d))
+        header = gen._create_document_header("Titre", ["Auteur"])
+        check("inputenc utf8 (pas utf-8 invalide)",
+              "[utf8]" in header and "[utf-8]" not in header)
+
+
+def test_profiling_cpu():
+    from src.validation.profiling_utils import MemoryProfiler
+    prof = MemoryProfiler()
+    snap = prof.take_snapshot("test")  # ne doit PAS crasher sur CPU
+    check("take_snapshot OK sur CPU (pas de crash f-string None)", snap.rss_mb > 0)
+    check("gpu_memory_mb None sur CPU", snap.gpu_memory_mb is None)
+
+
+def test_known_interactions():
+    from src.knowledge.medical_rules import check_known_interactions
+    found = check_known_interactions(["warfarin", "aspirin"])
+    check("interaction warfarin+aspirin détectée", len(found) == 1)
+    check("une seule molécule -> aucune interaction",
+          len(check_known_interactions(["warfarin"])) == 0)
+
+
 if __name__ == "__main__":
     print("== ADMET risk inversion =="); test_admet_risk_inversion()
     print("== calibration =="); test_calibration()
     print("== reasoner mask/forward =="); test_reasoner_mask_and_forward()
     print("== env snapshot =="); test_env_snapshot()
+    print("== latex report =="); test_latex_report()
+    print("== profiling CPU =="); test_profiling_cpu()
+    print("== known interactions =="); test_known_interactions()
     print("\n" + ("==> BUGFIX TESTS OK" if _ok else "==> ECHEC"))
     sys.exit(0 if _ok else 1)

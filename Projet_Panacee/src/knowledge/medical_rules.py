@@ -519,11 +519,9 @@ def check_known_interactions(drug_classes: List[str]) -> List[DrugInteraction]:
     classes_lower = [c.lower() for c in drug_classes]
 
     for interaction in KNOWN_INTERACTIONS:
+        # L'interaction s'applique si les DEUX classes sont présentes (ordre indifférent)
         if (interaction.drug_a in classes_lower and
                 interaction.drug_b in classes_lower):
-            found.append(interaction)
-        elif (interaction.drug_b in classes_lower and
-              interaction.drug_a in classes_lower):
             found.append(interaction)
 
     return found

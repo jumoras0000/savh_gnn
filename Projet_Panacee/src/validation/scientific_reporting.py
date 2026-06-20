@@ -8,13 +8,12 @@ Génère des documents professionnels pour présenter les résultats :
   - Justifications statistiques
   - Méthodes et résultats
 """
+import re
 import logging
 import numpy as np
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 from datetime import datetime
 from pathlib import Path
-import matplotlib.pyplot as plt
-import json
 from dataclasses import dataclass
 
 logger = logging.getLogger("panacee.reporting")
@@ -101,7 +100,7 @@ class LaTeXReportGenerator:
         date = datetime.now().strftime("%d %B %Y")
 
         return f"""\\documentclass[11pt,a4paper]{{article}}
-\\usepackage[utf-8]{{inputenc}}
+\\usepackage[utf8]{{inputenc}}
 \\usepackage[T1]{{fontenc}}
 \\usepackage[margin=1in]{{geometry}}
 \\usepackage{{graphicx}}
@@ -193,24 +192,19 @@ class LaTeXReportGenerator:
 
     @staticmethod
     def _escape_latex(text: str) -> str:
-        """Échappe les caractères spéciaux LaTeX."""
-        escape_chars = {
-            "&": r"\&",
-            "%": r"\%",
-            "$": r"\$",
-            "#": r"\#",
-            "_": r"\_",
-            "{": r"\{",
-            "}": r"\}",
-            "~": r"\textasciitilde{}",
-            "^": r"\textasciicircum{}",
+        """Échappe les caractères spéciaux LaTeX.
+
+        Passe UNIQUE via regex : sinon des remplacements successifs ré-échappent
+        les backslashes/accolades qu'ils viennent d'introduire (LaTeX cassé).
+        """
+        conv = {
             "\\": r"\textbackslash{}",
+            "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_",
+            "{": r"\{", "}": r"\}",
+            "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
         }
-
-        for char, escaped in escape_chars.items():
-            text = text.replace(char, escaped)
-
-        return text
+        regex = re.compile("|".join(re.escape(k) for k in conv))
+        return regex.sub(lambda m: conv[m.group()], text)
 
 
 # ═══════════════════════════════════════════════════════════════

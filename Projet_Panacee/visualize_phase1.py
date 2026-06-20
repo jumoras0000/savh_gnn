@@ -3,7 +3,6 @@ Script de visualisation des résultats Phase 1.
 Extrait l'historique d'entraînement et crée des graphiques d'analyse.
 """
 import torch
-import json
 import matplotlib.pyplot as plt
 from pathlib import Path
 
@@ -30,15 +29,21 @@ except Exception as e:
 history = ckpt.get("history", [])
 config = ckpt.get("config", {})
 final_epoch = ckpt.get("epoch", "??")
-best_val_loss = ckpt.get("best_val_loss", "??")
-train_loss = ckpt.get("train_loss", "??")
-val_loss = ckpt.get("val_loss", "??")
+best_val_loss = ckpt.get("best_val_loss")
+train_loss = ckpt.get("train_loss")
+val_loss = ckpt.get("val_loss")
 
-print(f"\n📊 Informations du modèle:")
+
+def _fmt(v):
+    """Formate en .6f si numérique, sinon '??' (checkpoint incomplet)."""
+    return f"{v:.6f}" if isinstance(v, (int, float)) else "??"
+
+
+print("\n📊 Informations du modèle:")
 print(f"   • Époque finale: {final_epoch}")
-print(f"   • Meilleure val_loss: {best_val_loss:.6f}")
-print(f"   • Train loss final: {train_loss:.6f}")
-print(f"   • Val loss final: {val_loss:.6f}")
+print(f"   • Meilleure val_loss: {_fmt(best_val_loss)}")
+print(f"   • Train loss final: {_fmt(train_loss)}")
+print(f"   • Val loss final: {_fmt(val_loss)}")
 print(f"   • Architecture: {config}")
 
 if not history:
