@@ -1,0 +1,1214 @@
+genesys/
+    ├── archive
+    │   ├── DiffDock-main.zip
+    │   ├── openfold-main.zip
+    │   ├── schnetpack-master.zip
+    │   ├── t2m9jr5z96sbf2ld0gl8qot8mnh8.zip
+    │   └── torchdiffeq-master.zip
+    ├── DiffDock-main
+    │   ├── app
+    │   │   ├── __init__.py
+    │   │   ├── Dockerfile
+    │   │   ├── main.py
+    │   │   ├── mol_viewer.py
+    │   │   ├── README.md
+    │   │   ├── requirements.txt
+    │   │   └── run_utils.py
+    │   ├── confidence
+    │   │   ├── __init__.py
+    │   │   ├── confidence_train.py
+    │   │   └── dataset.py
+    │   ├── data
+    │   │   ├── 1a0q
+    │   │   │   ├── 1a0q_ligand.mol2
+    │   │   │   ├── 1a0q_ligand.sdf
+    │   │   │   └── 1a0q_protein_processed.pdb
+    │   │   ├── splits
+    │   │   │   ├── MOAD_generalisation_splits.pkl
+    │   │   │   ├── pdbids_2019
+    │   │   │   ├── posebusters_benchmark_set_ids.txt
+    │   │   │   ├── self_distillation_splits.pkl
+    │   │   │   ├── timesplit_no_lig_overlap_train
+    │   │   │   ├── timesplit_no_lig_overlap_val
+    │   │   │   ├── timesplit_test
+    │   │   │   ├── timesplit_test_no_rec_overlap
+    │   │   │   └── timesplit_val_filter
+    │   │   ├── protein_ligand_example.csv
+    │   │   └── testset_csv.csv
+    │   ├── datasets
+    │   │   ├── __init__.py
+    │   │   ├── conformer_matching.py
+    │   │   ├── constants.py
+    │   │   ├── dataloader.py
+    │   │   ├── esm_embedding_preparation.py
+    │   │   ├── esm_embeddings_to_pt.py
+    │   │   ├── loader.py
+    │   │   ├── moad.py
+    │   │   ├── parse_chi.py
+    │   │   ├── pdb.py
+    │   │   ├── pdbbind.py
+    │   │   ├── process_mols.py
+    │   │   └── sidechain_esm_embeddings_to_pt.py
+    │   ├── examples
+    │   │   ├── 1a46_ligand.sdf
+    │   │   ├── 1a46_protein_processed.pdb
+    │   │   ├── 1cbr_ligand.sdf
+    │   │   ├── 1cbr_protein.pdb
+    │   │   ├── 6ahs_ligand.sdf
+    │   │   ├── 6ahs_protein_processed.pdb
+    │   │   ├── 6moa_ligand.sdf
+    │   │   ├── 6moa_protein_processed.pdb
+    │   │   ├── 6o5u_ligand.sdf
+    │   │   ├── 6o5u_protein_processed.pdb
+    │   │   ├── 6w70.pdb
+    │   │   └── 6w70_ligand.sdf
+    │   ├── models
+    │   │   ├── __init__.py
+    │   │   ├── aa_model.py
+    │   │   ├── cg_model.py
+    │   │   ├── layers.py
+    │   │   ├── old_aa_model.py
+    │   │   ├── old_cg_model.py
+    │   │   └── tensor_layers.py
+    │   ├── spyrmsd
+    │   │   ├── graphs
+    │   │   │   ├── __init__.py
+    │   │   │   ├── _common.py
+    │   │   │   ├── gt.py
+    │   │   │   └── nx.py
+    │   │   ├── optional
+    │   │   │   ├── __init__.py
+    │   │   │   ├── obabel.py
+    │   │   │   └── rdkit.py
+    │   │   ├── __init__.py
+    │   │   ├── __main__.py
+    │   │   ├── _version.py
+    │   │   ├── constants.py
+    │   │   ├── due.py
+    │   │   ├── exceptions.py
+    │   │   ├── graph.py
+    │   │   ├── hungarian.py
+    │   │   ├── io.py
+    │   │   ├── LICENSE
+    │   │   ├── molecule.py
+    │   │   ├── qcp.py
+    │   │   ├── rmsd.py
+    │   │   └── utils.py
+    │   ├── utils
+    │   │   ├── __init__.py
+    │   │   ├── diffusion_utils.py
+    │   │   ├── download.py
+    │   │   ├── geometry.py
+    │   │   ├── gnina_utils.py
+    │   │   ├── inference_utils.py
+    │   │   ├── logging_utils.py
+    │   │   ├── molecules_utils.py
+    │   │   ├── parsing.py
+    │   │   ├── precompute_series.py
+    │   │   ├── print_device.py
+    │   │   ├── sampling.py
+    │   │   ├── so3.py
+    │   │   ├── torsion.py
+    │   │   ├── torus.py
+    │   │   ├── training.py
+    │   │   ├── utils.py
+    │   │   └── visualise.py
+    │   ├── .dockerignore
+    │   ├── .gitattributes
+    │   ├── .gitignore
+    │   ├── default_inference_args.yaml
+    │   ├── Dockerfile
+    │   ├── environment.yml
+    │   ├── evaluate.py
+    │   ├── inference.py
+    │   ├── LICENSE
+    │   ├── overview.png
+    │   ├── README.md
+    │   ├── requirements.txt
+    │   └── train.py
+    ├── index
+    │   ├── INDEX_general_NL.2020R1.lst
+    │   ├── INDEX_general_PL.2020R1.lst
+    │   ├── INDEX_general_PN.2020R1.lst
+    │   ├── INDEX_general_PP.2020R1.lst
+    │   └── README
+    ├── meddra_all_se.tsv
+    │   └── meddra_all_se.tsv
+    ├── OFFSIDES.csv
+    │   └── OFFSIDES.csv
+    ├── openfold-main
+    │   ├── .github
+    │   │   ├── workflows
+    │   │   │   ├── docker-image.yml
+    │   │   │   └── undefined_names.yml
+    │   │   └── dependabot.yml
+    │   ├── docs
+    │   │   ├── imgs
+    │   │   │   └── of_banner.png
+    │   │   ├── source
+    │   │   │   ├── Aux_seq_files.md
+    │   │   │   ├── conf.py
+    │   │   │   ├── convert_of_v1_weights.md
+    │   │   │   ├── FAQ.md
+    │   │   │   ├── index.md
+    │   │   │   ├── Inference.md
+    │   │   │   ├── Installation.md
+    │   │   │   ├── Multimer_Inference.md
+    │   │   │   ├── OpenFold_Parameters.md
+    │   │   │   ├── OpenFold_Training_Setup.md
+    │   │   │   ├── original_readme.md
+    │   │   │   ├── Single_Sequence_Inference.md
+    │   │   │   └── Training_OpenFold.md
+    │   │   ├── environment.yml
+    │   │   └── Makefile
+    │   ├── examples
+    │   │   └── monomer
+    │   │       ├── alignments
+    │   │       │   └── 6KWC_1
+    │   │       │       ├── bfd_uniref_hits.a3m
+    │   │       │       ├── hhsearch_output.hhr
+    │   │       │       ├── mgnify_hits.sto
+    │   │       │       └── uniref90_hits.sto
+    │   │       ├── fasta_dir
+    │   │       │   └── 6kwc.fasta
+    │   │       ├── sample_predictions
+    │   │       │   ├── 6KWC_1_model_1_ptm_relaxed.pdb
+    │   │       │   └── 6KWC_1_model_1_ptm_unrelaxed.pdb
+    │   │       └── inference.sh
+    │   ├── experiments
+    │   │   └── test_templates_openfold.py
+    │   ├── imgs
+    │   │   └── of_banner.png
+    │   ├── notebooks
+    │   │   ├── environment.yml
+    │   │   └── OpenFold.ipynb
+    │   ├── openfold
+    │   │   ├── data
+    │   │   │   ├── tools
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── hhblits.py
+    │   │   │   │   ├── hhsearch.py
+    │   │   │   │   ├── hmmbuild.py
+    │   │   │   │   ├── hmmsearch.py
+    │   │   │   │   ├── jackhmmer.py
+    │   │   │   │   ├── kalign.py
+    │   │   │   │   ├── parse_msa_files.py
+    │   │   │   │   └── utils.py
+    │   │   │   ├── __init__.py
+    │   │   │   ├── data_modules.py
+    │   │   │   ├── data_pipeline.py
+    │   │   │   ├── data_transforms.py
+    │   │   │   ├── data_transforms_multimer.py
+    │   │   │   ├── errors.py
+    │   │   │   ├── feature_pipeline.py
+    │   │   │   ├── feature_processing_multimer.py
+    │   │   │   ├── input_pipeline.py
+    │   │   │   ├── input_pipeline_multimer.py
+    │   │   │   ├── mmcif_parsing.py
+    │   │   │   ├── msa_identifiers.py
+    │   │   │   ├── msa_pairing.py
+    │   │   │   ├── parsers.py
+    │   │   │   └── templates.py
+    │   │   ├── model
+    │   │   │   ├── __init__.py
+    │   │   │   ├── dropout.py
+    │   │   │   ├── embedders.py
+    │   │   │   ├── evoformer.py
+    │   │   │   ├── heads.py
+    │   │   │   ├── model.py
+    │   │   │   ├── msa.py
+    │   │   │   ├── outer_product_mean.py
+    │   │   │   ├── pair_transition.py
+    │   │   │   ├── primitives.py
+    │   │   │   ├── structure_module.py
+    │   │   │   ├── template.py
+    │   │   │   ├── torchscript.py
+    │   │   │   ├── triangular_attention.py
+    │   │   │   └── triangular_multiplicative_update.py
+    │   │   ├── np
+    │   │   │   ├── relax
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── amber_minimize.py
+    │   │   │   │   ├── cleanup.py
+    │   │   │   │   ├── relax.py
+    │   │   │   │   └── utils.py
+    │   │   │   ├── __init__.py
+    │   │   │   ├── protein.py
+    │   │   │   └── residue_constants.py
+    │   │   ├── resources
+    │   │   │   └── __init__.py
+    │   │   ├── utils
+    │   │   │   ├── geometry
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── quat_rigid.py
+    │   │   │   │   ├── rigid_matrix_vector.py
+    │   │   │   │   ├── rotation_matrix.py
+    │   │   │   │   ├── test_utils.py
+    │   │   │   │   ├── utils.py
+    │   │   │   │   └── vector.py
+    │   │   │   ├── kernel
+    │   │   │   │   ├── csrc
+    │   │   │   │   │   ├── compat.h
+    │   │   │   │   │   ├── softmax_cuda.cpp
+    │   │   │   │   │   ├── softmax_cuda_kernel.cu
+    │   │   │   │   │   └── softmax_cuda_stub.cpp
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   └── attention_core.py
+    │   │   │   ├── __init__.py
+    │   │   │   ├── all_atom_multimer.py
+    │   │   │   ├── argparse_utils.py
+    │   │   │   ├── callbacks.py
+    │   │   │   ├── checkpointing.py
+    │   │   │   ├── chunk_utils.py
+    │   │   │   ├── exponential_moving_average.py
+    │   │   │   ├── feats.py
+    │   │   │   ├── import_weights.py
+    │   │   │   ├── logger.py
+    │   │   │   ├── loss.py
+    │   │   │   ├── lr_schedulers.py
+    │   │   │   ├── multi_chain_permutation.py
+    │   │   │   ├── precision_utils.py
+    │   │   │   ├── rigid_utils.py
+    │   │   │   ├── script_utils.py
+    │   │   │   ├── superimposition.py
+    │   │   │   ├── tensor_utils.py
+    │   │   │   ├── tensorrt_lazy_compiler.py
+    │   │   │   ├── tensorrt_utils.py
+    │   │   │   ├── trace_utils.py
+    │   │   │   └── validation_metrics.py
+    │   │   ├── __init__.py
+    │   │   └── config.py
+    │   ├── scripts
+    │   │   ├── alignment_db_scripts
+    │   │   │   ├── add_non_unique_to_alignment_db.py
+    │   │   │   ├── create_alignment_db.py
+    │   │   │   ├── create_alignment_db_sharded.py
+    │   │   │   └── unify_alignment_db_indices.py
+    │   │   ├── slurm_scripts
+    │   │   │   └── run_uniclust30_search.sh
+    │   │   ├── __init__.py
+    │   │   ├── activate_conda_env.sh
+    │   │   ├── alignment_data_to_fasta.py
+    │   │   ├── build_deepspeed_config.py
+    │   │   ├── colabfold_search.sh
+    │   │   ├── convert_of_weights_to_jax.py
+    │   │   ├── convert_v1_to_v2_weights.py
+    │   │   ├── data_dir_to_fasta.py
+    │   │   ├── deactivate_conda_env.sh
+    │   │   ├── deepspeed_inference_test.py
+    │   │   ├── download_alphafold_dbs.sh
+    │   │   ├── download_alphafold_params.sh
+    │   │   ├── download_bfd.sh
+    │   │   ├── download_cameo.py
+    │   │   ├── download_colabfold_envdb.sh
+    │   │   ├── download_mgnify.sh
+    │   │   ├── download_mmseqs_dbs.sh
+    │   │   ├── download_openfold_params.sh
+    │   │   ├── download_openfold_params_gdrive.sh
+    │   │   ├── download_openfold_params_huggingface.sh
+    │   │   ├── download_openfold_soloseq_params.sh
+    │   │   ├── download_pdb70.sh
+    │   │   ├── download_pdb_mmcif.sh
+    │   │   ├── download_pdb_seqres.sh
+    │   │   ├── download_roda_pdbs.sh
+    │   │   ├── download_small_bfd.sh
+    │   │   ├── download_soloseq_embeddings.sh
+    │   │   ├── download_uniclust30.sh
+    │   │   ├── download_uniprot.sh
+    │   │   ├── download_uniref30.sh
+    │   │   ├── download_uniref90.sh
+    │   │   ├── expand_alignment_duplicates.py
+    │   │   ├── fasta_to_clusterfile.py
+    │   │   ├── flatten_roda.sh
+    │   │   ├── generate_alphafold_feature_dict.py
+    │   │   ├── generate_chain_data_cache.py
+    │   │   ├── generate_mmcif_cache.py
+    │   │   ├── install_hh_suite.sh
+    │   │   ├── install_third_party_dependencies.sh
+    │   │   ├── precompute_alignments.py
+    │   │   ├── precompute_alignments_mmseqs.py
+    │   │   ├── precompute_embeddings.py
+    │   │   ├── prep_mmseqs_dbs.sh
+    │   │   ├── prep_proteinnet_msas.py
+    │   │   ├── run_unit_tests.sh
+    │   │   ├── unpack_proteinnet.py
+    │   │   ├── utils.py
+    │   │   └── vars.sh
+    │   ├── tests
+    │   │   ├── test_data
+    │   │   │   ├── alignments
+    │   │   │   │   ├── 2q2k_A
+    │   │   │   │   │   ├── bfd_uniclust_hits.a3m
+    │   │   │   │   │   ├── hmm_output.sto
+    │   │   │   │   │   ├── mgnify_hits.sto
+    │   │   │   │   │   ├── uniprot_hits.sto
+    │   │   │   │   │   └── uniref90_hits.sto
+    │   │   │   │   ├── 2q2k_B
+    │   │   │   │   │   ├── bfd_uniclust_hits.a3m
+    │   │   │   │   │   ├── hmm_output.sto
+    │   │   │   │   │   ├── mgnify_hits.sto
+    │   │   │   │   │   ├── uniprot_hits.sto
+    │   │   │   │   │   └── uniref90_hits.sto
+    │   │   │   │   ├── bfd_uniclust_hits.a3m
+    │   │   │   │   ├── mgnify_hits.sto
+    │   │   │   │   ├── pdb70_hits.hhr
+    │   │   │   │   └── uniref90_hits.sto
+    │   │   │   ├── mmcifs
+    │   │   │   │   ├── 1hf9.cif
+    │   │   │   │   ├── 1psm.cif
+    │   │   │   │   ├── 2crb.cif
+    │   │   │   │   ├── 2q2k.cif
+    │   │   │   │   ├── 3u8v.cif
+    │   │   │   │   ├── 3zee.cif
+    │   │   │   │   ├── 4i6p.cif
+    │   │   │   │   ├── 4zey.cif
+    │   │   │   │   └── 5kc1.cif
+    │   │   │   ├── alphafold_feature_dict.pickle
+    │   │   │   ├── features.pkl
+    │   │   │   ├── sample_feats.pickle.gz
+    │   │   │   ├── short.fasta
+    │   │   │   └── train_mmcifs_cache.json
+    │   │   ├── __init__.py
+    │   │   ├── compare_utils.py
+    │   │   ├── config.py
+    │   │   ├── data_utils.py
+    │   │   ├── test_cuequivariance.py
+    │   │   ├── test_data_pipeline.py
+    │   │   ├── test_data_transforms.py
+    │   │   ├── test_deepspeed_evo_attention.py
+    │   │   ├── test_embedders.py
+    │   │   ├── test_evoformer.py
+    │   │   ├── test_feats.py
+    │   │   ├── test_import_weights.py
+    │   │   ├── test_kernels.py
+    │   │   ├── test_loss.py
+    │   │   ├── test_model.py
+    │   │   ├── test_msa.py
+    │   │   ├── test_multimer_datamodule.py
+    │   │   ├── test_outer_product_mean.py
+    │   │   ├── test_pair_transition.py
+    │   │   ├── test_permutation.py
+    │   │   ├── test_primitives.py
+    │   │   ├── test_structure_module.py
+    │   │   ├── test_template.py
+    │   │   ├── test_triangular_attention.py
+    │   │   ├── test_triangular_multiplicative_update.py
+    │   │   └── test_utils.py
+    │   ├── .gitignore
+    │   ├── .readthedocs.yaml
+    │   ├── CITATION.cff
+    │   ├── deepspeed_config.json
+    │   ├── Dockerfile
+    │   ├── environment.yml
+    │   ├── LICENSE
+    │   ├── README.md
+    │   ├── run_pretrained_openfold.py
+    │   ├── setup.py
+    │   ├── thread_sequence.py
+    │   └── train_openfold.py
+    ├── schnetpack-master
+    │   ├── .github
+    │   │   └── workflows
+    │   │       ├── black.yml
+    │   │       └── python-publish.yml
+    │   ├── docs
+    │   │   ├── _templates
+    │   │   │   └── autosummary
+    │   │   │       └── classtemplate.rst
+    │   │   ├── api
+    │   │   │   ├── atomistic.rst
+    │   │   │   ├── data.rst
+    │   │   │   ├── datasets.rst
+    │   │   │   ├── md.rst
+    │   │   │   ├── model.rst
+    │   │   │   ├── nn.rst
+    │   │   │   ├── representation.rst
+    │   │   │   ├── schnetpack.rst
+    │   │   │   ├── task.rst
+    │   │   │   ├── train.rst
+    │   │   │   └── transform.rst
+    │   │   ├── pictures
+    │   │   │   └── tensorboard.png
+    │   │   ├── userguide
+    │   │   │   ├── configs.rst
+    │   │   │   ├── md.rst
+    │   │   │   └── overview.rst
+    │   │   ├── conf.py
+    │   │   ├── getstarted.rst
+    │   │   ├── howtos
+    │   │   ├── index.rst
+    │   │   ├── Makefile
+    │   │   ├── sphinx-requirements.txt
+    │   │   └── tutorials
+    │   ├── examples
+    │   │   ├── howtos
+    │   │   │   ├── howto_batchwise_relaxations.ipynb
+    │   │   │   ├── howto_ensemble_calculation.ipynb
+    │   │   │   └── lammps.rst
+    │   │   ├── trained_models
+    │   │   │   └── rmd17_ethanol
+    │   │   │       ├── painn_1
+    │   │   │       │   ├── best_model
+    │   │   │       │   ├── config.yaml
+    │   │   │       │   └── split.npz
+    │   │   │       ├── painn_2
+    │   │   │       │   ├── best_model
+    │   │   │       │   ├── config.yaml
+    │   │   │       │   └── split.npz
+    │   │   │       ├── painn_3
+    │   │   │       │   ├── best_model
+    │   │   │       │   ├── config.yaml
+    │   │   │       │   └── split.npz
+    │   │   │       ├── painn_4
+    │   │   │       │   ├── best_model
+    │   │   │       │   ├── config.yaml
+    │   │   │       │   └── split.npz
+    │   │   │       └── painn_5
+    │   │   │           ├── best_model
+    │   │   │           ├── config.yaml
+    │   │   │           └── split.npz
+    │   │   ├── tutorials
+    │   │   │   ├── tutorials_figures
+    │   │   │   │   ├── integrator.svg
+    │   │   │   │   ├── md_flowchart.svg
+    │   │   │   │   └── rpmd.svg
+    │   │   │   ├── .gitattributes
+    │   │   │   ├── tutorial_01_preparing_data.ipynb
+    │   │   │   ├── tutorial_02_qm9.ipynb
+    │   │   │   ├── tutorial_03_force_models.ipynb
+    │   │   │   ├── tutorial_04_molecular_dynamics.ipynb
+    │   │   │   └── tutorial_05_materials.ipynb
+    │   │   └── README.md
+    │   ├── interfaces
+    │   │   └── lammps
+    │   │       ├── examples
+    │   │       │   └── aspirin
+    │   │       │       ├── aspirin.data
+    │   │       │       ├── aspirin_md.in
+    │   │       │       └── best_model
+    │   │       ├── pair_schnetpack.cpp
+    │   │       ├── pair_schnetpack.h
+    │   │       └── patch_lammps.sh
+    │   ├── src
+    │   │   ├── schnetpack
+    │   │   │   ├── atomistic
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── aggregation.py
+    │   │   │   │   ├── atomwise.py
+    │   │   │   │   ├── distances.py
+    │   │   │   │   ├── electrostatic.py
+    │   │   │   │   ├── external_fields.py
+    │   │   │   │   ├── nuclear_repulsion.py
+    │   │   │   │   └── response.py
+    │   │   │   ├── configs
+    │   │   │   │   ├── callbacks
+    │   │   │   │   │   ├── checkpoint.yaml
+    │   │   │   │   │   ├── earlystopping.yaml
+    │   │   │   │   │   ├── ema.yaml
+    │   │   │   │   │   └── lrmonitor.yaml
+    │   │   │   │   ├── data
+    │   │   │   │   │   ├── sampler
+    │   │   │   │   │   │   └── stratified_property.yaml
+    │   │   │   │   │   ├── ani1.yaml
+    │   │   │   │   │   ├── custom.yaml
+    │   │   │   │   │   ├── iso17.yaml
+    │   │   │   │   │   ├── materials_project.yaml
+    │   │   │   │   │   ├── md17.yaml
+    │   │   │   │   │   ├── md22.yaml
+    │   │   │   │   │   ├── omdb.yaml
+    │   │   │   │   │   ├── qm7x.yaml
+    │   │   │   │   │   ├── qm9.yaml
+    │   │   │   │   │   └── rmd17.yaml
+    │   │   │   │   ├── experiment
+    │   │   │   │   │   ├── md17.yaml
+    │   │   │   │   │   ├── qm9_atomwise.yaml
+    │   │   │   │   │   ├── qm9_dipole.yaml
+    │   │   │   │   │   ├── response.yaml
+    │   │   │   │   │   └── rmd17.yaml
+    │   │   │   │   ├── globals
+    │   │   │   │   │   └── default_globals.yaml
+    │   │   │   │   ├── logger
+    │   │   │   │   │   ├── aim.yaml
+    │   │   │   │   │   ├── csv.yaml
+    │   │   │   │   │   ├── tensorboard.yaml
+    │   │   │   │   │   └── wandb.yaml
+    │   │   │   │   ├── model
+    │   │   │   │   │   ├── representation
+    │   │   │   │   │   │   ├── radial_basis
+    │   │   │   │   │   │   │   ├── bessel.yaml
+    │   │   │   │   │   │   │   └── gaussian.yaml
+    │   │   │   │   │   │   ├── field_schnet.yaml
+    │   │   │   │   │   │   ├── painn.yaml
+    │   │   │   │   │   │   ├── schnet.yaml
+    │   │   │   │   │   │   └── so3net.yaml
+    │   │   │   │   │   └── nnp.yaml
+    │   │   │   │   ├── run
+    │   │   │   │   │   └── default_run.yaml
+    │   │   │   │   ├── task
+    │   │   │   │   │   ├── optimizer
+    │   │   │   │   │   │   ├── adabelief.yaml
+    │   │   │   │   │   │   ├── adam.yaml
+    │   │   │   │   │   │   └── sgd.yaml
+    │   │   │   │   │   ├── scheduler
+    │   │   │   │   │   │   └── reduce_on_plateau.yaml
+    │   │   │   │   │   └── default_task.yaml
+    │   │   │   │   ├── trainer
+    │   │   │   │   │   ├── ddp_debug.yaml
+    │   │   │   │   │   ├── ddp_trainer.yaml
+    │   │   │   │   │   ├── debug_trainer.yaml
+    │   │   │   │   │   └── default_trainer.yaml
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── predict.yaml
+    │   │   │   │   └── train.yaml
+    │   │   │   ├── data
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── atoms.py
+    │   │   │   │   ├── datamodule.py
+    │   │   │   │   ├── loader.py
+    │   │   │   │   ├── sampler.py
+    │   │   │   │   ├── splitting.py
+    │   │   │   │   └── stats.py
+    │   │   │   ├── datasets
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── ani1.py
+    │   │   │   │   ├── iso17.py
+    │   │   │   │   ├── materials_project.py
+    │   │   │   │   ├── md17.py
+    │   │   │   │   ├── md22.py
+    │   │   │   │   ├── omdb.py
+    │   │   │   │   ├── qm7x.py
+    │   │   │   │   ├── qm9.py
+    │   │   │   │   ├── rmd17.py
+    │   │   │   │   └── tmqm.py
+    │   │   │   ├── interfaces
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── ase_interface.py
+    │   │   │   │   └── batchwise_optimization.py
+    │   │   │   ├── md
+    │   │   │   │   ├── calculators
+    │   │   │   │   │   ├── __init__.py
+    │   │   │   │   │   ├── base_calculator.py
+    │   │   │   │   │   ├── ensemble_calculator.py
+    │   │   │   │   │   ├── lj_calculator.py
+    │   │   │   │   │   ├── orca_calculator.py
+    │   │   │   │   │   └── schnetpack_calculator.py
+    │   │   │   │   ├── data
+    │   │   │   │   │   ├── __init__.py
+    │   │   │   │   │   ├── hdf5_data.py
+    │   │   │   │   │   └── spectra.py
+    │   │   │   │   ├── md_configs
+    │   │   │   │   │   ├── calculator
+    │   │   │   │   │   │   ├── neighbor_list
+    │   │   │   │   │   │   │   ├── ase.yaml
+    │   │   │   │   │   │   │   ├── matscipy.yaml
+    │   │   │   │   │   │   │   └── torch.yaml
+    │   │   │   │   │   │   ├── lj.yaml
+    │   │   │   │   │   │   ├── orca.yaml
+    │   │   │   │   │   │   ├── spk.yaml
+    │   │   │   │   │   │   └── spk_ensemble.yaml
+    │   │   │   │   │   ├── callbacks
+    │   │   │   │   │   │   ├── checkpoint.yaml
+    │   │   │   │   │   │   ├── hdf5.yaml
+    │   │   │   │   │   │   └── tensorboard.yaml
+    │   │   │   │   │   ├── dynamics
+    │   │   │   │   │   │   ├── barostat
+    │   │   │   │   │   │   │   ├── nhc_aniso.yaml
+    │   │   │   │   │   │   │   ├── nhc_iso.yaml
+    │   │   │   │   │   │   │   └── pile_rpmd.yaml
+    │   │   │   │   │   │   ├── integrator
+    │   │   │   │   │   │   │   ├── md.yaml
+    │   │   │   │   │   │   │   └── rpmd.yaml
+    │   │   │   │   │   │   ├── thermostat
+    │   │   │   │   │   │   │   ├── berendsen.yaml
+    │   │   │   │   │   │   │   ├── gle.yaml
+    │   │   │   │   │   │   │   ├── langevin.yaml
+    │   │   │   │   │   │   │   ├── nhc.yaml
+    │   │   │   │   │   │   │   ├── pi_gle.yaml
+    │   │   │   │   │   │   │   ├── pi_nhc_global.yaml
+    │   │   │   │   │   │   │   ├── pi_nhc_local.yaml
+    │   │   │   │   │   │   │   ├── piglet.yaml
+    │   │   │   │   │   │   │   ├── pile_global.yaml
+    │   │   │   │   │   │   │   ├── pile_local.yaml
+    │   │   │   │   │   │   │   └── trpmd.yaml
+    │   │   │   │   │   │   └── base.yaml
+    │   │   │   │   │   ├── system
+    │   │   │   │   │   │   ├── initializer
+    │   │   │   │   │   │   │   ├── maxwell_boltzmann.yaml
+    │   │   │   │   │   │   │   └── uniform.yaml
+    │   │   │   │   │   │   └── system.yaml
+    │   │   │   │   │   ├── __init__.py
+    │   │   │   │   │   └── config.yaml
+    │   │   │   │   ├── parsers
+    │   │   │   │   │   ├── __init__.py
+    │   │   │   │   │   └── orca_parser.py
+    │   │   │   │   ├── simulation_hooks
+    │   │   │   │   │   ├── __init__.py
+    │   │   │   │   │   ├── barostats.py
+    │   │   │   │   │   ├── barostats_rpmd.py
+    │   │   │   │   │   ├── basic_hooks.py
+    │   │   │   │   │   ├── callback_hooks.py
+    │   │   │   │   │   ├── thermostats.py
+    │   │   │   │   │   └── thermostats_rpmd.py
+    │   │   │   │   ├── utils
+    │   │   │   │   │   ├── __init__.py
+    │   │   │   │   │   ├── md_config.py
+    │   │   │   │   │   ├── normal_model_transformation.py
+    │   │   │   │   │   └── thermostat_utils.py
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── cli.py
+    │   │   │   │   ├── initial_conditions.py
+    │   │   │   │   ├── integrators.py
+    │   │   │   │   ├── neighborlist_md.py
+    │   │   │   │   ├── simulator.py
+    │   │   │   │   └── system.py
+    │   │   │   ├── model
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   └── base.py
+    │   │   │   ├── nn
+    │   │   │   │   ├── ops
+    │   │   │   │   │   ├── __init__.py
+    │   │   │   │   │   ├── math.py
+    │   │   │   │   │   └── so3.py
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── activations.py
+    │   │   │   │   ├── base.py
+    │   │   │   │   ├── blocks.py
+    │   │   │   │   ├── cutoff.py
+    │   │   │   │   ├── embedding.py
+    │   │   │   │   ├── equivariant.py
+    │   │   │   │   ├── radial.py
+    │   │   │   │   ├── scatter.py
+    │   │   │   │   ├── so3.py
+    │   │   │   │   └── utils.py
+    │   │   │   ├── representation
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── field_schnet.py
+    │   │   │   │   ├── painn.py
+    │   │   │   │   ├── schnet.py
+    │   │   │   │   └── so3net.py
+    │   │   │   ├── train
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── callbacks.py
+    │   │   │   │   ├── lr_scheduler.py
+    │   │   │   │   └── metrics.py
+    │   │   │   ├── transform
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── atomistic.py
+    │   │   │   │   ├── base.py
+    │   │   │   │   ├── casting.py
+    │   │   │   │   ├── neighborlist.py
+    │   │   │   │   └── response.py
+    │   │   │   ├── utils
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── compatibility.py
+    │   │   │   │   └── script.py
+    │   │   │   ├── __init__.py
+    │   │   │   ├── cli.py
+    │   │   │   ├── properties.py
+    │   │   │   ├── task.py
+    │   │   │   └── units.py
+    │   │   └── scripts
+    │   │       ├── spkconvert
+    │   │       ├── spkdeploy
+    │   │       ├── spkmd
+    │   │       ├── spkpredict
+    │   │       └── spktrain
+    │   ├── tests
+    │   │   ├── atomistic
+    │   │   │   ├── __init__.py
+    │   │   │   ├── test_offset.py
+    │   │   │   └── test_response.py
+    │   │   ├── data
+    │   │   │   ├── __init__.py
+    │   │   │   ├── conftest.py
+    │   │   │   ├── test_data.py
+    │   │   │   ├── test_datasets.py
+    │   │   │   ├── test_loader.py
+    │   │   │   └── test_transforms.py
+    │   │   ├── ensemble
+    │   │   │   └── test_ensemble.py
+    │   │   ├── nn
+    │   │   │   ├── __init__.py
+    │   │   │   ├── test_activations.py
+    │   │   │   ├── test_cutoff.py
+    │   │   │   ├── test_radial.py
+    │   │   │   └── test_schnet.py
+    │   │   ├── testdata
+    │   │   │   ├── md_ethanol.model
+    │   │   │   ├── md_ethanol.xyz
+    │   │   │   ├── si16.model
+    │   │   │   └── test_qm9.db
+    │   │   ├── user_config
+    │   │   │   └── user_exp.yaml
+    │   │   ├── __init__.py
+    │   │   ├── conftest.py
+    │   │   └── README.md
+    │   ├── .gitignore
+    │   ├── .pre-commit-config.yaml
+    │   ├── LICENSE
+    │   ├── pyproject.toml
+    │   ├── README.md
+    │   ├── readthedocs.yaml
+    │   └── tox.ini
+    ├── t2m9jr5z96sbf2ld0gl8qot8mnh8
+    │   ├── data_dictionary.csv
+    │   ├── nlm_protocol_definitions.html
+    │   ├── nlm_results_definitions.html
+    │   ├── postgres.dmp
+    │   └── schema.png
+    ├── torchdiffeq-master
+    │   ├── assets
+    │   │   ├── bouncing_ball.png
+    │   │   ├── cnf_demo.gif
+    │   │   ├── ode_demo.gif
+    │   │   ├── odenet_0_viz.png
+    │   │   └── resnet_0_viz.png
+    │   ├── examples
+    │   │   ├── bouncing_ball.py
+    │   │   ├── cnf.py
+    │   │   ├── latent_ode.py
+    │   │   ├── learn_physics.py
+    │   │   ├── ode_demo.py
+    │   │   ├── odenet_mnist.py
+    │   │   └── README.md
+    │   ├── tests
+    │   │   ├── DETEST
+    │   │   │   ├── detest.py
+    │   │   │   └── run.py
+    │   │   ├── api_tests.py
+    │   │   ├── event_tests.py
+    │   │   ├── gradient_tests.py
+    │   │   ├── norm_tests.py
+    │   │   ├── odeint_tests.py
+    │   │   ├── problems.py
+    │   │   └── run_all.py
+    │   ├── torchdiffeq
+    │   │   ├── _impl
+    │   │   │   ├── __init__.py
+    │   │   │   ├── adaptive_heun.py
+    │   │   │   ├── adjoint.py
+    │   │   │   ├── bosh3.py
+    │   │   │   ├── dopri5.py
+    │   │   │   ├── dopri8.py
+    │   │   │   ├── event_handling.py
+    │   │   │   ├── fehlberg2.py
+    │   │   │   ├── fixed_adams.py
+    │   │   │   ├── fixed_grid.py
+    │   │   │   ├── fixed_grid_implicit.py
+    │   │   │   ├── interp.py
+    │   │   │   ├── misc.py
+    │   │   │   ├── odeint.py
+    │   │   │   ├── rk_common.py
+    │   │   │   ├── scipy_wrapper.py
+    │   │   │   ├── solvers.py
+    │   │   │   └── tsit5.py
+    │   │   └── __init__.py
+    │   ├── .gitignore
+    │   ├── CITATION.cff
+    │   ├── FAQ.md
+    │   ├── FURTHER_DOCUMENTATION.md
+    │   ├── LICENSE
+    │   ├── README.md
+    │   └── setup.py
+    ├── tox21-challenge
+    │   ├── AhR
+    │   │   ├── nr2-0OWXM4vHT63G-1416803630000.txt
+    │   │   ├── nr2-0rrCRr1iGnAa-1416016612000.txt
+    │   │   ├── nr2-1y5bBzcjTdyv-1415887043000.txt
+    │   │   ├── nr2-3PMJZyJsvBxt-1416021105000.txt
+    │   │   ├── nr2-3xT4nfbxs6Z2-1415892212000.txt
+    │   │   ├── nr2-6aTWOl8APWhZ-1416012903000.txt
+    │   │   ├── nr2-7vClKDT8bLo4-1416803153000.txt
+    │   │   ├── nr2-8CeeevcepNiT-1416010906000.txt
+    │   │   ├── nr2-Aksc2ISDF6Nx-1415994998000.txt
+    │   │   ├── nr2-BLjJznx7OKd8-1415996239000.txt
+    │   │   ├── nr2-c9ydZlFremqr-1415890100000.txt
+    │   │   ├── nr2-CIlZQhZ4MQpT-1416497891000.txt
+    │   │   ├── nr2-cqNtSJ45VNW1-1416020720000.txt
+    │   │   ├── nr2-cTJdTvGCFzD7-1416005297000.txt
+    │   │   ├── nr2-DRCIEtftLJWp-1416804318000.txt
+    │   │   ├── nr2-gFR0PCO6skfQ-1416668386000.txt
+    │   │   ├── nr2-H1uMJkVyd2Pq-1416804793000.txt
+    │   │   ├── nr2-JfBp468wEtFj-1415971059000.txt
+    │   │   ├── nr2-jLcjjPtxDE7U-1415310157000.txt
+    │   │   ├── nr2-JRj9lggAIHeW-1416026594000.txt
+    │   │   ├── nr2-JwyG36hKzBVY-1416805109000.txt
+    │   │   ├── nr2-K2OXi40im59G-1413441072000.txt
+    │   │   ├── nr2-km129vyL8Uio-1416007228000.txt
+    │   │   ├── nr2-knH7B0nkCMsv-1416016990000.txt
+    │   │   ├── nr2-L8Vc9OkVfXlW-1414118770000.txt
+    │   │   ├── nr2-mbqG0Pqg2b1e-1416781278000.txt
+    │   │   ├── nr2-okhAaW4kvLAN-1416801348000.txt
+    │   │   ├── nr2-SbH6MG0H6LuI-1413457382000.txt
+    │   │   ├── nr2-Su02EOHF7XkE-1416804910000.txt
+    │   │   ├── nr2-TwFGXVQBVG1x-1416680542000.txt
+    │   │   ├── nr2-twMPKSnQHDxQ-1415838072000.txt
+    │   │   ├── nr2-UdcRGQ83L94I-1416020838000.txt
+    │   │   ├── nr2-UwQTSEYPN6sL-1416720259000.txt
+    │   │   ├── nr2-yCJAap8FtiNO-1416013643000.txt
+    │   │   └── nr2-zTY2BeQZ0FQ5-1413463122000.txt
+    │   ├── AR
+    │   │   ├── nr1-0OWXM4vHT63G-1416803644000.txt
+    │   │   ├── nr1-0rrCRr1iGnAa-1416016621000.txt
+    │   │   ├── nr1-1y5bBzcjTdyv-1415887197000.txt
+    │   │   ├── nr1-3PMJZyJsvBxt-1416021116000.txt
+    │   │   ├── nr1-3xT4nfbxs6Z2-1415892229000.txt
+    │   │   ├── nr1-6aTWOl8APWhZ-1416012918000.txt
+    │   │   ├── nr1-7vClKDT8bLo4-1416803158000.txt
+    │   │   ├── nr1-8CeeevcepNiT-1416010917000.txt
+    │   │   ├── nr1-Aksc2ISDF6Nx-1415995015000.txt
+    │   │   ├── nr1-BLjJznx7OKd8-1415996263000.txt
+    │   │   ├── nr1-c9ydZlFremqr-1415890149000.txt
+    │   │   ├── nr1-CIlZQhZ4MQpT-1416498034000.txt
+    │   │   ├── nr1-cqNtSJ45VNW1-1416020735000.txt
+    │   │   ├── nr1-cTJdTvGCFzD7-1416005309000.txt
+    │   │   ├── nr1-DRCIEtftLJWp-1416804329000.txt
+    │   │   ├── nr1-gFR0PCO6skfQ-1416668396000.txt
+    │   │   ├── nr1-H1uMJkVyd2Pq-1416804814000.txt
+    │   │   ├── nr1-JfBp468wEtFj-1416304128000.txt
+    │   │   ├── nr1-JwyG36hKzBVY-1416805114000.txt
+    │   │   ├── nr1-km129vyL8Uio-1416007561000.txt
+    │   │   ├── nr1-knH7B0nkCMsv-1416017019000.txt
+    │   │   ├── nr1-mbqG0Pqg2b1e-1416781286000.txt
+    │   │   ├── nr1-okhAaW4kvLAN-1416801357000.txt
+    │   │   ├── nr1-Su02EOHF7XkE-1416806473000.txt
+    │   │   ├── nr1-TwFGXVQBVG1x-1416680559000.txt
+    │   │   ├── nr1-twMPKSnQHDxQ-1415838084000.txt
+    │   │   ├── nr1-UdcRGQ83L94I-1416020894000.txt
+    │   │   ├── nr1-UwQTSEYPN6sL-1416720284000.txt
+    │   │   ├── nr1-vDL3thfvIaOA-1415825878000.txt
+    │   │   ├── nr1-yCJAap8FtiNO-1416013658000.txt
+    │   │   └── nr1-zTY2BeQZ0FQ5-1415576361000.txt
+    │   ├── AR-LBD
+    │   │   ├── nr3-0OWXM4vHT63G-1416803653000.txt
+    │   │   ├── nr3-0rrCRr1iGnAa-1416016626000.txt
+    │   │   ├── nr3-1y5bBzcjTdyv-1415887390000.txt
+    │   │   ├── nr3-3PMJZyJsvBxt-1416021127000.txt
+    │   │   ├── nr3-3xT4nfbxs6Z2-1415892240000.txt
+    │   │   ├── nr3-6aTWOl8APWhZ-1416012923000.txt
+    │   │   ├── nr3-7vClKDT8bLo4-1416803162000.txt
+    │   │   ├── nr3-8CeeevcepNiT-1416010924000.txt
+    │   │   ├── nr3-Aksc2ISDF6Nx-1415995033000.txt
+    │   │   ├── nr3-BLjJznx7OKd8-1415996284000.txt
+    │   │   ├── nr3-c9ydZlFremqr-1415890196000.txt
+    │   │   ├── nr3-CIlZQhZ4MQpT-1416498052000.txt
+    │   │   ├── nr3-cqNtSJ45VNW1-1416020744000.txt
+    │   │   ├── nr3-cTJdTvGCFzD7-1416005320000.txt
+    │   │   ├── nr3-DRCIEtftLJWp-1416804339000.txt
+    │   │   ├── nr3-gFR0PCO6skfQ-1416668402000.txt
+    │   │   ├── nr3-H1uMJkVyd2Pq-1416804831000.txt
+    │   │   ├── nr3-JfBp468wEtFj-1416305760000.txt
+    │   │   ├── nr3-jLcjjPtxDE7U-1416005863000.txt
+    │   │   ├── nr3-JwyG36hKzBVY-1416805119000.txt
+    │   │   ├── nr3-km129vyL8Uio-1416007791000.txt
+    │   │   ├── nr3-knH7B0nkCMsv-1416017036000.txt
+    │   │   ├── nr3-m9ZylOR04KxI-1413973937000.txt
+    │   │   ├── nr3-mbqG0Pqg2b1e-1416781292000.txt
+    │   │   ├── nr3-okhAaW4kvLAN-1416801364000.txt
+    │   │   ├── nr3-Su02EOHF7XkE-1416807314000.txt
+    │   │   ├── nr3-TwFGXVQBVG1x-1416680575000.txt
+    │   │   ├── nr3-twMPKSnQHDxQ-1415838093000.txt
+    │   │   ├── nr3-UdcRGQ83L94I-1416020951000.txt
+    │   │   ├── nr3-UwQTSEYPN6sL-1416720298000.txt
+    │   │   ├── nr3-yCJAap8FtiNO-1416013673000.txt
+    │   │   └── nr3-zTY2BeQZ0FQ5-1413476614000.txt
+    │   ├── ARE
+    │   │   ├── sr1-0OWXM4vHT63G-1416803663000.txt
+    │   │   ├── sr1-0rrCRr1iGnAa-1416016632000.txt
+    │   │   ├── sr1-1y5bBzcjTdyv-1415887480000.txt
+    │   │   ├── sr1-3PMJZyJsvBxt-1416021142000.txt
+    │   │   ├── sr1-3xT4nfbxs6Z2-1415892270000.txt
+    │   │   ├── sr1-6aTWOl8APWhZ-1416012930000.txt
+    │   │   ├── sr1-7vClKDT8bLo4-1416803167000.txt
+    │   │   ├── sr1-8CeeevcepNiT-1416010932000.txt
+    │   │   ├── sr1-Aksc2ISDF6Nx-1415995047000.txt
+    │   │   ├── sr1-BLjJznx7OKd8-1415996315000.txt
+    │   │   ├── sr1-c9ydZlFremqr-1415890246000.txt
+    │   │   ├── sr1-CIlZQhZ4MQpT-1416498068000.txt
+    │   │   ├── sr1-cqNtSJ45VNW1-1416020752000.txt
+    │   │   ├── sr1-cTJdTvGCFzD7-1416005331000.txt
+    │   │   ├── sr1-DRCIEtftLJWp-1416804374000.txt
+    │   │   ├── sr1-gFR0PCO6skfQ-1416668411000.txt
+    │   │   ├── sr1-H1uMJkVyd2Pq-1416804855000.txt
+    │   │   ├── sr1-JfBp468wEtFj-1416401572000.txt
+    │   │   ├── sr1-jLcjjPtxDE7U-1415310073000.txt
+    │   │   ├── sr1-JRj9lggAIHeW-1416208664000.txt
+    │   │   ├── sr1-JwyG36hKzBVY-1416805125000.txt
+    │   │   ├── sr1-km129vyL8Uio-1416009262000.txt
+    │   │   ├── sr1-knH7B0nkCMsv-1416017052000.txt
+    │   │   ├── sr1-mbqG0Pqg2b1e-1416781305000.txt
+    │   │   ├── sr1-okhAaW4kvLAN-1416801870000.txt
+    │   │   ├── sr1-Su02EOHF7XkE-1416809950000.txt
+    │   │   ├── sr1-TwFGXVQBVG1x-1416680672000.txt
+    │   │   ├── sr1-twMPKSnQHDxQ-1415838106000.txt
+    │   │   ├── sr1-UdcRGQ83L94I-1416020972000.txt
+    │   │   ├── sr1-UFgh41Dv1Vz2-1413467374000.txt
+    │   │   ├── sr1-UwQTSEYPN6sL-1416720309000.txt
+    │   │   ├── sr1-yCJAap8FtiNO-1416015050000.txt
+    │   │   └── sr1-zTY2BeQZ0FQ5-1413833741000.txt
+    │   ├── aromatase
+    │   │   ├── nr6-0OWXM4vHT63G-1416803675000.txt
+    │   │   ├── nr6-0rrCRr1iGnAa-1416016638000.txt
+    │   │   ├── nr6-1y5bBzcjTdyv-1415887553000.txt
+    │   │   ├── nr6-3PMJZyJsvBxt-1416021162000.txt
+    │   │   ├── nr6-3xT4nfbxs6Z2-1415892286000.txt
+    │   │   ├── nr6-6aTWOl8APWhZ-1416012935000.txt
+    │   │   ├── nr6-7vClKDT8bLo4-1416803172000.txt
+    │   │   ├── nr6-8CeeevcepNiT-1416010953000.txt
+    │   │   ├── nr6-Aksc2ISDF6Nx-1415995058000.txt
+    │   │   ├── nr6-BLjJznx7OKd8-1415996326000.txt
+    │   │   ├── nr6-c9ydZlFremqr-1415890337000.txt
+    │   │   ├── nr6-CIlZQhZ4MQpT-1416498081000.txt
+    │   │   ├── nr6-cqNtSJ45VNW1-1416020763000.txt
+    │   │   ├── nr6-cTJdTvGCFzD7-1416005342000.txt
+    │   │   ├── nr6-DRCIEtftLJWp-1416804386000.txt
+    │   │   ├── nr6-Fjxvq4Jn2TqP-1414868285000.txt
+    │   │   ├── nr6-gFR0PCO6skfQ-1416668416000.txt
+    │   │   ├── nr6-H1uMJkVyd2Pq-1416804885000.txt
+    │   │   ├── nr6-JfBp468wEtFj-1416308006000.txt
+    │   │   ├── nr6-jLcjjPtxDE7U-1416023444000.txt
+    │   │   ├── nr6-JwyG36hKzBVY-1416805132000.txt
+    │   │   ├── nr6-km129vyL8Uio-1416007921000.txt
+    │   │   ├── nr6-knH7B0nkCMsv-1416017074000.txt
+    │   │   ├── nr6-mbqG0Pqg2b1e-1416781316000.txt
+    │   │   ├── nr6-okhAaW4kvLAN-1416801399000.txt
+    │   │   ├── nr6-Su02EOHF7XkE-1416804030000.txt
+    │   │   ├── nr6-TwFGXVQBVG1x-1416680634000.txt
+    │   │   ├── nr6-twMPKSnQHDxQ-1415838114000.txt
+    │   │   ├── nr6-UdcRGQ83L94I-1416020985000.txt
+    │   │   ├── nr6-UwQTSEYPN6sL-1416720319000.txt
+    │   │   ├── nr6-yCJAap8FtiNO-1416013691000.txt
+    │   │   └── nr6-zTY2BeQZ0FQ5-1413478743000.txt
+    │   ├── ATAD5
+    │   │   ├── sr2-0OWXM4vHT63G-1416803685000.txt
+    │   │   ├── sr2-0rrCRr1iGnAa-1416016643000.txt
+    │   │   ├── sr2-1y5bBzcjTdyv-1415887617000.txt
+    │   │   ├── sr2-3PMJZyJsvBxt-1416021183000.txt
+    │   │   ├── sr2-6aTWOl8APWhZ-1416012941000.txt
+    │   │   ├── sr2-7vClKDT8bLo4-1416803180000.txt
+    │   │   ├── sr2-8CeeevcepNiT-1416010963000.txt
+    │   │   ├── sr2-Aksc2ISDF6Nx-1415995072000.txt
+    │   │   ├── sr2-BLjJznx7OKd8-1415996338000.txt
+    │   │   ├── sr2-c9ydZlFremqr-1415890378000.txt
+    │   │   ├── sr2-CIlZQhZ4MQpT-1416498096000.txt
+    │   │   ├── sr2-cqNtSJ45VNW1-1416020778000.txt
+    │   │   ├── sr2-cTJdTvGCFzD7-1416005354000.txt
+    │   │   ├── sr2-DRCIEtftLJWp-1416804411000.txt
+    │   │   ├── sr2-gFR0PCO6skfQ-1416668423000.txt
+    │   │   ├── sr2-H1uMJkVyd2Pq-1416804897000.txt
+    │   │   ├── sr2-JfBp468wEtFj-1415959902000.txt
+    │   │   ├── sr2-JRj9lggAIHeW-1416029486000.txt
+    │   │   ├── sr2-JwyG36hKzBVY-1416805137000.txt
+    │   │   ├── sr2-km129vyL8Uio-1416009369000.txt
+    │   │   ├── sr2-knH7B0nkCMsv-1416017088000.txt
+    │   │   ├── sr2-mbqG0Pqg2b1e-1416781323000.txt
+    │   │   ├── sr2-okhAaW4kvLAN-1416801409000.txt
+    │   │   ├── sr2-Su02EOHF7XkE-1416811581000.txt
+    │   │   ├── sr2-TwFGXVQBVG1x-1416680684000.txt
+    │   │   ├── sr2-twMPKSnQHDxQ-1415838124000.txt
+    │   │   ├── sr2-UdcRGQ83L94I-1416020998000.txt
+    │   │   ├── sr2-UwQTSEYPN6sL-1416720336000.txt
+    │   │   ├── sr2-yCJAap8FtiNO-1416013707000.txt
+    │   │   └── sr2-zTY2BeQZ0FQ5-1413476743000.txt
+    │   ├── ER
+    │   │   ├── nr4-0OWXM4vHT63G-1416803700000.txt
+    │   │   ├── nr4-0rrCRr1iGnAa-1416016648000.txt
+    │   │   ├── nr4-1y5bBzcjTdyv-1415887681000.txt
+    │   │   ├── nr4-3PMJZyJsvBxt-1416021207000.txt
+    │   │   ├── nr4-3xT4nfbxs6Z2-1415892315000.txt
+    │   │   ├── nr4-6aTWOl8APWhZ-1416013079000.txt
+    │   │   ├── nr4-7vClKDT8bLo4-1416803186000.txt
+    │   │   ├── nr4-8CeeevcepNiT-1416010987000.txt
+    │   │   ├── nr4-Aksc2ISDF6Nx-1415995084000.txt
+    │   │   ├── nr4-BLjJznx7OKd8-1415996348000.txt
+    │   │   ├── nr4-c9ydZlFremqr-1415890426000.txt
+    │   │   ├── nr4-CIlZQhZ4MQpT-1416498106000.txt
+    │   │   ├── nr4-cqNtSJ45VNW1-1416020787000.txt
+    │   │   ├── nr4-cTJdTvGCFzD7-1416005364000.txt
+    │   │   ├── nr4-DRCIEtftLJWp-1416804426000.txt
+    │   │   ├── nr4-gFR0PCO6skfQ-1416668429000.txt
+    │   │   ├── nr4-H1uMJkVyd2Pq-1416804907000.txt
+    │   │   ├── nr4-JfBp468wEtFj-1415981767000.txt
+    │   │   ├── nr4-JRj9lggAIHeW-1416653737000.txt
+    │   │   ├── nr4-JwyG36hKzBVY-1416805142000.txt
+    │   │   ├── nr4-km129vyL8Uio-1416008068000.txt
+    │   │   ├── nr4-knH7B0nkCMsv-1416026706000.txt
+    │   │   ├── nr4-mbqG0Pqg2b1e-1416781331000.txt
+    │   │   ├── nr4-mlqgmEoR4RAF-1416028578000.txt
+    │   │   ├── nr4-okhAaW4kvLAN-1416801419000.txt
+    │   │   ├── nr4-Su02EOHF7XkE-1416802934000.txt
+    │   │   ├── nr4-TwFGXVQBVG1x-1416680595000.txt
+    │   │   ├── nr4-twMPKSnQHDxQ-1415838132000.txt
+    │   │   ├── nr4-UdcRGQ83L94I-1416021010000.txt
+    │   │   ├── nr4-UwQTSEYPN6sL-1416720345000.txt
+    │   │   ├── nr4-vDL3thfvIaOA-1415825895000.txt
+    │   │   ├── nr4-yCJAap8FtiNO-1416013723000.txt
+    │   │   └── nr4-zTY2BeQZ0FQ5-1413835357000.txt
+    │   ├── ER-LBD
+    │   │   ├── nr5-0OWXM4vHT63G-1416803720000.txt
+    │   │   ├── nr5-0rrCRr1iGnAa-1416016654000.txt
+    │   │   ├── nr5-1y5bBzcjTdyv-1415887745000.txt
+    │   │   ├── nr5-3PMJZyJsvBxt-1416021254000.txt
+    │   │   ├── nr5-6aTWOl8APWhZ-1416012977000.txt
+    │   │   ├── nr5-6uTk8ljDULCA-1413840889000.txt
+    │   │   ├── nr5-7vClKDT8bLo4-1416803192000.txt
+    │   │   ├── nr5-8CeeevcepNiT-1416011111000.txt
+    │   │   ├── nr5-Aksc2ISDF6Nx-1415995095000.txt
+    │   │   ├── nr5-BLjJznx7OKd8-1415996361000.txt
+    │   │   ├── nr5-c9ydZlFremqr-1415890477000.txt
+    │   │   ├── nr5-CIlZQhZ4MQpT-1416498128000.txt
+    │   │   ├── nr5-cqNtSJ45VNW1-1416020796000.txt
+    │   │   ├── nr5-cTJdTvGCFzD7-1416005374000.txt
+    │   │   ├── nr5-DRCIEtftLJWp-1416804441000.txt
+    │   │   ├── nr5-gFR0PCO6skfQ-1416668435000.txt
+    │   │   ├── nr5-H1uMJkVyd2Pq-1416804921000.txt
+    │   │   ├── nr5-h8iBky9ZZLbj-1415930779000.txt
+    │   │   ├── nr5-JfBp468wEtFj-1416390752000.txt
+    │   │   ├── nr5-JRj9lggAIHeW-1416028221000.txt
+    │   │   ├── nr5-JwyG36hKzBVY-1416805147000.txt
+    │   │   ├── nr5-km129vyL8Uio-1416008196000.txt
+    │   │   ├── nr5-knH7B0nkCMsv-1416017100000.txt
+    │   │   ├── nr5-mbqG0Pqg2b1e-1416781340000.txt
+    │   │   ├── nr5-okhAaW4kvLAN-1416801426000.txt
+    │   │   ├── nr5-Su02EOHF7XkE-1416801249000.txt
+    │   │   ├── nr5-TwFGXVQBVG1x-1416680612000.txt
+    │   │   ├── nr5-twMPKSnQHDxQ-1415838142000.txt
+    │   │   ├── nr5-UdcRGQ83L94I-1416021022000.txt
+    │   │   ├── nr5-UwQTSEYPN6sL-1416720353000.txt
+    │   │   ├── nr5-yCJAap8FtiNO-1416013743000.txt
+    │   │   └── nr5-zTY2BeQZ0FQ5-1413484228000.txt
+    │   ├── HSE
+    │   │   ├── sr3-0OWXM4vHT63G-1416803735000.txt
+    │   │   ├── sr3-0rrCRr1iGnAa-1416016660000.txt
+    │   │   ├── sr3-1y5bBzcjTdyv-1415887804000.txt
+    │   │   ├── sr3-3PMJZyJsvBxt-1416021267000.txt
+    │   │   ├── sr3-3xT4nfbxs6Z2-1415892344000.txt
+    │   │   ├── sr3-6aTWOl8APWhZ-1416013088000.txt
+    │   │   ├── sr3-7vClKDT8bLo4-1416803200000.txt
+    │   │   ├── sr3-8CeeevcepNiT-1416011122000.txt
+    │   │   ├── sr3-Aksc2ISDF6Nx-1415995105000.txt
+    │   │   ├── sr3-BLjJznx7OKd8-1415996373000.txt
+    │   │   ├── sr3-c9ydZlFremqr-1415890530000.txt
+    │   │   ├── sr3-CIlZQhZ4MQpT-1416498138000.txt
+    │   │   ├── sr3-cqNtSJ45VNW1-1416020806000.txt
+    │   │   ├── sr3-cTJdTvGCFzD7-1416005384000.txt
+    │   │   ├── sr3-DRCIEtftLJWp-1416804487000.txt
+    │   │   ├── sr3-gFR0PCO6skfQ-1416668441000.txt
+    │   │   ├── sr3-H1uMJkVyd2Pq-1416804947000.txt
+    │   │   ├── sr3-JfBp468wEtFj-1415964505000.txt
+    │   │   ├── sr3-JwyG36hKzBVY-1416805152000.txt
+    │   │   ├── sr3-km129vyL8Uio-1416009526000.txt
+    │   │   ├── sr3-knH7B0nkCMsv-1416017114000.txt
+    │   │   ├── sr3-mbqG0Pqg2b1e-1416781352000.txt
+    │   │   ├── sr3-okhAaW4kvLAN-1416801438000.txt
+    │   │   ├── sr3-Su02EOHF7XkE-1416810859000.txt
+    │   │   ├── sr3-TwFGXVQBVG1x-1416680697000.txt
+    │   │   ├── sr3-twMPKSnQHDxQ-1415838151000.txt
+    │   │   ├── sr3-UdcRGQ83L94I-1416021035000.txt
+    │   │   ├── sr3-UwQTSEYPN6sL-1416720361000.txt
+    │   │   ├── sr3-yCJAap8FtiNO-1416013760000.txt
+    │   │   └── sr3-zTY2BeQZ0FQ5-1413834618000.txt
+    │   ├── MMP
+    │   │   ├── sr4-0OWXM4vHT63G-1416803743000.txt
+    │   │   ├── sr4-0rrCRr1iGnAa-1416016665000.txt
+    │   │   ├── sr4-1y5bBzcjTdyv-1415887856000.txt
+    │   │   ├── sr4-3PMJZyJsvBxt-1416021281000.txt
+    │   │   ├── sr4-3xT4nfbxs6Z2-1415892356000.txt
+    │   │   ├── sr4-6aTWOl8APWhZ-1416013094000.txt
+    │   │   ├── sr4-7vClKDT8bLo4-1416803209000.txt
+    │   │   ├── sr4-8CeeevcepNiT-1416011134000.txt
+    │   │   ├── sr4-Aksc2ISDF6Nx-1415995118000.txt
+    │   │   ├── sr4-BLjJznx7OKd8-1415996384000.txt
+    │   │   ├── sr4-c9ydZlFremqr-1415890572000.txt
+    │   │   ├── sr4-CIlZQhZ4MQpT-1416498152000.txt
+    │   │   ├── sr4-cqNtSJ45VNW1-1416020816000.txt
+    │   │   ├── sr4-cTJdTvGCFzD7-1416005396000.txt
+    │   │   ├── sr4-DRCIEtftLJWp-1416804475000.txt
+    │   │   ├── sr4-gFR0PCO6skfQ-1416668446000.txt
+    │   │   ├── sr4-H1uMJkVyd2Pq-1416804961000.txt
+    │   │   ├── sr4-JfBp468wEtFj-1415975545000.txt
+    │   │   ├── sr4-jLcjjPtxDE7U-1415314054000.txt
+    │   │   ├── sr4-JwyG36hKzBVY-1416805195000.txt
+    │   │   ├── sr4-km129vyL8Uio-1416009646000.txt
+    │   │   ├── sr4-knH7B0nkCMsv-1416017124000.txt
+    │   │   ├── sr4-mbqG0Pqg2b1e-1416781358000.txt
+    │   │   ├── sr4-okhAaW4kvLAN-1416801446000.txt
+    │   │   ├── sr4-RtuAOPq912SX-1416634326000.txt
+    │   │   ├── sr4-Su02EOHF7XkE-1416812154000.txt
+    │   │   ├── sr4-TwFGXVQBVG1x-1416680711000.txt
+    │   │   ├── sr4-twMPKSnQHDxQ-1415838159000.txt
+    │   │   ├── sr4-UdcRGQ83L94I-1416021046000.txt
+    │   │   ├── sr4-UwQTSEYPN6sL-1416720370000.txt
+    │   │   ├── sr4-yCJAap8FtiNO-1416014276000.txt
+    │   │   └── sr4-zTY2BeQZ0FQ5-1413486751000.txt
+    │   ├── p53
+    │   │   ├── sr5-0OWXM4vHT63G-1416803764000.txt
+    │   │   ├── sr5-0rrCRr1iGnAa-1416016674000.txt
+    │   │   ├── sr5-1y5bBzcjTdyv-1415887910000.txt
+    │   │   ├── sr5-3PMJZyJsvBxt-1416021293000.txt
+    │   │   ├── sr5-3xT4nfbxs6Z2-1415892370000.txt
+    │   │   ├── sr5-6aTWOl8APWhZ-1416013105000.txt
+    │   │   ├── sr5-7vClKDT8bLo4-1416803213000.txt
+    │   │   ├── sr5-8CeeevcepNiT-1416011144000.txt
+    │   │   ├── sr5-Aksc2ISDF6Nx-1415995129000.txt
+    │   │   ├── sr5-BLjJznx7OKd8-1415996396000.txt
+    │   │   ├── sr5-c9ydZlFremqr-1415890625000.txt
+    │   │   ├── sr5-CIlZQhZ4MQpT-1416498256000.txt
+    │   │   ├── sr5-cqNtSJ45VNW1-1416020829000.txt
+    │   │   ├── sr5-cTJdTvGCFzD7-1416005405000.txt
+    │   │   ├── sr5-DRCIEtftLJWp-1416804571000.txt
+    │   │   ├── sr5-gFR0PCO6skfQ-1416668462000.txt
+    │   │   ├── sr5-H1uMJkVyd2Pq-1416804981000.txt
+    │   │   ├── sr5-JfBp468wEtFj-1416400426000.txt
+    │   │   ├── sr5-jLcjjPtxDE7U-1415284474000.txt
+    │   │   ├── sr5-JRj9lggAIHeW-1416032556000.txt
+    │   │   ├── sr5-JwyG36hKzBVY-1416805189000.txt
+    │   │   ├── sr5-km129vyL8Uio-1416009797000.txt
+    │   │   ├── sr5-knH7B0nkCMsv-1416017137000.txt
+    │   │   ├── sr5-mbqG0Pqg2b1e-1416781365000.txt
+    │   │   ├── sr5-okhAaW4kvLAN-1416801454000.txt
+    │   │   ├── sr5-SbH6MG0H6LuI-1413460174000.txt
+    │   │   ├── sr5-Su02EOHF7XkE-1416812617000.txt
+    │   │   ├── sr5-TwFGXVQBVG1x-1416680721000.txt
+    │   │   ├── sr5-twMPKSnQHDxQ-1415838166000.txt
+    │   │   ├── sr5-UdcRGQ83L94I-1416021056000.txt
+    │   │   ├── sr5-UwQTSEYPN6sL-1416720378000.txt
+    │   │   ├── sr5-yCJAap8FtiNO-1416013860000.txt
+    │   │   └── sr5-zTY2BeQZ0FQ5-1413485412000.txt
+    │   ├── PPAR-gamma
+    │   │   ├── nr7-0OWXM4vHT63G-1416803788000.txt
+    │   │   ├── nr7-0rrCRr1iGnAa-1416016679000.txt
+    │   │   ├── nr7-1y5bBzcjTdyv-1415887984000.txt
+    │   │   ├── nr7-3PMJZyJsvBxt-1416021307000.txt
+    │   │   ├── nr7-6aTWOl8APWhZ-1416013110000.txt
+    │   │   ├── nr7-7vClKDT8bLo4-1416803217000.txt
+    │   │   ├── nr7-8CeeevcepNiT-1416011154000.txt
+    │   │   ├── nr7-BLjJznx7OKd8-1415996408000.txt
+    │   │   ├── nr7-c9ydZlFremqr-1415890702000.txt
+    │   │   ├── nr7-CIlZQhZ4MQpT-1416498171000.txt
+    │   │   ├── nr7-cqNtSJ45VNW1-1416020837000.txt
+    │   │   ├── nr7-cTJdTvGCFzD7-1416005413000.txt
+    │   │   ├── nr7-DRCIEtftLJWp-1416804532000.txt
+    │   │   ├── nr7-gFR0PCO6skfQ-1416668475000.txt
+    │   │   ├── nr7-H1uMJkVyd2Pq-1416804992000.txt
+    │   │   ├── nr7-JfBp468wEtFj-1415975060000.txt
+    │   │   ├── nr7-JRj9lggAIHeW-1416030134000.txt
+    │   │   ├── nr7-JwyG36hKzBVY-1416805171000.txt
+    │   │   ├── nr7-km129vyL8Uio-1416009158000.txt
+    │   │   ├── nr7-knH7B0nkCMsv-1416017148000.txt
+    │   │   ├── nr7-mbqG0Pqg2b1e-1416781375000.txt
+    │   │   ├── nr7-mlqgmEoR4RAF-1415975124000.txt
+    │   │   ├── nr7-okhAaW4kvLAN-1416801466000.txt
+    │   │   ├── nr7-Su02EOHF7XkE-1416808769000.txt
+    │   │   ├── nr7-TwFGXVQBVG1x-1416680648000.txt
+    │   │   ├── nr7-twMPKSnQHDxQ-1415838173000.txt
+    │   │   ├── nr7-UdcRGQ83L94I-1416021070000.txt
+    │   │   ├── nr7-UwQTSEYPN6sL-1416720388000.txt
+    │   │   ├── nr7-vDL3thfvIaOA-1415825909000.txt
+    │   │   ├── nr7-yCJAap8FtiNO-1416013882000.txt
+    │   │   └── nr7-zTY2BeQZ0FQ5-1413834218000.txt
+    │   └── team-name-id-mapping.txt
+    ├── 250k_rndm_zinc_drugs_clean_3.csv
+    ├── 6A93.pdb
+    ├── 6WGT.pdb
+    

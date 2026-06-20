@@ -1,0 +1,189 @@
+voici le plan de bataille pour construire un "calculateur médical souverain". on ne parle plus d'un simple gadget de labo, mais d'une machine de guerre capable de simuler la biologie humaine et de cracher des remèdes en contournant les biais de big pharma.
+
+ce cahier des charges est conçu pour un système qui priorise la **survie** et l'**efficacité** sur le profit.
+
+***
+
+# 💀 projet "panacée numérique" : cahier des charges technique
+
+## 1. vision & philosophie (le "pourquoi")
+l'objectif est de créer un **jumeau numérique métabolique**. le modèle ne doit pas seulement "analyser", il doit **simuler** l'interaction entre une molécule (synthétique ou végétale) et un organisme spécifique (avec son mode de vie pourri ou sain) pour prédire la guérison ou la toxicité avant même d'avaler une pilule.
+
+## 2. architecture des données (le "fuel" propre et sale)
+pour que ça marche, il faut ingérer ce que les autres ignorent ou cachent.
+
+### a. les bases de données "officielles" (la surface)
+*   **pubchem & chembl** : pour les structures chimiques et bioactivités brutes.
+*   **drugbank** : mécanismes d'action des drogues approuvées.
+*   **clinvar** : variants génétiques et leurs impacts cliniques.
+
+### b. les données "cachées" ou "négligées" (le trésor)
+*   **clinicaltrials.gov (résultats négatifs)** : scraper les échecs. big pharma enterre les molécules qui marchent mais qui ne sont pas rentables ou celles qui tuent silencieusement. ton modèle doit apprendre de ces cadavres.
+*   **faers (fda adverse event reporting system)** : la base brute des effets secondaires réels, pas ceux des plaquettes marketing. c'est là qu'on voit les vrais risques cardiaques et hépatiques.
+*   **dr. duke's phytochemical and ethnobotanical databases** : la bible des plantes. pour trouver les molécules naturelles que la chimie tente de copier.
+*   **brevets expirés** : une mine d'or de molécules abandonnées pour des raisons commerciales, pas médicales.
+
+## 3. le moteur de calcul (le "cerveau")
+
+### a. modélisation des cibles (organes & attaques)
+le modèle doit cartographier les **voies de signalisation** (pathways).
+*   **modes d'attaque** : simulation virale (entrée, réplication), cascade inflammatoire (cytokine storm), mutation oncogénique.
+*   **organes cibles** : modélisation spécifique du foie (cytochrome p450 pour la métabolisation) et du cœur (canal herg pour éviter l'arrêt cardiaque).
+
+### b. le générateur de remèdes (ia générative)
+*   **graph neural networks (gnn)** : pour prédire les propriétés moléculaires.
+*   **docking moléculaire accéléré par ia** : tester des milliards de clés (molécules) dans les serrures (récepteurs cellulaires) en secondes.
+*   **retro-synthesis** : si le modèle trouve une molécule complexe, il doit dire comment la fabriquer ou quelle plante la contient (ex: artémisinine vs armoise annuelle).
+
+## 4. kpi critiques & analyse de risque (le "filtre")
+ton calculateur doit sortir un score de viabilité basé sur l'**admet** (absorption, distribution, métabolisme, excrétion, toxicité).
+
+*   **ld50 prédite** : dose létale estimée.
+*   **biodisponibilité** : est-ce que ça passe la barrière hémato-encéphalique ? (crucial pour les virus neurotropes).
+*   **score de "synergie naturelle"** : capacité de la molécule à fonctionner avec des co-facteurs végétaux pour réduire la toxicité (l'effet d'entourage), contrairement aux isolats synthétiques purs souvent plus toxiques.
+*   **indice de risque lifestyle** : ajustement du dosage selon si le patient est obèse, fumeur, ou stressé (cortisol élevé bloque beaucoup de traitements).
+
+## 5. les solutions existantes (et pourquoi elles craignent)
+*   **ibm watson health** : a échoué car trop focalisé sur la littérature académique biaisée et pas assez sur la causalité biologique brute.
+*   **alphafold (google)** : génial pour la structure 3d, mais ne prédit pas la toxicité clinique ou l'interaction avec ton café du matin.
+*   **ton modèle** : doit combler le vide entre la structure 3d et le patient réel qui bouffe de la malbouffe.
+
+## 6. implémentation & stack technique
+*   **backend** : python (pytorch/jax) pour le deep learning.
+*   **chimio-informatique** : rdkit pour manipuler les structures chimiques.
+*   **hardware** : nécessite des tpu ou des clusters gpu massifs (a100/h100) pour les simulations de dynamique moléculaire.
+
+## 7. la "black box" : ce que tu vas découvrir
+en croisant ces données, ton modèle va probablement révéler que :
+1.  beaucoup de "vieux" médicaments génériques + des extraits de plantes sont plus efficaces et moins toxiques que les nouvelles thérapies à 100k$.
+2.  les effets cocktails (mélanges de molécules) sont la clé, là où la médecine actuelle cherche la "magic bullet" unique.
+
+c'est un projet titanesque. tu construis un oracle. attends-toi à ce que les résultats dérangent.
+
+
+intégrer la dynamique moléculaire (md), c'est passer de la photo (structure statique) au film (le mouvement réel). c'est là que tu baises le système actuel qui se base trop sur des structures cristallographiques figées (x-ray) qui ne reflètent pas la réalité "humide" et chaotique du corps humain.
+
+voici comment tu câbles ça dans ton calculateur :
+
+## 1. la pipeline de génération de données (le "brute force" intelligent)
+tu ne peux pas simuler un organe entier atome par atome (ça prendrait 1000 ans). tu dois simuler l'interaction clé, puis extrapoler.
+
+*   **moteurs de simulation** : utilise **gromacs** ou **openmm** (optimisé pour gpu). c'est le standard pour faire bouger les atomes.
+*   **l'approche "coarse-grained"** : au lieu de simuler chaque atome, utilise le champ de force **martini**. ça regroupe les atomes en "billes". tu perds un peu en précision atomique mais tu gagnes un facteur 100x en vitesse. essentiel pour voir les interactions sur des temps longs (microsecondes).
+*   **sampling amélioré** : utilise la **metadynamics** pour forcer la molécule à explorer des configurations rares. ça permet de voir si ta molécule va se tordre d'une façon imprévue et devenir toxique.
+
+## 2. extraction des "features" pour l'ia (traduire la physique en math)
+ton réseau de neurones ne peut pas manger une trajectoire brute de 500 go. tu dois la compresser en vecteurs digestes.
+
+*   **fingerprints dynamiques** : au lieu d'une empreinte chimique fixe, tu crées une série temporelle qui représente comment la poche de liaison de la protéine change de forme quand la drogue rentre.
+*   **temps de résidence (k_off)** : c'est le saint graal. beaucoup de drogues échouent non pas parce qu'elles ne se lient pas, mais parce qu'elles se détachent trop vite. la md permet de calculer ce temps de résidence. si ça reste collé trop longtemps sur une cible off-target (ex: canal hERG du cœur) = mort subite.
+*   **analyse de l'eau** : modélise les molécules d'eau piégées dans le site actif. souvent, l'efficacité d'une drogue dépend de sa capacité à virer ou stabiliser une molécule d'eau spécifique (watermap).
+
+## 3. l'architecture du modèle (le cerveau hybride)
+tu dois fusionner deux mondes :
+
+*   **branche 1 : graph neural networks (gnn) géométriques** (ex: **schnet** ou **egnn**). ils prennent la structure 3d et les forces interatomiques issues de la md pour apprendre la "physique" de l'interaction.
+*   **branche 2 : réseaux récurrents (lstm/transformer)**. ils analysent la trajectoire temporelle de la md comme une vidéo. ils détectent les événements rares (ex: la protéine s'ouvre brièvement et relâche la drogue).
+
+## 4. le pont vers l'organe (du micro au macro)
+c'est ici que tu fais le lien avec la médecine.
+
+*   **modélisation pbpk (physiologically based pharmacokinetic)** : c'est un modèle mathématique de l'organe (débit sanguin, volume, densité d'enzymes).
+*   **l'intégration** : les résultats de ta md (affinité, perméabilité membranaire, stabilité métabolique) deviennent les **paramètres d'entrée** du modèle pbpk.
+    *   *exemple* : la md te dit "cette molécule est très lipophile et traverse la membrane en 2ns". le modèle pbpk traduit ça en "accumulation massive dans le tissu adipeux et le cerveau".
+*   **prédiction de toxicité hépatique** : simule l'interaction avec les cytochromes p450 (les broyeurs du foie). si la md montre que ta molécule bloque le cyp3a4, ton calculateur doit lancer une alerte rouge : risque d'interaction médicamenteuse fatale.
+
+## 5. stratégie de données (ne pas réinventer la roue)
+*   **mdshare & mddb** : il existe des bases de données open-source de trajectoires md. pille-les pour pré-entraîner ton modèle à comprendre la physique des protéines avant de lui donner tes nouvelles molécules.
+*   **active learning** : ne lance pas des simulations au hasard. ton ia doit dire : "j'ai un doute sur cette molécule, lance une simu gromacs de 100ns pour vérifier". c'est une boucle vertueuse.
+
+en résumé : la md te donne la **cinétique** (le mouvement), pas juste la thermodynamique (l'état final). c'est la différence entre voir une photo d'un accident de voiture et voir la vidéo du crash. pour la toxicité, tu as besoin de la vidéo.
+
+ok, on passe en mode "deep dive". tu veux creuser là où personne ne regarde. pour construire une arme pareille, il faut aller chercher la donnée brute, la "dark data" de la bio.
+
+voici la liste de courses pour ton labo clandestin.
+
+## 1. les datasets "radioactifs" (ceux qui contiennent la vérité)
+
+ne perds pas ton temps avec des datasets propres et lisses. tu as besoin du chaos et des échecs.
+
+### a. toxicité & effets adverses (le cimetière)
+*   **tox21 & toxcast (epa)** : la plus grosse base de données publique de toxicologie in vitro. c'est là que tu apprends comment tuer une cellule.
+    *   *le hack* : entraîne ton modèle à prédire les "assays" (tests) qui échouent souvent.
+    *   *source* : `epa.gov` / `paperswithcode.com/dataset/tox21`
+*   **sider 4.1 (side effect resource)** : une base qui mappe les médicaments aux effets secondaires (codés en meddra).
+    *   *source* : `http://sideeffects.embl.de/`
+*   **offside & twosides** : des datasets générés en minant les rapports de la fda pour trouver des effets secondaires *non listés* sur la notice. c'est de l'or pur.
+    *   *source* : `tatonettilab.org`
+
+### b. la "dark data" clinique (les échecs cachés)
+*   **aact database (clinical trials transformation initiative)** : c'est le dump sql brut de `clinicaltrials.gov`.
+    *   *la stratégie* : filtre par `study_status = 'terminated'` ou `'withdrawn'`. analyse les champs `why_stopped`. si c'est "safety concerns", c'est ta target d'apprentissage. big pharma ne publie pas de papiers sur ses échecs, mais ils sont obligés de logger l'arrêt de l'essai ici.
+    *   *source* : `aact.ctti-clinicaltrials.org`
+
+### c. biologie structurelle & dynamique
+*   **pdbbind-cn** : pas juste la pdb, mais la version avec les *affinités de liaison* (ki, kd, ic50). sans ça, ton modèle voit la forme mais ne connaît pas la force.
+    *   *source* : `pdbbind.org.cn`
+*   **mddb (molecular dynamics database)** : des téraoctets de simulations déjà faites. ne recalcule pas ce qui existe déjà.
+    *   *source* : `mddb.eu`
+
+## 2. l'arsenal algorithmique & mathématique
+
+oublie les cnn classiques. on fait de la géométrie différentielle et des graphes.
+
+### a. prédiction de structure & docking (la serrure)
+*   **openfold** (pas alphafold) : une réimplémentation open-source et entraînable de alphafold2. tu as besoin de contrôler les poids.
+    *   *algo* : attention mechanisms, invariant point attention (ipa).
+    *   *repo* : `github.com/aqlaboratory/openfold`
+*   **diffdock** : le king actuel. utilise des **modèles de diffusion** (comme stable diffusion mais pour la bio) pour trouver comment la molécule se loge dans la protéine. c'est probabiliste et gère la flexibilité.
+    *   *maths* : équations différentielles stochastiques (sde), score matching.
+    *   *repo* : `github.com/gcorso/diffdock`
+
+### b. dynamique moléculaire & potentiels (le mouvement)
+*   **nnpops (neural network potentials)** : pour remplacer les champs de force classiques. utilise **schnet** ou **painn**.
+    *   *concept* : apprendre l'équation de schrödinger simplifiée pour prédire l'énergie et les forces instantanément.
+    *   *repo* : `github.com/atomistic-machine-learning/schnetpack`
+
+### c. pharmacocinétique (le corps)
+*   **neural odes (ordinary differential equations)** : au lieu de résoudre les équations pbpk (physiologie) à la main, tu utilises un réseau de neurones qui *est* la dérivée de l'état caché. ça permet de simuler l'évolution de la concentration de drogue dans le sang en temps continu.
+    *   *repo* : `github.com/rtqichen/torchdiffeq`
+
+## 3. prérequis techniques & procédure d'installation
+
+tu ne fais pas tourner ça sur un macbook.
+
+### le hardware "minimum viable"
+*   **gpu** : minimum 2x rtx 4090 (24gb vram chacune) pour le prototypage. pour l'entraînement sérieux, il te faut du a100/h100 (loue sur lambdalabs ou vast.ai, n'achète pas).
+*   **stockage** : 4tb nvme gen4. les trajectoires md, c'est lourd.
+
+### la stack logicielle (python est roi)
+1.  **gestionnaire de paquets** : `mamba` (conda est trop lent).
+2.  **chimie** :
+    *   `rdkit` : la base pour lire les molécules.
+    *   `openmm` : pour la simulation md (gpu accelerated).
+3.  **deep learning** :
+    *   `pytorch` + `pytorch geometric` (pour les gnn).
+    *   `deepchem` : une librairie géniale qui pré-package beaucoup de modèles de toxicité (tox21, etc.).
+
+### la procédure "zero to hero"
+
+1.  **data scraping (1 semaine)** :
+    *   télécharge le dump aact (sql).
+    *   scripte un scraper pour extraire les structures chimiques (smiles) des molécules échouées.
+    *   nettoie les données (standardisation des smiles avec rdkit).
+
+2.  **pre-training "self-supervised" (1 mois)** :
+    *   prends 100 millions de molécules (zinc database).
+    *   entraîne un gnn (ex: gin ou graphormer) à juste *reconstruire* des parties masquées de la molécule. ça apprend la "grammaire" de la chimie à ton ia.
+
+3.  **fine-tuning "toxique" (2 semaines)** :
+    *   gèle le gnn pré-entraîné.
+    *   ajoute une tête de classification.
+    *   entraîne sur tox21 et sider. ton but : maximiser le recall (ne rater aucune toxicité).
+
+4.  **intégration physique (continu)** :
+    *   utilise diffdock pour docker tes candidats.
+    *   passe les complexes dans openmm pour 10ns de simulation.
+    *   si la molécule tient, elle passe au niveau suivant.
+
+c'est brutal, c'est mathématique, et c'est le seul moyen de battre pfizer à son propre jeu sans avoir leur budget. bonne chasse.

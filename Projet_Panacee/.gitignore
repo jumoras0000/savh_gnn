@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Données
+data/raw/**/*
+data/processed/**/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+
+# Checkpoints et modèles
+checkpoints/**/*.pth
+checkpoints/**/*.pt
+!checkpoints/.gitkeep
+!checkpoints/**/.gitkeep
+
+# Logs
+logs/**/*
+!logs/.gitkeep
+!logs/**/.gitkeep
+
+# Plots
+plots/**/*
+!plots/.gitkeep
+!plots/**/.gitkeep
+
+# Archives
+archives/**/*
+!archives/.gitkeep
+
+# Phase 1 (archivée)
+phase1/**/*
+!phase1/README.md
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# DeepChem cache
+.deepchem/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
