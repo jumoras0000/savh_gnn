@@ -71,6 +71,9 @@
       <button class="tab" data-tab="clin">🏥 Métriques cliniques</button>
       <button class="tab" data-tab="sec">🚨 Sécurité</button>
       <button class="tab" data-tab="cmp">🔬 Comparaison</button>
+      <button class="tab" data-tab="train">🎛️ Entraînement</button>
+      <button class="tab" data-tab="research">🧪 Recherche</button>
+      <button class="tab" data-tab="info">ℹ️ Guide</button>
     </nav>
 
     <!-- ---------- Évolution ---------- -->
@@ -113,6 +116,11 @@
             <span style="color:var(--warn)"><i class="dash" style="color:var(--warn)"></i>seuils danger/cible</span>
           </div>
         </div>
+        <div class="card">
+          <h3>🔎 Observation &amp; risque (lecture automatique)</h3>
+          <div class="hint">Interprétation des métriques courantes — ce que disent les chiffres et le risque associé.</div>
+          <div id="observations"></div>
+        </div>
       </div>
     </section>
 
@@ -120,17 +128,29 @@
     <section class="panel-view" id="view-clin">
       <div class="card">
         <h3>Évaluation approfondie par endpoint toxicologique</h3>
-        <div class="hint">Charge un checkpoint Phase 2 + un CSV de validation, calcule toutes les métriques médicales (sensibilité, spécificité, FNR, précision, F1, ROC-AUC, PR-AUC, calibration ECE).</div>
+        <div class="hint">Choisis un checkpoint Phase 2 + un CSV de validation (listes détectées automatiquement, ou importe un fichier). Calcule toutes les métriques médicales : sensibilité, spécificité, FNR, précision, F1, ROC-AUC, PR-AUC, calibration ECE.</div>
         <div class="form-row">
           <div class="field">
             <label>Checkpoint (.pth)</label>
-            <input id="evalCkpt" type="text" placeholder="checkpoints/phase2/best_toxicity_model.pth" />
+            <select id="evalCkpt" class="picker"></select>
           </div>
           <div class="field">
             <label>CSV de validation</label>
-            <input id="evalCsv" type="text" placeholder="data/external/tox21/tox21_val.csv" />
+            <select id="evalCsv" class="picker"></select>
           </div>
           <button class="btn" id="evalBtn">Évaluer</button>
+          <button class="btn ghost" id="refreshFiles" title="Rafraîchir les listes">⟳</button>
+        </div>
+        <div class="form-row" style="margin-top:10px">
+          <label class="upload">
+            <input type="file" id="upCkpt" accept=".pth" hidden />
+            <span>⬆️ Importer un checkpoint (.pth)</span>
+          </label>
+          <label class="upload">
+            <input type="file" id="upCsv" accept=".csv,.smi,.txt" hidden />
+            <span>⬆️ Importer un CSV</span>
+          </label>
+          <span id="uploadMsg" class="upmsg"></span>
         </div>
         <div id="evalAgg" style="margin-top:16px"></div>
       </div>
@@ -170,6 +190,111 @@
         <h3>Comparaison des runs</h3>
         <div class="hint">Tous les runs détectés sous la racine des checkpoints.</div>
         <div style="overflow-x:auto"><table id="runsTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ---------- Entraînement ---------- -->
+    <section class="panel-view" id="view-train">
+      <div class="card">
+        <h3>🎛️ Contrôle de l'entraînement</h3>
+        <div class="hint">Lance une phase directement depuis l'interface. Le suivi temps réel apparaît dans l'onglet Évolution dès le premier epoch. (Serveur local — exécute <code>run_phaseX.py</code>.)</div>
+        <div class="form-row">
+          <div class="field">
+            <label>Phase</label>
+            <select id="trPhase" class="picker">
+              <option value="2">Phase 2 · Fine-tuning toxicité (Tox21)</option>
+              <option value="1">Phase 1 · Pré-entraînement MGM (ZINC)</option>
+              <option value="3">Phase 3 · Multi-propriétés + IA raisonnement</option>
+            </select>
+          </div>
+          <div class="field" style="max-width:120px">
+            <label>Epochs</label>
+            <input id="trEpochs" type="number" value="20" min="1" max="1000" />
+          </div>
+          <div class="field" style="max-width:160px">
+            <label>Max molécules (0=tout)</label>
+            <input id="trMaxMol" type="number" value="0" min="0" />
+          </div>
+          <div class="field" style="max-width:140px" id="trCvWrap">
+            <label>CV folds (Ph.2, 0=off)</label>
+            <input id="trCv" type="number" value="0" min="0" max="10" />
+          </div>
+          <button class="btn" id="trStart">▶ Lancer</button>
+          <button class="btn ghost" id="trStop">■ Arrêter</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="trDownload" checked /> Télécharger les données si besoin (--download)</label>
+      </div>
+      <div class="card">
+        <h3>État du process <span id="trStateBadge" class="badge NA">idle</span></h3>
+        <div class="hint" id="trMeta">Aucun entraînement lancé depuis l'interface.</div>
+        <pre id="trLog" class="console">—</pre>
+      </div>
+    </section>
+
+    <!-- ---------- Recherche ---------- -->
+    <section class="panel-view" id="view-research">
+      <div class="card">
+        <h3>🧪 Recherche — analyse de molécules réelles</h3>
+        <div class="hint">Prédit toxicité, efficacité, solubilité, lipophilicité, biodisponibilité, stabilité, drug-likeness et le <b>risque</b> de chaque molécule (modèle Phase 3). Plusieurs molécules → analyse de <b>combinaison</b> (synergie, doses, score de réussite).</div>
+        <div class="form-row">
+          <div class="field" style="flex:2">
+            <label>SMILES (un par ligne, ou séparés par des virgules)</label>
+            <textarea id="rsSmiles" rows="4" placeholder="CCO&#10;CC(=O)O&#10;CC(=O)Nc1ccc(O)cc1"></textarea>
+          </div>
+          <div class="field">
+            <label>Checkpoint Phase 3</label>
+            <select id="rsCkpt" class="picker"></select>
+            <div class="ex">Exemples :
+              <button class="lnk" data-smiles="CC(=O)Nc1ccc(O)cc1">paracétamol</button> ·
+              <button class="lnk" data-smiles="CC(=O)Oc1ccccc1C(=O)O">aspirine</button> ·
+              <button class="lnk" data-smiles="CN1C=NC2=C1C(=O)N(C(=O)N2C)C">caféine</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <button class="btn" id="rsPredict">🔬 Analyser (propriétés + risque)</button>
+          <button class="btn ghost" id="rsCombo">🔗 Analyser la combinaison (synergie/doses)</button>
+        </div>
+      </div>
+      <div id="rsResults"></div>
+      <div id="rsComboResult"></div>
+    </section>
+
+    <!-- ---------- Guide / info ---------- -->
+    <section class="panel-view" id="view-info">
+      <div class="grid-2">
+        <div class="card">
+          <h3>Pourquoi ces métriques ?</h3>
+          <div class="info-block">
+            <p><b>ROC-AUC</b> — capacité à séparer toxique / non-toxique, indépendamment du seuil. 1.0 = parfait, 0.5 = hasard. Cible ≥ 0.85.</p>
+            <p><b>Sensibilité (rappel)</b> — proportion de composés <i>réellement toxiques</i> correctement détectés. Priorité absolue en sécurité médicale.</p>
+            <p><b>FNR (taux de faux négatifs)</b> = 1 − sensibilité — proportion de toxiques <i>manqués</i>. C'est l'erreur la plus grave : un médicament dangereux déclaré « sûr ». On le plafonne (&lt; 30 %).</p>
+            <p><b>Spécificité</b> — proportion de non-toxiques correctement classés (évite les fausses alertes).</p>
+            <p><b>PR-AUC</b> — pertinente quand les toxiques sont rares (classes déséquilibrées).</p>
+            <p><b>ECE (calibration)</b> — écart entre la confiance annoncée et la justesse réelle. Bas = probabilités fiables.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Lecture du risque</h3>
+          <div class="info-block">
+            <p><span class="badge OK">OK</span> indicateurs dans les cibles → modèle exploitable.</p>
+            <p><span class="badge WARN">WARN</span> à surveiller : FNR ou AUC limites, surapprentissage, endpoints faibles.</p>
+            <p><span class="badge DANGER">DANGER</span> non déployable : trop de toxiques manqués, sensibilité ou AUC trop basses.</p>
+            <hr/>
+            <p><b>Propriétés (Recherche)</b> — Solubilité (LogS), Lipophilicité (LogP : 2–5 favorable à l'absorption, &gt;5 risque d'accumulation), Biodisponibilité, Stabilité métabolique, Drug-likeness (score composite type Lipinski).</p>
+            <p><b>Synergie</b> — &gt; 70 % synergique, 40–70 % additive, &lt; 40 % antagoniste. Le <b>score de réussite</b> et la <b>confiance</b> proviennent du MolecularReasoner.</p>
+            <p class="warn-note">⚠️ Outil d'aide à la décision in-silico : toute conclusion doit être validée expérimentalement.</p>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Flux de travail recommandé</h3>
+        <div class="info-block">
+          <p>1. <b>Entraînement</b> — lance Phase 2 (toxicité) puis Phase 3 (multi-propriétés) depuis l'onglet dédié.</p>
+          <p>2. <b>Évolution / Sécurité</b> — surveille en temps réel l'AUC, le FNR et les endpoints en danger.</p>
+          <p>3. <b>Métriques cliniques</b> — évalue un checkpoint sur un CSV de validation pour le détail par endpoint.</p>
+          <p>4. <b>Recherche</b> — analyse de vraies molécules / combinaisons pour identifier des candidats médicaments.</p>
+        </div>
       </div>
     </section>
   </main>

@@ -12,6 +12,7 @@ import sys
 import os
 import time
 import json
+import contextlib
 import torch
 import torch.nn as nn
 import numpy as np
@@ -28,6 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.preprocessing.graph_builder import smiles_to_graph, mask_atoms
 from src.models.encoder import MolecularEncoder
 from src.models.mgm_head import MaskedGraphModel, MGMHead
+from src.utils.live_logger import LiveLogger
 from src.config import (
     DEVICE, NUM_WORKERS, PIN_MEMORY,
     ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
@@ -252,6 +254,11 @@ def main():
     best_path = Path(args.save_dir) / PHASE1["checkpoint_name"]
     latest_path = Path(args.save_dir) / "checkpoint_latest.pth"
 
+    # Logger temps reel (lu par le tableau de bord pendant l'entrainement)
+    live = LiveLogger(Path(args.save_dir) / "live_metrics.jsonl",
+                      meta={"phase": "phase1", "objective": args.objective,
+                            "epochs_total": args.epochs, "conv_type": CONV_TYPE})
+
     print(f"\nDemarrage - {args.epochs} epochs, patience={args.patience}")
     t0 = time.time()
 
@@ -263,6 +270,12 @@ def main():
             model, train_loader, optimizer, device, PHASE1["grad_clip"], epoch, scaler,
         )
         val_loss = evaluate(model, val_loader, device)
+
+        # Point temps reel (Phase 1 = reconstruction MGM : pas d'AUC/securite)
+        # Le logging ne doit jamais casser l'entrainement.
+        with contextlib.suppress(Exception):
+            live.log({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                      "lr": lr, "best_loss": min(best_val_loss, val_loss)})
 
         elapsed = time.time() - t0
         eta = timedelta(seconds=int((elapsed / epoch) * (args.epochs - epoch)))

@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 
 from src.utils.live_logger import read_live
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 from src.validation.clinical_metrics import (
     FNR_DANGER, FNR_WARN, AUC_DANGER, AUC_WARN, SENS_DANGER,
 )
@@ -207,7 +209,7 @@ def get_run(file_path: Path, root: str | Path) -> dict:
     overfit = None
     if len(epochs) >= 1 and latest.get("train_auc") is not None and latest.get("val_auc") is not None:
         overfit = float(latest["train_auc"] - latest["val_auc"])
-    return {
+    out = {
         "id": run_id_for(file_path, root),
         "meta": meta,
         "epochs": epochs,
@@ -219,7 +221,10 @@ def get_run(file_path: Path, root: str | Path) -> dict:
         "thresholds": THRESHOLDS,
         "overfit_gap": overfit,
         "per_task_auc": _latest_per_task(epochs),
+        "phase": meta.get("phase", "?"),
     }
+    out["observations"] = metric_observations(out)
+    return out
 
 
 def _latest_per_task(epochs: list) -> dict:
@@ -251,3 +256,98 @@ def compare_runs(root: str | Path = "checkpoints") -> list[dict]:
         })
     out.sort(key=lambda r: (r["val_auc"] is None, -(r["val_auc"] or 0)))
     return out
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Découverte de fichiers (checkpoints / CSV) — pour les sélecteurs de l'UI
+# ──────────────────────────────────────────────────────────────────────
+
+def _file_entry(path: Path, base: Path) -> dict:
+    try:
+        rel = path.relative_to(base).as_posix()
+    except ValueError:
+        rel = path.name
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    return {"path": str(path), "rel": rel, "name": path.name,
+            "size_mb": round(size / (1024 * 1024), 2)}
+
+
+def list_files(ckpt_root: str | Path = "checkpoints") -> dict:
+    """Liste les checkpoints (.pth) et CSV disponibles pour les sélecteurs."""
+    ckpt_root = Path(ckpt_root)
+    checkpoints, csvs = [], []
+
+    if ckpt_root.exists():
+        for p in sorted(ckpt_root.rglob("*.pth")):
+            checkpoints.append(_file_entry(p, ckpt_root.parent if ckpt_root.parent.exists() else ckpt_root))
+
+    # CSV : sous data/ (et data/uploads), relatifs à la racine projet
+    data_dir = PROJECT_ROOT / "data"
+    if data_dir.exists():
+        for p in sorted(data_dir.rglob("*.csv")):
+            csvs.append(_file_entry(p, PROJECT_ROOT))
+
+    return {"checkpoints": checkpoints, "csvs": csvs}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Observations & risque sur les métriques d'évolution (onglet info)
+# ──────────────────────────────────────────────────────────────────────
+
+def metric_observations(run: dict) -> list[dict]:
+    """
+    Interprétations « parlantes » des métriques courantes d'un run.
+    Renvoie [{level, metric, text}] (level ∈ OK/WARN/DANGER/INFO).
+    """
+    latest = run.get("latest") or {}
+    if not latest:
+        return [{"level": "INFO", "metric": "—",
+                 "text": "Aucune métrique encore reçue. Lance un entraînement."}]
+
+    exp = run.get("expected", EXPECTED)
+    thr = run.get("thresholds", THRESHOLDS)
+    obs: list[dict] = []
+
+    auc = latest.get("val_auc")
+    if auc is not None:
+        if auc < thr["auc_danger"]:
+            obs.append({"level": "DANGER", "metric": "ROC-AUC",
+                        "text": f"AUC {auc:.2f} ≈ aléatoire : le modèle ne discrimine pas."})
+        elif auc < exp["val_auc"]:
+            obs.append({"level": "WARN", "metric": "ROC-AUC",
+                        "text": f"AUC {auc:.2f} sous la cible {exp['val_auc']} : marge de progrès."})
+        else:
+            obs.append({"level": "OK", "metric": "ROC-AUC",
+                        "text": f"AUC {auc:.2f} ≥ cible {exp['val_auc']} : bon pouvoir discriminant."})
+
+    fnr = latest.get("macro_fnr")
+    if fnr is not None:
+        if fnr >= thr["fnr_danger"]:
+            obs.append({"level": "DANGER", "metric": "FNR",
+                        "text": f"FNR {fnr*100:.0f}% : trop de composés TOXIQUES manqués (risque clinique)."})
+        elif fnr > exp["macro_fnr_max"]:
+            obs.append({"level": "WARN", "metric": "FNR",
+                        "text": f"FNR {fnr*100:.0f}% > seuil {exp['macro_fnr_max']*100:.0f}% toléré."})
+        else:
+            obs.append({"level": "OK", "metric": "FNR",
+                        "text": f"FNR {fnr*100:.0f}% sous le seuil : peu de toxiques manqués."})
+
+    sens = latest.get("macro_sensitivity")
+    if sens is not None and sens < thr["sens_danger"]:
+        obs.append({"level": "DANGER", "metric": "Sensibilité",
+                    "text": f"Sensibilité {sens*100:.0f}% < {thr['sens_danger']*100:.0f}% : détection insuffisante."})
+
+    gap = run.get("overfit_gap")
+    if gap is not None and gap > 0.15:
+        obs.append({"level": "WARN", "metric": "Surapprentissage",
+                    "text": f"Écart train-val AUC = {gap:.2f} : surapprentissage probable (régularise / +données)."})
+
+    nd = latest.get("n_danger") or 0
+    if nd:
+        obs.append({"level": "DANGER", "metric": "Endpoints",
+                    "text": f"{nd} endpoint(s) en DANGER — voir l'onglet Sécurité."})
+
+    return obs or [{"level": "OK", "metric": "—", "text": "Indicateurs nominaux."}]

@@ -12,6 +12,7 @@ import sys
 import os
 import time
 import json
+import contextlib
 import torch
 import numpy as np
 from pathlib import Path
@@ -42,6 +43,8 @@ from src.utils.gpu_manager import get_gpu_manager
 from src.utils.error_handler import (
     setup_logging, HealthMonitor, emergency_save,
 )
+from src.utils.live_logger import LiveLogger
+from src.validation.clinical_metrics import summarize as clinical_summarize
 
 
 # ======================================================================
@@ -162,7 +165,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
         optimizer.zero_grad()
         predictions = model(batch_data)
 
-        loss, loss_details = criterion(predictions, labels_device)
+        loss, _ = criterion(predictions, labels_device)
 
         if torch.isnan(loss):
             continue
@@ -253,7 +256,7 @@ def main():
     # Initialisation GPU et logging
     gpu = get_gpu_manager(force_cpu=(args.device == "cpu"))
     device = gpu.device
-    logger = setup_logging(name="panacee.phase3")
+    setup_logging(name="panacee.phase3")
     health = HealthMonitor(check_interval=50)
 
     os.makedirs(args.save_dir, exist_ok=True)
@@ -422,6 +425,11 @@ def main():
     print(f"  Device: {device}")
     print(f"{'='*80}\n")
 
+    # Logger temps reel (lu par le tableau de bord pendant l'entrainement)
+    live = LiveLogger(Path(args.save_dir) / "live_metrics.jsonl",
+                      meta={"phase": "phase3", "epochs_total": args.epochs,
+                            "conv_type": CONV_TYPE})
+
     t0 = time.time()
 
     for epoch in range(1, args.epochs + 1):
@@ -441,7 +449,7 @@ def main():
         )
 
         # Validation
-        val_m, _, _ = evaluate(model, val_loader, criterion, device)
+        val_m, val_preds, val_targets = evaluate(model, val_loader, criterion, device)
 
         # Score composite (moyenne pondérée des métriques)
         score = 0.0
@@ -495,6 +503,40 @@ def main():
             if not prop.startswith("_") and isinstance(val_m[prop], dict):
                 history_entry[f"val_{prop}"] = val_m[prop]
         history.append(history_entry)
+
+        # Point temps reel pour le tableau de bord (multi-propriétés + sécurité tox).
+        # Le logging ne doit jamais casser l'entrainement.
+        with contextlib.suppress(Exception):
+            rec = {
+                "epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                "composite_score": composite_score, "lr": lrs[0],
+            }
+            scalar_map = {"toxicity": ("tox_auc", "roc_auc"),
+                          "efficacy": ("eff_auc", "roc_auc"),
+                          "bioavailability": ("bio_auc", "roc_auc"),
+                          "metabolic_stability": ("metab_auc", "roc_auc"),
+                          "solubility": ("sol_r2", "r2"),
+                          "lipophilicity": ("lipo_r2", "r2")}
+            for prop, (out_key, m_key) in scalar_map.items():
+                if isinstance(val_m.get(prop), dict) and m_key in val_m[prop]:
+                    rec[out_key] = val_m[prop][m_key]
+            # AUC « phare » = toxicité (cohérent avec les autres phases)
+            if "tox_auc" in rec:
+                rec["val_auc"] = rec["tox_auc"]
+            # Sécurité clinique depuis la tête toxicité
+            if "toxicity" in val_preds and "toxicity" in val_targets:
+                clin = clinical_summarize(
+                    torch.sigmoid(val_preds["toxicity"]).cpu().numpy(),
+                    val_targets["toxicity"].cpu().numpy())
+                agg = clin["aggregate"]
+                rec.update({
+                    "macro_sensitivity": agg["macro_sensitivity"],
+                    "macro_specificity": agg["macro_specificity"],
+                    "macro_fnr": agg["macro_fnr"],
+                    "n_danger": agg["n_danger"], "n_warn": agg["n_warn"],
+                    "per_task_auc": {t["task"]: t["roc_auc"] for t in clin["tasks"]},
+                })
+            live.log(rec)
 
         # Checkpoint
         ckpt_data = {

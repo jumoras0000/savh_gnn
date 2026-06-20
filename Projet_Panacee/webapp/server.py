@@ -91,6 +91,133 @@ async def api_compare(request):
     return JSONResponse({"runs": service.compare_runs(root)})
 
 
+async def api_files(request):
+    """Liste des checkpoints (.pth) et CSV pour alimenter les sélecteurs."""
+    return JSONResponse(service.list_files(_ckpt_root()))
+
+
+_ALLOWED_UPLOAD = {".csv", ".pth", ".smi", ".txt"}
+
+
+async def api_upload(request):
+    """
+    Import de fichier (corps brut). Le nom est passé en query (?name=…&kind=csv).
+    Les .csv/.smi/.txt vont dans data/uploads/, les .pth dans checkpoints/uploads/.
+    """
+    name = os.path.basename(request.query_params.get("name", "")).strip()
+    if not name:
+        return JSONResponse({"error": "paramètre 'name' manquant"}, status_code=400)
+    ext = Path(name).suffix.lower()
+    if ext not in _ALLOWED_UPLOAD:
+        return JSONResponse({"error": f"extension non autorisée: {ext}"}, status_code=400)
+
+    body = await request.body()
+    if not body:
+        return JSONResponse({"error": "fichier vide"}, status_code=400)
+    if len(body) > 200 * 1024 * 1024:
+        return JSONResponse({"error": "fichier trop volumineux (>200 Mo)"}, status_code=413)
+
+    if ext == ".pth":
+        dest_dir = Path(_ckpt_root()) / "uploads"
+    else:
+        dest_dir = PROJECT_ROOT / "data" / "uploads"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / name
+    with open(dest, "wb") as f:
+        f.write(body)
+    return JSONResponse({"ok": True, "path": str(dest), "name": name,
+                         "size_mb": round(len(body) / (1024 * 1024), 2)})
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Contrôle de l'entraînement
+# ──────────────────────────────────────────────────────────────────────
+
+async def api_train_status(request):
+    from webapp.trainer import MANAGER
+    return JSONResponse(MANAGER.status())
+
+
+async def api_train_start(request):
+    from webapp.trainer import MANAGER
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    phase = body.get("phase")
+    try:
+        phase = int(phase)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "phase invalide"}, status_code=400)
+    res = MANAGER.start(phase, body)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 409)
+
+
+async def api_train_stop(request):
+    from webapp.trainer import MANAGER
+    res = MANAGER.stop()
+    return JSONResponse(res, status_code=200 if res.get("ok") else 409)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Recherche : analyse de molécules réelles (inférence Phase 3)
+# ──────────────────────────────────────────────────────────────────────
+
+def _parse_smiles(raw) -> list[str]:
+    if isinstance(raw, list):
+        items = raw
+    else:
+        items = str(raw or "").replace(",", "\n").splitlines()
+    return [s.strip() for s in items if s and s.strip()]
+
+
+async def api_predict(request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    smiles = _parse_smiles(body.get("smiles"))
+    if not smiles:
+        return JSONResponse({"error": "aucun SMILES fourni"}, status_code=400)
+    checkpoint = body.get("checkpoint") or None
+
+    def _run():
+        from webapp import research
+        return research.predict(smiles, checkpoint)
+
+    try:
+        res = await asyncio.to_thread(_run)
+    except FileNotFoundError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except Exception as e:  # pragma: no cover - dépend de l'env torch
+        return JSONResponse({"error": f"prédiction impossible: {e}"}, status_code=500)
+    return JSONResponse(res)
+
+
+async def api_combo(request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    smiles = _parse_smiles(body.get("smiles"))
+    if len(smiles) < 2:
+        return JSONResponse({"error": "au moins 2 SMILES requis"}, status_code=400)
+    checkpoint = body.get("checkpoint") or None
+
+    def _run():
+        from webapp import research
+        return research.combo(smiles, checkpoint)
+
+    try:
+        res = await asyncio.to_thread(_run)
+    except FileNotFoundError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except Exception as e:  # pragma: no cover
+        return JSONResponse({"error": f"analyse impossible: {e}"}, status_code=500)
+    code = 400 if res.get("error") else 200
+    return JSONResponse(res, status_code=code)
+
+
 async def api_evaluate(request):
     """Évaluation approfondie : charge un checkpoint + un CSV et calcule les
     métriques cliniques par endpoint (sensibilité, FNR, ECE, alertes)."""
@@ -209,7 +336,14 @@ routes = [
     Route("/api/runs", api_runs),
     Route("/api/run", api_run),
     Route("/api/compare", api_compare),
+    Route("/api/files", api_files),
+    Route("/api/upload", api_upload, methods=["POST"]),
     Route("/api/evaluate", api_evaluate, methods=["POST"]),
+    Route("/api/train/status", api_train_status),
+    Route("/api/train/start", api_train_start, methods=["POST"]),
+    Route("/api/train/stop", api_train_stop, methods=["POST"]),
+    Route("/api/predict", api_predict, methods=["POST"]),
+    Route("/api/combo", api_combo, methods=["POST"]),
     Route("/api/stream", api_stream),
     Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
 ]

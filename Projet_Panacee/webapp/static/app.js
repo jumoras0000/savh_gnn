@@ -20,6 +20,8 @@ const state = {
   runId: null, meta: {}, epochs: [], latest: {},
   expected: {}, thresholds: {}, status: "idle",
   verdict: null, compare: [], perTask: {}, es: null,
+  observations: [], files: { checkpoints: [], csvs: [] },
+  trainTimer: null,
 };
 
 /* ====================================================================
@@ -309,6 +311,46 @@ function renderEvolution() {
              { y: fnrDanger, color: COL.danger }] });
 }
 
+/* ---------- observation & risque (live, miroir du backend) ---------- */
+function computeObservations() {
+  const L = state.latest, e = state.expected, t = state.thresholds, out = [];
+  if (!L || L.epoch == null) {
+    return [{ level: "INFO", metric: "—", text: "Aucune métrique reçue. Lance un entraînement." }];
+  }
+  const auc = L.val_auc;
+  if (auc != null) {
+    if (auc < (t.auc_danger ?? 0.6)) out.push({ level: "DANGER", metric: "ROC-AUC", text: `AUC ${auc.toFixed(2)} ≈ aléatoire : le modèle ne discrimine pas.` });
+    else if (auc < (e.val_auc ?? 0.85)) out.push({ level: "WARN", metric: "ROC-AUC", text: `AUC ${auc.toFixed(2)} sous la cible ${e.val_auc ?? 0.85} : marge de progrès.` });
+    else out.push({ level: "OK", metric: "ROC-AUC", text: `AUC ${auc.toFixed(2)} ≥ cible : bon pouvoir discriminant.` });
+  }
+  const fnr = L.macro_fnr;
+  if (fnr != null) {
+    if (fnr >= (t.fnr_danger ?? 0.5)) out.push({ level: "DANGER", metric: "FNR", text: `FNR ${(fnr * 100).toFixed(0)}% : trop de composés TOXIQUES manqués (risque clinique).` });
+    else if (fnr > (e.macro_fnr_max ?? 0.3)) out.push({ level: "WARN", metric: "FNR", text: `FNR ${(fnr * 100).toFixed(0)}% au-dessus du seuil toléré.` });
+    else out.push({ level: "OK", metric: "FNR", text: `FNR ${(fnr * 100).toFixed(0)}% sous le seuil : peu de toxiques manqués.` });
+  }
+  const sens = L.macro_sensitivity;
+  if (sens != null && sens < (t.sens_danger ?? 0.5)) out.push({ level: "DANGER", metric: "Sensibilité", text: `Sensibilité ${(sens * 100).toFixed(0)}% : détection insuffisante.` });
+  if (L.train_auc != null && L.val_auc != null) {
+    const gap = L.train_auc - L.val_auc;
+    if (gap > 0.15) out.push({ level: "WARN", metric: "Surapprentissage", text: `Écart train-val AUC = ${gap.toFixed(2)} : surapprentissage probable.` });
+  }
+  if ((L.n_danger || 0) > 0) out.push({ level: "DANGER", metric: "Endpoints", text: `${L.n_danger} endpoint(s) en DANGER — voir Sécurité.` });
+  // Phase 1/3 : pas de toxicité → s'appuyer sur la perte
+  if (auc == null && L.val_loss != null) out.push({ level: "INFO", metric: "Perte", text: `val_loss = ${nf(L.val_loss, 4)} (phase sans métrique de toxicité).` });
+  return out.length ? out : [{ level: "OK", metric: "—", text: "Indicateurs nominaux." }];
+}
+
+function renderObservations() {
+  const box = document.getElementById("observations");
+  if (!box) return;
+  const obs = computeObservations();
+  const ico = { OK: "🟢", WARN: "🟠", DANGER: "🔴", INFO: "•" };
+  box.innerHTML = obs.map(o =>
+    `<div class="obs ${o.level}"><span class="o-ico">${ico[o.level] || "•"}</span>
+      <span class="o-metric">${esc(o.metric)}</span><span class="o-text">${esc(o.text)}</span></div>`).join("");
+}
+
 /* ---------- métriques cliniques ---------- */
 const CLIN_COLS = [
   ["task", "Endpoint"], ["danger", "Niveau"], ["support", "N"], ["prevalence", "Prév."],
@@ -437,7 +479,7 @@ function renderStatus() {
 
 function renderAll() {
   renderStatus(); renderVerdict(); renderKPIs(); renderEvolution();
-  renderClinicalFromLive(); renderAlerts(); renderBarème(); renderCompare();
+  renderObservations(); renderClinicalFromLive(); renderAlerts(); renderBarème(); renderCompare();
 }
 
 /* ====================================================================
@@ -475,6 +517,7 @@ function applySnapshot(d) {
   state.status = d.status; state.verdict = d.verdict; state.compare = d.compare || [];
   state.perTask = d.per_task_auc || {}; state.expected = d.expected || state.expected;
   state.thresholds = d.thresholds || state.thresholds;
+  state.observations = d.observations || [];
   renderAll();
 }
 
@@ -491,7 +534,7 @@ function connectStream(runId) {
     const e = JSON.parse(ev.data);
     state.epochs.push(e); state.latest = e;
     if (e.per_task_auc) state.perTask = e.per_task_auc;
-    renderKPIs(); renderEvolution(); renderClinicalFromLive(); renderAlerts(); renderCompare();
+    renderKPIs(); renderEvolution(); renderObservations(); renderClinicalFromLive(); renderAlerts(); renderCompare();
     flashToast(`Epoch ${e.epoch} · AUC ${nf(e.val_auc)} · FNR ${pct(e.macro_fnr)}`);
   });
   es.addEventListener("status", (ev) => {
@@ -513,9 +556,12 @@ function setupTabs() {
       document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
       document.querySelectorAll(".panel-view").forEach(v => v.classList.remove("active"));
       btn.classList.add("active");
-      document.getElementById("view-" + btn.dataset.tab).classList.add("active");
+      const tab = btn.dataset.tab;
+      document.getElementById("view-" + tab).classList.add("active");
       // redessine les charts du panneau affiché (canvas a maintenant une taille)
       requestAnimationFrame(() => { renderEvolution(); renderCompare(); });
+      if (tab === "train") pollTrain();
+      if (tab === "clin" || tab === "research") loadFiles();
     });
   });
 }
@@ -563,16 +609,238 @@ window.addEventListener("resize", () => {
 });
 
 /* ====================================================================
+   Sélecteurs de fichiers + import
+   ==================================================================== */
+async function loadFiles() {
+  try {
+    state.files = await fetchJSON("/api/files");
+  } catch (e) { return; }
+  const cks = state.files.checkpoints || [];
+  const csvs = state.files.csvs || [];
+  fillPicker("evalCkpt", cks, "rel");
+  fillPicker("evalCsv", csvs, "rel");
+  // Recherche : privilégier les checkpoints Phase 3
+  const phase3 = cks.filter(c => /phase3/i.test(c.rel));
+  fillPicker("rsCkpt", (phase3.length ? phase3 : cks), "rel");
+}
+
+function fillPicker(id, items, key) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const prev = sel.value;
+  if (!items.length) { sel.innerHTML = `<option value="">(aucun fichier détecté)</option>`; return; }
+  sel.innerHTML = items.map(it =>
+    `<option value="${esc(it.path)}">${esc(it[key])} · ${it.size_mb} Mo</option>`).join("");
+  if (prev && items.some(it => it.path === prev)) sel.value = prev;
+}
+
+async function uploadFile(file) {
+  const url = `/api/upload?name=${encodeURIComponent(file.name)}`;
+  const r = await fetch(url, { method: "POST", body: file });
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch (e) {} throw new Error(m); }
+  return r.json();
+}
+
+function setupFiles() {
+  document.getElementById("refreshFiles")?.addEventListener("click", () => {
+    loadFiles(); flashToast("Listes de fichiers rafraîchies.");
+  });
+  const wire = (inputId, msg) => {
+    const inp = document.getElementById(inputId);
+    inp?.addEventListener("change", async () => {
+      if (!inp.files || !inp.files[0]) return;
+      const f = inp.files[0];
+      const el = document.getElementById("uploadMsg");
+      el.textContent = `Import de ${f.name}…`;
+      try {
+        const res = await uploadFile(f);
+        el.textContent = `✓ ${res.name} importé (${res.size_mb} Mo)`;
+        await loadFiles();
+        flashToast(`${msg} importé : ${res.name}`);
+      } catch (e) { el.textContent = "✗ " + e.message; flashToast("Import échoué : " + e.message, true); }
+      inp.value = "";
+    });
+  };
+  wire("upCkpt", "Checkpoint");
+  wire("upCsv", "CSV");
+}
+
+/* ====================================================================
+   Contrôle de l'entraînement
+   ==================================================================== */
+function setupTraining() {
+  const phaseSel = document.getElementById("trPhase");
+  const cvWrap = document.getElementById("trCvWrap");
+  const syncCv = () => { cvWrap.style.display = phaseSel.value === "2" ? "" : "none"; };
+  phaseSel.addEventListener("change", syncCv); syncCv();
+
+  document.getElementById("trStart").addEventListener("click", async () => {
+    const body = {
+      phase: parseInt(phaseSel.value, 10),
+      epochs: parseInt(document.getElementById("trEpochs").value, 10) || 20,
+      max_molecules: parseInt(document.getElementById("trMaxMol").value, 10) || 0,
+      cv_folds: parseInt(document.getElementById("trCv").value, 10) || 0,
+      download: document.getElementById("trDownload").checked,
+    };
+    try {
+      const res = await fetchJSON("/api/train/start", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      flashToast(`Entraînement lancé : ${res.label} (pid ${res.pid})`);
+      pollTrain(true);
+      // bascule le suivi live sur le run de cette phase
+      if (res.run_id) { setTimeout(() => { loadRuns(); state.runId = res.run_id; }, 1500); }
+    } catch (e) { flashToast("Échec du lancement : " + e.message, true); }
+  });
+
+  document.getElementById("trStop").addEventListener("click", async () => {
+    try { await fetchJSON("/api/train/stop", { method: "POST" }); flashToast("Entraînement arrêté."); }
+    catch (e) { flashToast("Arrêt : " + e.message, true); }
+    pollTrain(true);
+  });
+}
+
+async function pollTrain(once = false) {
+  try {
+    const s = await fetchJSON("/api/train/status");
+    const badge = document.getElementById("trStateBadge");
+    const map = { running: "WARN", finished: "OK", failed: "DANGER", stopped: "NA", idle: "NA" };
+    badge.className = "badge " + (map[s.state] || "NA");
+    badge.textContent = s.state || "idle";
+    const meta = s.pid
+      ? `${s.label || ""} · pid ${s.pid} · ${s.cmd || ""}`
+      : "Aucun entraînement lancé depuis l'interface.";
+    document.getElementById("trMeta").textContent = meta;
+    document.getElementById("trLog").textContent = (s.log_tail && s.log_tail.length)
+      ? s.log_tail.join("\n") : "—";
+  } catch (e) { /* ignore */ }
+}
+
+/* ====================================================================
+   Recherche — analyse de molécules réelles
+   ==================================================================== */
+function setupResearch() {
+  document.querySelectorAll("#view-research .lnk").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const ta = document.getElementById("rsSmiles");
+      ta.value = (ta.value.trim() ? ta.value.trim() + "\n" : "") + btn.dataset.smiles;
+    });
+  });
+
+  document.getElementById("rsPredict").addEventListener("click", async () => {
+    const smiles = document.getElementById("rsSmiles").value.trim();
+    if (!smiles) { flashToast("Saisis au moins un SMILES.", true); return; }
+    const checkpoint = document.getElementById("rsCkpt").value || null;
+    const box = document.getElementById("rsResults");
+    box.innerHTML = `<div class="card"><span class="spinner"></span> Analyse en cours…</div>`;
+    document.getElementById("rsComboResult").innerHTML = "";
+    try {
+      const res = await fetchJSON("/api/predict", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ smiles, checkpoint }),
+      });
+      renderPredictions(res);
+    } catch (e) { box.innerHTML = errCard(e.message); }
+  });
+
+  document.getElementById("rsCombo").addEventListener("click", async () => {
+    const smiles = document.getElementById("rsSmiles").value.trim();
+    const checkpoint = document.getElementById("rsCkpt").value || null;
+    const box = document.getElementById("rsComboResult");
+    box.innerHTML = `<div class="card"><span class="spinner"></span> Analyse de la combinaison…</div>`;
+    try {
+      const res = await fetchJSON("/api/combo", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ smiles, checkpoint }),
+      });
+      renderCombo(res);
+    } catch (e) { box.innerHTML = errCard(e.message); }
+  });
+}
+
+function errCard(msg) {
+  return `<div class="card"><div class="alert DANGER"><div class="a-ico">⚠️</div>
+    <div><div class="a-title">Analyse impossible</div><div class="a-msg">${esc(msg)}</div></div></div></div>`;
+}
+
+function renderPredictions(res) {
+  const box = document.getElementById("rsResults");
+  const cards = (res.results || []).map(r => moleculeCard(r)).join("");
+  const inv = (res.invalid && res.invalid.length)
+    ? `<div class="card"><div class="a-msg">SMILES invalides ignorés : ${res.invalid.map(esc).join(", ")}</div></div>` : "";
+  box.innerHTML = (cards || `<div class="empty">Aucune molécule valide.</div>`) + inv;
+}
+
+function moleculeCard(r) {
+  const risk = r.risk || { level: "OK", observations: [] };
+  const tox = r.toxicity || {};
+  const toxic = Object.entries(tox).filter(([, d]) => d.toxique).map(([k]) => k);
+  const rows = [
+    ["Sécurité", (r.safety_score ?? "—") + "%"],
+    ["Efficacité", (r.efficacy?.probabilite_activite ?? "—") + "%"],
+    ["Solubilité (LogS)", `${r.solubility?.log_s ?? "—"} · ${r.solubility?.interpretation ?? ""}`],
+    ["Lipophilie (LogP)", `${r.lipophilicity?.log_p ?? "—"} · ${r.lipophilicity?.interpretation ?? ""}`],
+    ["Biodisponibilité", (r.bioavailability?.probabilite ?? "—") + "%"],
+    ["Stabilité métab.", (r.metabolic_stability?.probabilite ?? "—") + "%"],
+    ["Drug-likeness", r.drug_likeness?.score_global ?? "—"],
+  ];
+  const obs = (risk.observations || []).map(o =>
+    `<div class="obs ${o.level}"><span class="o-ico">${o.level === "DANGER" ? "🔴" : o.level === "WARN" ? "🟠" : "🟢"}</span><span class="o-text">${esc(o.text)}</span></div>`).join("");
+  return `<div class="card mol">
+    <h3><span class="badge ${risk.level}">${risk.level}</span>
+      <span class="smi">${esc(r.smiles)}</span></h3>
+    <div class="mol-grid">
+      <table class="mol-tbl">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(String(v))}</td></tr>`).join("")}</table>
+      <div class="mol-side">
+        <div class="o-head">Toxicité Tox21</div>
+        ${toxic.length ? `<div class="tox-alert">⚠ ${toxic.map(esc).join(", ")}</div>` : `<div class="tox-ok">✅ aucun endpoint toxique</div>`}
+        <div class="o-head" style="margin-top:10px">Observation &amp; risque</div>
+        ${obs}
+      </div>
+    </div></div>`;
+}
+
+function renderCombo(res) {
+  const box = document.getElementById("rsComboResult");
+  if (res.error) { box.innerHTML = errCard(res.error); return; }
+  const pairs = (res.synergy_pairs || []).map(p =>
+    `<tr><td>${esc(p.molecule_1.slice(0, 28))}</td><td>${esc(p.molecule_2.slice(0, 28))}</td>
+      <td>${p.synergie}%</td><td><span class="badge ${p.type === "Synergique" ? "OK" : p.type === "Antagoniste" ? "DANGER" : "WARN"}">${p.type}</span></td></tr>`).join("");
+  const doses = (res.dose_recommendations || []).map(d =>
+    `<tr><td>${esc(d.smiles.slice(0, 36))}</td><td>${d.dose_optimale_mg_kg} mg/kg</td></tr>`).join("");
+  box.innerHTML = `<div class="card">
+    <h3>🔗 Combinaison — score de réussite ${res.success_score}% · confiance ${res.confidence}% · sécurité ${res.combined_safety}%</h3>
+    <div class="grid-2">
+      <div>
+        <div class="o-head">Synergie par paire</div>
+        <table><thead><tr><th>Molécule 1</th><th>Molécule 2</th><th>Synergie</th><th>Type</th></tr></thead><tbody>${pairs}</tbody></table>
+      </div>
+      <div>
+        <div class="o-head">Doses optimales</div>
+        <table><thead><tr><th>Molécule</th><th>Dose</th></tr></thead><tbody>${doses}</tbody></table>
+      </div>
+    </div>
+    <div class="o-head" style="margin-top:12px">Interprétation IA</div>
+    <pre class="console">${esc(res.interpretation || "")}</pre>
+  </div>`;
+}
+
+/* ====================================================================
    Démarrage
    ==================================================================== */
 async function main() {
   ecgInit(); setupTabs(); setupRunSelect(); setupEval();
+  setupFiles(); setupTraining(); setupResearch();
   await loadConfig();
   renderBarème();
+  await loadFiles();
   await loadRuns();
   await renderRunsTable();
   // rafraîchit la liste des runs périodiquement (nouveaux runs)
   setInterval(() => loadRuns().catch(() => {}), 15000);
   setInterval(() => renderRunsTable().catch(() => {}), 15000);
+  // statut d'entraînement (poll régulier tant que l'app est ouverte)
+  setInterval(() => { pollTrain(); }, 4000);
 }
 document.addEventListener("DOMContentLoaded", main);

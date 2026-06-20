@@ -159,6 +159,79 @@ def test_evaluate_errors(client):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Fichiers : liste + import
+# ──────────────────────────────────────────────────────────────────────
+
+def test_files_endpoint(client):
+    j = client.get("/api/files").json()
+    assert "checkpoints" in j and "csvs" in j
+    assert isinstance(j["checkpoints"], list)
+
+
+def test_upload_csv_then_listed(client):
+    content = b"smiles,NR-AR\nCCO,0\nCC(=O)O,1\n"
+    r = client.post("/api/upload?name=mini_test.csv", content=content)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] and body["name"] == "mini_test.csv"
+    assert Path(body["path"]).exists()
+    # extension interdite → 400
+    bad = client.post("/api/upload?name=evil.exe", content=b"x")
+    assert bad.status_code == 400
+    # nom manquant → 400
+    assert client.post("/api/upload", content=b"x").status_code == 400
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Contrôle entraînement
+# ──────────────────────────────────────────────────────────────────────
+
+def test_train_status_idle(client):
+    j = client.get("/api/train/status").json()
+    assert j["state"] in ("idle", "finished", "failed", "stopped", "running")
+
+
+def test_train_start_invalid_phase(client):
+    r = client.post("/api/train/start", json={"phase": 9})
+    assert r.status_code in (400, 409)
+
+
+def test_train_stop_when_idle(client):
+    r = client.post("/api/train/stop")
+    assert r.status_code == 409  # rien à arrêter
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Recherche : erreurs déterministes (sans torch ni checkpoint)
+# ──────────────────────────────────────────────────────────────────────
+
+def test_predict_missing_checkpoint(client):
+    # checkpoint explicite inexistant → 404 (avant tout import torch)
+    r = client.post("/api/predict", json={"smiles": "CCO", "checkpoint": "nope.pth"})
+    assert r.status_code == 404
+
+
+def test_predict_empty(client):
+    assert client.post("/api/predict", json={"smiles": ""}).status_code == 400
+
+
+def test_combo_needs_two(client):
+    assert client.post("/api/combo", json={"smiles": "CCO"}).status_code == 400
+    r = client.post("/api/combo", json={"smiles": ["CCO", "CCC"], "checkpoint": "nope.pth"})
+    assert r.status_code == 404
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Observations dans le détail d'un run
+# ──────────────────────────────────────────────────────────────────────
+
+def test_observations_in_run(client):
+    j = client.get("/api/run", params={"id": "phase2"}).json()
+    assert "observations" in j and isinstance(j["observations"], list)
+    assert all("level" in o and "text" in o for o in j["observations"])
+
+
+# ──────────────────────────────────────────────────────────────────────
 # SSE temps réel
 #
 # NB : on pilote le générateur sse_events() DIRECTEMENT plutôt que via le

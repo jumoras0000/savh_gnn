@@ -308,8 +308,81 @@ tr[data-level="DANGER"] td { background: rgba(255,61,104,.05); }
 .toast.show { opacity: 1; transform: none; }
 .toast.err { border-color: rgba(255,61,104,.5); }
 
+/* ====================================================================
+   Composants ajoutés : sélecteurs, import, console, observations,
+   cartes molécules, guide
+   ==================================================================== */
+.picker, textarea {
+  font-family: var(--mono); font-size: 12px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 9px 11px; color: var(--text); width: 100%;
+}
+.picker:focus, textarea:focus { outline: none; border-color: var(--vital); }
+textarea { resize: vertical; line-height: 1.5; }
+
+.upload {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-family: var(--mono); font-size: 11.5px; color: var(--text);
+  background: var(--surface); border: 1px dashed var(--line);
+  border-radius: var(--radius-sm); padding: 8px 14px; transition: .15s;
+}
+.upload:hover { border-color: var(--vital); color: var(--vital); }
+.upmsg { font-family: var(--mono); font-size: 11px; color: var(--muted); align-self: center; }
+
+.chk { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px;
+  font-family: var(--mono); font-size: 11.5px; color: var(--muted); cursor: pointer; }
+.chk input { accent-color: var(--vital); }
+
+.console {
+  font-family: var(--mono); font-size: 11px; line-height: 1.55; color: #b9c6da;
+  background: #070b11; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 12px 14px; max-height: 300px; overflow: auto; white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Observations (lecture automatique) */
+.obs {
+  display: grid; grid-template-columns: 22px auto 1fr; gap: 10px; align-items: baseline;
+  padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 6px;
+  background: var(--panel-2); border-left: 3px solid var(--faint);
+}
+.obs.OK { border-left-color: var(--ok); }
+.obs.WARN { border-left-color: var(--warn); }
+.obs.DANGER { border-left-color: var(--danger); background: rgba(255,61,104,.05); }
+.obs.INFO { border-left-color: var(--blue); }
+.obs .o-ico { text-align: center; }
+.obs .o-metric { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+.obs .o-text { font-size: 12.5px; color: var(--text); }
+
+/* Cartes molécules (Recherche) */
+.card.mol h3 { display: flex; align-items: center; gap: 10px; text-transform: none; }
+.card.mol .smi { font-family: var(--mono); font-size: 12px; color: var(--vital);
+  word-break: break-all; font-weight: 600; }
+.mol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 6px; }
+.mol-tbl td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); }
+.mol-tbl td:first-child { color: var(--muted); width: 42%; }
+.mol-side .o-head { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.tox-alert { color: var(--danger); font-family: var(--mono); font-size: 12px; }
+.tox-ok { color: var(--ok); font-family: var(--mono); font-size: 12px; }
+.o-head { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+
+/* Exemples SMILES */
+.ex { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 8px; }
+.lnk { background: none; border: none; color: var(--blue); cursor: pointer;
+  font-family: var(--mono); font-size: 11px; padding: 0; text-decoration: underline; }
+.lnk:hover { color: var(--vital); }
+
+/* Guide */
+.info-block p { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.info-block b { color: var(--text); }
+.info-block hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
+.info-block .warn-note { color: var(--warn); font-family: var(--mono); font-size: 12px; }
+
 @media (max-width: 1000px) {
   .kpis { grid-template-columns: repeat(2, 1fr); }
   .grid-2 { grid-template-columns: 1fr; }
+  .mol-grid { grid-template-columns: 1fr; }
   .ecg-wrap { display: none; }
 }
