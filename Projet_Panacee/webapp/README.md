@@ -105,11 +105,25 @@ Sans tunnel, l'alternative reste l'**import** du `live_metrics.jsonl` téléchar
 
 ## Assistant (chatbot)
 
-Onglet **💬 Assistant** : converse avec le modèle GNN. Avec `ANTHROPIC_API_KEY`,
-**Claude (claude-opus-4-8)** orchestre les outils du modèle (toxicité, efficacité
-VIH, descripteurs, criblage, synergie, statut) pour des analyses avancées ; sans
-clé, un **assistant local** appelle quand même ces outils (détection SMILES +
-intention). Installe le SDK pour le mode Claude : `pip install anthropic`.
+Onglet **💬 Assistant** : converse avec le modèle GNN. Avec **Claude
+(claude-opus-4-8)**, il orchestre les outils du modèle (toxicité, efficacité VIH,
+descripteurs, criblage, synergie, statut) pour des analyses avancées ; sans clé,
+un **assistant local** appelle quand même ces outils (détection SMILES + intention).
+
+Fonctionnalités :
+- **Multi-conversations** : créer / changer / renommer / supprimer (panneau latéral).
+- **Recherche** dans l'historique des chats.
+- **Streaming token-par-token** des réponses.
+- **Images** : joindre une image (analyse **vision** via Claude) ; **structures 2D**
+  des molécules **générées automatiquement** dans la réponse.
+- **Export** d'une conversation précise (JSON).
+- **Clé API Anthropic** : se met directement dans l'UI (champ dédié, stockée
+  localement) ou via `ANTHROPIC_API_KEY`. Installe le SDK : `pip install anthropic`.
+
+**Base de données** : tout l'historique (conversations, messages, réglages) est
+persisté dans **SQLite** (`data/panacee.db`, ignoré par git) ; les images dans
+`data/chat_images/`. Endpoints : `/api/conversations*`, `/api/chat`,
+`/api/chat/stream`, `/api/settings/apikey`, `/api/chat/image`.
 
 ## Thème clair / sombre
 

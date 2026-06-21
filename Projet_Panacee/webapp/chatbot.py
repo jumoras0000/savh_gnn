@@ -132,8 +132,20 @@ def _dispatch_tool(name: str, args: dict) -> dict:
 # Mode Claude (Anthropic SDK + tool-use)
 # ──────────────────────────────────────────────────────────────────────
 
+def _get_api_key() -> str | None:
+    """Clé API : variable d'env en priorité, sinon réglage stocké en base (local)."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if key:
+        return key
+    try:
+        from webapp import store
+        return store.get_setting("anthropic_api_key") or None
+    except Exception:
+        return None
+
+
 def _claude_available() -> bool:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not _get_api_key():
         return False
     try:
         import anthropic  # noqa: F401
@@ -142,11 +154,32 @@ def _claude_available() -> bool:
         return False
 
 
-def _chat_claude(history: list[dict], max_steps: int = 6) -> dict:
+def _client():
     import anthropic
-    client = anthropic.Anthropic()
-    messages = [{"role": m["role"], "content": m["content"]} for m in history
-                if m.get("role") in ("user", "assistant")]
+    return anthropic.Anthropic(api_key=_get_api_key())
+
+
+def _to_claude_messages(history: list[dict]) -> list[dict]:
+    """Convertit l'historique en messages Claude, avec support vision (images base64)."""
+    out = []
+    for m in history:
+        if m.get("role") not in ("user", "assistant"):
+            continue
+        img = m.get("image_b64")  # {media_type, data} fourni pour le dernier message
+        if img and m["role"] == "user":
+            out.append({"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64",
+                                             "media_type": img["media_type"], "data": img["data"]}},
+                {"type": "text", "text": m.get("content") or "Analyse cette image."},
+            ]})
+        else:
+            out.append({"role": m["role"], "content": m.get("content", "")})
+    return out
+
+
+def _chat_claude(history: list[dict], max_steps: int = 6) -> dict:
+    client = _client()
+    messages = _to_claude_messages(history)
     tool_trace = []
 
     for _ in range(max_steps):
@@ -201,6 +234,27 @@ def _extract_smiles(text: str) -> list[str]:
     return out
 
 
+def _last_user_text(history: list[dict]) -> str:
+    for m in reversed(history):
+        if m.get("role") == "user":
+            return m.get("content", "") or ""
+    return ""
+
+
+def _smiles_images(history: list[dict]) -> list[dict]:
+    """Images explicatives : structures 2D des SMILES du dernier message utilisateur."""
+    import urllib.parse
+    seen, out = set(), []
+    for smi in _extract_smiles(_last_user_text(history)):
+        if smi in seen:
+            continue
+        seen.add(smi)
+        out.append({"smiles": smi, "url": "/api/depict?smiles=" + urllib.parse.quote(smi)})
+        if len(out) >= 4:
+            break
+    return out
+
+
 def _fmt_descriptors(d: dict) -> str:
     if not d.get("valid"):
         return f"  • {d.get('smiles')} : SMILES invalide."
@@ -209,10 +263,11 @@ def _fmt_descriptors(d: dict) -> str:
 
 
 def _chat_local(history: list[dict]) -> dict:
-    user = ""
+    user, has_image = "", False
     for m in reversed(history):
         if m.get("role") == "user":
             user = m.get("content", "")
+            has_image = bool(m.get("image_b64"))
             break
     low = user.lower()
     smiles = _extract_smiles(user)
@@ -220,6 +275,11 @@ def _chat_local(history: list[dict]) -> dict:
 
     def done(reply):
         return {"reply": reply, "mode": "local", "tools": tools}
+
+    if has_image and not smiles:
+        return done("J'ai bien reçu ton image. L'analyse visuelle nécessite la "
+                    "synchronisation Claude (définis ta clé ANTHROPIC_API_KEY dans "
+                    "l'onglet Assistant). En attendant, donne-moi un SMILES ou décris la molécule.")
 
     # Intentions
     if any(k in low for k in ("statut", "status", "entrainement", "entraînement", "run")) and not smiles:
@@ -300,16 +360,20 @@ def _chat_local(history: list[dict]) -> dict:
 # ──────────────────────────────────────────────────────────────────────
 
 def chat(history: list[dict]) -> dict:
-    """history = [{role, content}, ...]. Renvoie {reply, mode, tools}."""
+    """history = [{role, content, image_b64?}, ...]. Renvoie {reply, mode, tools, images}."""
     if not history:
-        return {"reply": "Pose-moi une question sur une molécule.", "mode": "local", "tools": []}
+        return {"reply": "Pose-moi une question sur une molécule.", "mode": "local",
+                "tools": [], "images": []}
     if _claude_available():
         try:
-            return _chat_claude(history)
+            res = _chat_claude(history)
         except Exception as e:  # pragma: no cover - dépend de l'API
-            return {"reply": f"Claude indisponible ({e}). Bascule en mode local. "
-                             "Réessaie ta question.", "mode": "local", "tools": []}
-    return _chat_local(history)
+            res = {"reply": f"Claude indisponible ({e}). Bascule en mode local. "
+                            "Réessaie ta question.", "mode": "local", "tools": []}
+    else:
+        res = _chat_local(history)
+    res["images"] = _smiles_images(history)
+    return res
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -324,10 +388,8 @@ def _word_chunks(text: str):
 
 def _chat_claude_stream(history: list[dict], max_steps: int = 6):
     """Boucle d'outils non-streamée ; le DERNIER tour de texte est vraiment streamé."""
-    import anthropic
-    client = anthropic.Anthropic()
-    messages = [{"role": m["role"], "content": m["content"]} for m in history
-                if m.get("role") in ("user", "assistant")]
+    client = _client()
+    messages = _to_claude_messages(history)
     tool_trace = []
     for _ in range(max_steps):
         resp = client.messages.create(
@@ -363,6 +425,9 @@ def chat_stream(history: list[dict]):
         yield {"type": "delta", "text": "Pose-moi une question sur une molécule."}
         yield {"type": "done", "mode": "local", "tools": []}
         return
+    # Images explicatives (structures) d'abord
+    for im in _smiles_images(history):
+        yield {"type": "image", **im}
     if _claude_available():
         try:
             yield from _chat_claude_stream(history)

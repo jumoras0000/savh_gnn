@@ -307,21 +307,38 @@
 
     <!-- ---------- Assistant (chatbot) ---------- -->
     <section class="panel-view" id="view-chat">
-      <div class="card">
-        <h3>💬 Assistant Panacée <span id="chatMode" class="badge NA">…</span></h3>
-        <div class="hint">Converse avec le modèle GNN entraîné. Avec une clé <code>ANTHROPIC_API_KEY</code>, Claude (claude-opus-4-8) orchestre les outils du modèle pour des analyses avancées ; sinon, un assistant local appelle quand même les outils GNN.</div>
-        <div id="chatLog" class="chatlog"></div>
-        <div class="form-row" style="margin-top:12px">
-          <div class="field" style="flex:3">
-            <textarea id="chatInput" rows="2" placeholder="Ex : toxicité et risque de CC(=O)Nc1ccc(O)cc1 — ou : crible la bibliothèque anti-VIH par efficacité"></textarea>
+      <div class="chat-wrap">
+        <aside class="chat-side card">
+          <button class="btn" id="chatNew" style="width:100%">＋ Nouvelle conversation</button>
+          <input id="chatSearch" class="picker" placeholder="🔎 Rechercher dans les chats…" style="margin-top:8px" />
+          <div id="convList" class="conv-list"></div>
+        </aside>
+        <div class="chat-main card">
+          <h3>💬 Assistant <span id="chatMode" class="badge NA">…</span>
+            <button class="btn ghost" id="chatExport" title="Exporter cette conversation (JSON)" style="margin-left:auto">⬇️ Exporter</button>
+          </h3>
+          <div class="hint">Converse avec le modèle GNN. Avec une clé Claude (ci‑dessous ou <code>ANTHROPIC_API_KEY</code>), Claude orchestre les outils du modèle et analyse les <b>images</b> ; sinon l'assistant local appelle quand même les outils GNN. Les <b>structures 2D</b> des molécules sont générées automatiquement.</div>
+          <div id="apiKeyRow" class="form-row" style="display:none;margin-top:8px">
+            <input id="apiKeyInput" class="picker" type="password" placeholder="Clé API Anthropic (sk-ant-…) — stockée localement, active Claude + vision" style="flex:3" />
+            <button class="btn" id="apiKeySave">Activer Claude</button>
           </div>
-          <button class="btn" id="chatSend">Envoyer</button>
-        </div>
-        <div class="ex">Suggestions :
-          <button class="lnk chip" data-msg="Quelles sont les capacités du modèle pour le VIH ?">capacités VIH</button> ·
-          <button class="lnk chip" data-msg="Toxicité, efficacité et risque de CC(=O)Nc1ccc(O)cc1">analyser le paracétamol</button> ·
-          <button class="lnk chip" data-msg="Crible la bibliothèque anti-VIH par efficacité">criblage anti-VIH</button> ·
-          <button class="lnk chip" data-msg="Statut de l'entraînement">statut entraînement</button>
+          <div id="chatLog" class="chatlog"></div>
+          <div id="imgPreview" class="img-preview" style="display:none"></div>
+          <div class="form-row" style="margin-top:10px">
+            <label class="upload" title="Joindre une image (analyse vision via Claude)">
+              <input type="file" id="chatImage" accept="image/*" hidden /><span>🖼️</span>
+            </label>
+            <div class="field" style="flex:3;min-width:auto">
+              <textarea id="chatInput" rows="2" placeholder="Ex : toxicité et risque de CC(=O)Nc1ccc(O)cc1 — ou : crible la bibliothèque anti-VIH par efficacité"></textarea>
+            </div>
+            <button class="btn" id="chatSend">Envoyer</button>
+          </div>
+          <div class="ex">Suggestions :
+            <button class="lnk chip" data-msg="Quelles sont les capacités du modèle pour le VIH ?">capacités VIH</button> ·
+            <button class="lnk chip" data-msg="Toxicité, efficacité et risque de CC(=O)Nc1ccc(O)cc1">paracétamol</button> ·
+            <button class="lnk chip" data-msg="Crible la bibliothèque anti-VIH par efficacité">criblage anti-VIH</button> ·
+            <button class="lnk chip" data-msg="Statut de l'entraînement">statut</button>
+          </div>
         </div>
       </div>
     </section>

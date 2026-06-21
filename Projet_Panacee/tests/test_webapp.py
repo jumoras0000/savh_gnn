@@ -45,6 +45,7 @@ def runs_root(tmp_path):
 @pytest.fixture()
 def client(runs_root, monkeypatch):
     monkeypatch.setenv("PANACEE_CKPT_ROOT", str(runs_root))
+    monkeypatch.setenv("PANACEE_DB", str(runs_root / "test.db"))  # base isolée par test
     # importer APRÈS avoir posé l'env (le module lit l'env à chaque requête)
     from webapp.server import app
     with TestClient(app) as c:
@@ -367,6 +368,69 @@ def test_chat_stream_local(client):
                 break
     assert "delta" in events and "done" in events, events
     assert deltas, "aucun token diffusé"
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Conversations (base SQLite) : CRUD, persistance, recherche, export, image
+# ──────────────────────────────────────────────────────────────────────
+
+def test_conversation_crud(client):
+    c = client.post("/api/conversations", json={"title": "Mon chat"}).json()
+    cid = c["id"]
+    assert cid and c["title"] == "Mon chat"
+    assert any(x["id"] == cid for x in client.get("/api/conversations").json()["conversations"])
+    assert client.get(f"/api/conversations/{cid}").json()["messages"] == []
+    assert client.post(f"/api/conversations/{cid}/rename", json={"title": "Renommé"}).json()["ok"]
+    convs = client.get("/api/conversations").json()["conversations"]
+    assert next(x for x in convs if x["id"] == cid)["title"] == "Renommé"
+    assert client.request("DELETE", f"/api/conversations/{cid}").json()["ok"]
+    assert client.get(f"/api/conversations/{cid}").status_code == 404
+
+
+def test_chat_persists_to_conversation(client):
+    r = client.post("/api/chat", json={"content": "descripteurs de CC(=O)Oc1ccccc1C(=O)O"})
+    j = r.json()
+    assert r.status_code == 200 and j.get("conversation_id")
+    cid = j["conversation_id"]
+    msgs = client.get(f"/api/conversations/{cid}").json()["messages"]
+    assert len(msgs) == 2 and msgs[0]["role"] == "user" and msgs[1]["role"] == "assistant"
+    # le titre auto reprend le début du 1er message
+    convs = client.get("/api/conversations").json()["conversations"]
+    assert next(x for x in convs if x["id"] == cid)["message_count"] == 2
+
+
+def test_conversation_search_and_export(client):
+    j = client.post("/api/chat", json={"content": "toxicité de CCO paracetamol"}).json()
+    cid = j["conversation_id"]
+    res = client.get("/api/conversations/search", params={"q": "paracetamol"}).json()["results"]
+    assert any(x["id"] == cid for x in res)
+    exp = client.get(f"/api/conversations/{cid}/export")
+    assert exp.status_code == 200 and "attachment" in exp.headers.get("content-disposition", "")
+    data = exp.json()
+    assert data["conversation"]["id"] == cid and len(data["messages"]) >= 2
+
+
+def test_settings_apikey(client):
+    st = client.get("/api/chat/status").json()
+    assert st["has_key"] is False and st["key_source"] == "none"
+    client.post("/api/settings/apikey", json={"api_key": "sk-ant-test-xyz"})
+    st2 = client.get("/api/chat/status").json()
+    assert st2["has_key"] is True and st2["key_source"] == "store"
+    # `claude` dépend de la présence du SDK anthropic dans l'env — on ne l'asserte pas.
+
+
+def test_chat_image_roundtrip(client):
+    # 1x1 PNG transparent (base64)
+    png = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4"
+           "nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=")
+    r = client.post("/api/chat", json={"content": "analyse cette image",
+                                       "image": {"media_type": "image/png", "data": png}})
+    j = r.json()
+    assert r.status_code == 200 and j.get("user_image")
+    img = client.get("/api/chat/image", params={"name": j["user_image"]})
+    assert img.status_code == 200 and img.headers["content-type"].startswith("image/")
+    # nom traversant → refusé/introuvable
+    assert client.get("/api/chat/image", params={"name": "../../etc/passwd"}).status_code in (400, 404)
 
 
 # ──────────────────────────────────────────────────────────────────────

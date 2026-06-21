@@ -456,6 +456,29 @@ textarea { resize: vertical; line-height: 1.5; }
 .chip:hover { border-color: var(--vital); }
 .typing { align-self: flex-start; color: var(--faint); font-family: var(--mono); font-size: 12px; }
 
+/* Assistant : disposition conversations + chat */
+.chat-wrap { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+.chat-side { position: sticky; top: 80px; }
+.chat-main h3 { display: flex; align-items: center; gap: 8px; }
+.conv-list { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; max-height: 460px; overflow-y: auto; }
+.conv { position: relative; padding: 8px 26px 8px 10px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; cursor: pointer; }
+.conv:hover { background: rgba(255,255,255,.03); border-color: var(--line-soft); }
+.conv.active { background: var(--surface); border-color: var(--vital-dim); }
+.conv-title { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-snip { font-family: var(--mono); font-size: 10px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-del { position: absolute; right: 6px; top: 8px; background: none; border: none; color: var(--faint);
+  cursor: pointer; font-size: 12px; opacity: 0; }
+.conv:hover .conv-del { opacity: 1; }
+.conv-del:hover { color: var(--danger); }
+
+.chat-img { display: block; max-width: 240px; max-height: 220px; border-radius: 8px; margin: 8px 0 2px; }
+.chat-img.mol-img { background: #fff; padding: 6px; }
+.img-preview { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.img-preview img { max-height: 60px; border-radius: 6px; }
+
+@media (max-width: 1000px) { .chat-wrap { grid-template-columns: 1fr; } .chat-side { position: static; } }
+
 @media (max-width: 1000px) {
   .kpis { grid-template-columns: repeat(2, 1fr); }
   .grid-2 { grid-template-columns: 1fr; }

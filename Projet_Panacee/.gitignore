@@ -44,6 +44,13 @@ data/processed/**/*
 !data/processed/.gitkeep
 !data/external/.gitkeep
 
+# Base de données chatbot + images de chat + uploads (local)
+*.db
+*.sqlite
+*.sqlite3
+data/chat_images/
+data/uploads/
+
 # Checkpoints et modèles
 checkpoints/**/*.pth
 checkpoints/**/*.pt

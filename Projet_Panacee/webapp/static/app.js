@@ -24,7 +24,7 @@ const state = {
   expected: {}, thresholds: {}, status: "idle",
   verdict: null, compare: [], perTask: {}, es: null,
   observations: [], files: { checkpoints: [], csvs: [] },
-  trainTimer: null, chatHistory: [],
+  trainTimer: null, chatHistory: [], currentConv: null, _loadConversations: null,
 };
 
 /* ====================================================================
@@ -983,6 +983,7 @@ function setupTheme() {
 function setupChat() {
   const log = document.getElementById("chatLog");
   const input = document.getElementById("chatInput");
+  let attachedImage = null; // {media_type, data}
 
   const addBubble = (cls, text) => {
     const div = document.createElement("div");
@@ -990,8 +991,7 @@ function setupChat() {
     const txt = document.createElement("span");
     txt.className = "txt"; txt.textContent = text || "";
     div.appendChild(txt);
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
+    log.appendChild(div); log.scrollTop = log.scrollHeight;
     return div;
   };
   const setToolNote = (bubble, tools) => {
@@ -1000,31 +1000,113 @@ function setupChat() {
     if (!n) { n = document.createElement("span"); n.className = "toolnote"; bubble.appendChild(n); }
     n.textContent = "🔧 " + tools.join(", ");
   };
+  const addImage = (bubble, src, cls) => {
+    const img = document.createElement("img");
+    img.className = "chat-img " + (cls || ""); img.src = src; img.loading = "lazy";
+    const note = bubble.querySelector(".toolnote");
+    bubble.insertBefore(img, note || null);
+    log.scrollTop = log.scrollHeight;
+  };
 
+  // ---- conversations ----
+  async function loadConversations(q) {
+    try {
+      const data = q ? await fetchJSON("/api/conversations/search?q=" + encodeURIComponent(q))
+                     : await fetchJSON("/api/conversations");
+      renderConvList(q ? data.results : data.conversations);
+    } catch (e) { /* ignore */ }
+  }
+  function renderConvList(items) {
+    const box = document.getElementById("convList");
+    box.innerHTML = (items || []).map(c => `
+      <div class="conv ${c.id === state.currentConv ? "active" : ""}" data-id="${c.id}">
+        <div class="conv-title">${esc(c.title || "Conversation")}</div>
+        <div class="conv-snip">${esc(c.last_snippet || c.snippet || "")}</div>
+        <button class="conv-del" data-id="${c.id}" title="Supprimer">✕</button>
+      </div>`).join("") || `<div class="empty" style="padding:14px">Aucune conversation.</div>`;
+    box.querySelectorAll(".conv").forEach(el => el.addEventListener("click", (e) => {
+      if (e.target.classList.contains("conv-del")) return;
+      openConversation(el.dataset.id);
+    }));
+    box.querySelectorAll(".conv-del").forEach(b => b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await fetch("/api/conversations/" + b.dataset.id, { method: "DELETE" });
+      if (state.currentConv === b.dataset.id) { state.currentConv = null; log.innerHTML = ""; }
+      loadConversations();
+    }));
+  }
+  async function openConversation(cid) {
+    state.currentConv = cid;
+    log.innerHTML = "";
+    try {
+      const data = await fetchJSON("/api/conversations/" + cid);
+      for (const m of data.messages) {
+        const b = addBubble(m.role === "user" ? "user" : "bot", m.content);
+        if (m.image) addImage(b, "/api/chat/image?name=" + encodeURIComponent(m.image), "user-img");
+        if (m.tools && m.tools.length) setToolNote(b, m.tools.map(t => t.tool || t));
+      }
+    } catch (e) {}
+    log.scrollTop = log.scrollHeight;
+    loadConversations();
+  }
+  async function newConversation() {
+    try {
+      const c = await fetchJSON("/api/conversations", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: "{}" });
+      state.currentConv = c.id; log.innerHTML = ""; await loadConversations();
+    } catch (e) {}
+  }
+
+  // ---- image attach ----
+  function clearImage() {
+    attachedImage = null;
+    const p = document.getElementById("imgPreview");
+    p.style.display = "none"; p.innerHTML = "";
+    document.getElementById("chatImage").value = "";
+  }
+  document.getElementById("chatImage").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      attachedImage = { media_type: f.type, data: r.result.split(",")[1] };
+      const p = document.getElementById("imgPreview");
+      p.style.display = "flex";
+      p.innerHTML = `<img src="${r.result}" alt="aperçu"/><button class="btn ghost" id="imgClear">✕ retirer</button>`;
+      document.getElementById("imgClear").addEventListener("click", clearImage);
+    };
+    r.readAsDataURL(f);
+  });
+
+  // ---- send (streaming + persistance) ----
   const send = async () => {
     const text = input.value.trim();
-    if (!text) return;
+    if (!text && !attachedImage) return;
     input.value = "";
-    addBubble("user", text);
-    state.chatHistory.push({ role: "user", content: text });
+    const ub = addBubble("user", text);
+    const payloadImage = attachedImage;
+    if (payloadImage) addImage(ub, "data:" + payloadImage.media_type + ";base64," + payloadImage.data, "user-img");
+    clearImage();
     const bubble = addBubble("bot", "");
     const txt = bubble.querySelector(".txt");
     txt.innerHTML = '<span class="typing">…</span>';
     let full = "", tools = [], started = false;
 
-    const onEvent = (event, data) => {
-      if (event === "tool") { tools.push(data.tool); setToolNote(bubble, tools); }
-      else if (event === "delta") {
+    const onEvent = (ev, data) => {
+      if (ev === "meta") { if (data.conversation_id) state.currentConv = data.conversation_id; }
+      else if (ev === "image") { addImage(bubble, data.url, "mol-img"); }
+      else if (ev === "tool") { tools.push(data.tool); setToolNote(bubble, tools); }
+      else if (ev === "delta") {
         if (!started) { txt.textContent = ""; started = true; }
         full += data.text || ""; txt.textContent = full; log.scrollTop = log.scrollHeight;
-      } else if (event === "done") { setToolNote(bubble, (data.tools || []).map(t => t.tool || t)); }
-      else if (event === "error") { txt.textContent = "Erreur : " + (data.error || "?"); }
+      } else if (ev === "done") { setToolNote(bubble, (data.tools || []).map(t => t.tool || t)); }
+      else if (ev === "error") { txt.textContent = "Erreur : " + (data.error || "?"); }
     };
 
     try {
       const resp = await fetch("/api/chat/stream", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: state.chatHistory }),
+        body: JSON.stringify({ conversation_id: state.currentConv, content: text, image: payloadImage }),
       });
       if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
       const reader = resp.body.getReader();
@@ -1046,27 +1128,39 @@ function setupChat() {
         }
       }
       if (!started && !full) txt.textContent = "(pas de réponse)";
-      state.chatHistory.push({ role: "assistant", content: full });
-    } catch (e) {
-      // repli non-streaming
-      try {
-        const res = await fetchJSON("/api/chat", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: state.chatHistory }),
-        });
-        txt.textContent = res.reply || "(pas de réponse)";
-        setToolNote(bubble, (res.tools || []).map(t => t.tool));
-        state.chatHistory.push({ role: "assistant", content: res.reply || "" });
-      } catch (e2) { txt.textContent = "Erreur : " + e2.message; }
-    }
+      loadConversations();
+    } catch (e) { txt.textContent = "Erreur : " + e.message; }
   };
 
+  // ---- wiring ----
   document.getElementById("chatSend").addEventListener("click", send);
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
   document.querySelectorAll("#view-chat .chip").forEach(c =>
     c.addEventListener("click", () => { input.value = c.dataset.msg; send(); }));
+  document.getElementById("chatNew").addEventListener("click", newConversation);
+  let stq = null;
+  document.getElementById("chatSearch").addEventListener("input", (e) => {
+    clearTimeout(stq); const q = e.target.value.trim();
+    stq = setTimeout(() => loadConversations(q || null), 250);
+  });
+  document.getElementById("chatExport").addEventListener("click", () => {
+    if (!state.currentConv) { flashToast("Ouvre une conversation d'abord.", true); return; }
+    window.open("/api/conversations/" + state.currentConv + "/export", "_blank");
+  });
+  document.getElementById("apiKeySave").addEventListener("click", async () => {
+    const k = document.getElementById("apiKeyInput").value.trim();
+    if (!k) { flashToast("Colle ta clé API.", true); return; }
+    try {
+      await fetchJSON("/api/settings/apikey", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: k }) });
+      document.getElementById("apiKeyInput").value = "";
+      flashToast("Clé enregistrée — Claude activé."); refreshChatMode();
+    } catch (e) { flashToast("Échec : " + e.message, true); }
+  });
+
+  state._loadConversations = loadConversations;
 }
 
 async function refreshChatMode() {
@@ -1076,7 +1170,10 @@ async function refreshChatMode() {
     const s = await fetchJSON("/api/chat/status");
     badge.textContent = s.claude ? "Claude " + s.model : "local";
     badge.className = "badge " + (s.claude ? "OK" : "NA");
+    const row = document.getElementById("apiKeyRow");
+    if (row) row.style.display = s.claude ? "none" : "flex";
   } catch (e) { badge.textContent = "?"; }
+  if (state._loadConversations) state._loadConversations();
 }
 
 /* ====================================================================
