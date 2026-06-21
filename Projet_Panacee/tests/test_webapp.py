@@ -350,6 +350,25 @@ def test_chat_help_when_empty_intent(client):
     assert r.status_code == 200 and "copilote" in r.json()["reply"].lower()
 
 
+def test_chat_stream_local(client):
+    """Le flux SSE de chat est FINI (se termine par 'done') → pas de hang."""
+    with client.stream("POST", "/api/chat/stream", json={"messages": [
+            {"role": "user", "content": "descripteurs de CC(=O)Oc1ccccc1C(=O)O"}]}) as resp:
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers["content-type"]
+        events, deltas = [], []
+        for raw in resp.iter_lines():
+            line = raw if isinstance(raw, str) else raw.decode("utf-8")
+            if line.startswith("event:"):
+                events.append(line.split(":", 1)[1].strip())
+            elif line.startswith("data:") and events and events[-1] == "delta":
+                deltas.append(line)
+            if "done" in events:
+                break
+    assert "delta" in events and "done" in events, events
+    assert deltas, "aucun token diffusé"
+
+
 # ──────────────────────────────────────────────────────────────────────
 # SSE temps réel
 #

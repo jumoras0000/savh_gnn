@@ -347,6 +347,28 @@ async def api_chat_status(request):
     return JSONResponse({"claude": chatbot._claude_available(), "model": chatbot.MODEL})
 
 
+async def api_chat_stream(request):
+    """Chat en streaming token-par-token (SSE). Body = {messages}."""
+    from starlette.responses import StreamingResponse
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    history = (body.get("messages") or [])[-20:]
+
+    def gen():
+        from webapp import chatbot
+        try:
+            for ev in chatbot.chat_stream(history):
+                yield _sse(ev.get("type", "msg"), ev)
+        except Exception as e:  # pragma: no cover
+            yield _sse("error", {"error": str(e)})
+
+    headers = {"Cache-Control": "no-cache", "Connection": "keep-alive",
+               "X-Accel-Buffering": "no"}
+    return StreamingResponse(gen(), media_type="text/event-stream", headers=headers)
+
+
 async def api_screen(request):
     """Criblage virtuel d'une bibliothèque (objectif : drug_likeness/safety/efficacy)."""
     try:
@@ -517,6 +539,7 @@ routes = [
     Route("/api/screen", api_screen, methods=["POST"]),
     Route("/api/capabilities", api_capabilities),
     Route("/api/chat", api_chat, methods=["POST"]),
+    Route("/api/chat/stream", api_chat_stream, methods=["POST"]),
     Route("/api/chat/status", api_chat_status),
     Route("/api/stream", api_stream),
     Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),

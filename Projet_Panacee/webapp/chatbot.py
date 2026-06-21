@@ -310,3 +310,70 @@ def chat(history: list[dict]) -> dict:
             return {"reply": f"Claude indisponible ({e}). Bascule en mode local. "
                              "Réessaie ta question.", "mode": "local", "tools": []}
     return _chat_local(history)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Streaming token-par-token (générateur synchrone — Starlette le thread-poole)
+# ──────────────────────────────────────────────────────────────────────
+
+def _word_chunks(text: str):
+    import re
+    for m in re.findall(r"\S+\s*|\s+", text):
+        yield m
+
+
+def _chat_claude_stream(history: list[dict], max_steps: int = 6):
+    """Boucle d'outils non-streamée ; le DERNIER tour de texte est vraiment streamé."""
+    import anthropic
+    client = anthropic.Anthropic()
+    messages = [{"role": m["role"], "content": m["content"]} for m in history
+                if m.get("role") in ("user", "assistant")]
+    tool_trace = []
+    for _ in range(max_steps):
+        resp = client.messages.create(
+            model=MODEL, max_tokens=4096, thinking={"type": "adaptive"},
+            system=SYSTEM_PROMPT, tools=TOOLS, messages=messages)
+        if resp.stop_reason == "tool_use":
+            messages.append({"role": "assistant", "content": resp.content})
+            results = []
+            for block in resp.content:
+                if block.type == "tool_use":
+                    out = _dispatch_tool(block.name, dict(block.input))
+                    tool_trace.append({"tool": block.name})
+                    yield {"type": "tool", "tool": block.name}
+                    results.append({"type": "tool_result", "tool_use_id": block.id,
+                                    "content": json.dumps(out, default=str, ensure_ascii=False)})
+            messages.append({"role": "user", "content": results})
+            continue
+        # Plus d'outils → re-générer la réponse finale en vrai streaming
+        with client.messages.stream(
+            model=MODEL, max_tokens=4096, thinking={"type": "adaptive"},
+            system=SYSTEM_PROMPT, messages=messages) as stream:
+            for text in stream.text_stream:
+                yield {"type": "delta", "text": text}
+        yield {"type": "done", "mode": "claude", "tools": tool_trace}
+        return
+    yield {"type": "done", "mode": "claude", "tools": tool_trace}
+
+
+def chat_stream(history: list[dict]):
+    """Générateur d'événements : {type: tool|delta|done|error}."""
+    import time
+    if not history:
+        yield {"type": "delta", "text": "Pose-moi une question sur une molécule."}
+        yield {"type": "done", "mode": "local", "tools": []}
+        return
+    if _claude_available():
+        try:
+            yield from _chat_claude_stream(history)
+            return
+        except Exception as e:  # pragma: no cover
+            yield {"type": "delta", "text": f"Claude indisponible ({e}) → mode local. "}
+    # Mode local : outils exécutés d'abord, puis texte diffusé au fil de l'eau
+    res = _chat_local(history)
+    for t in res.get("tools", []):
+        yield {"type": "tool", "tool": t["tool"]}
+    for chunk in _word_chunks(res.get("reply", "")):
+        yield {"type": "delta", "text": chunk}
+        time.sleep(0.012)
+    yield {"type": "done", "mode": res.get("mode", "local"), "tools": res.get("tools", [])}

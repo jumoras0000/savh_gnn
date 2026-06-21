@@ -984,19 +984,21 @@ function setupChat() {
   const log = document.getElementById("chatLog");
   const input = document.getElementById("chatInput");
 
-  const addBubble = (cls, text, tools) => {
+  const addBubble = (cls, text) => {
     const div = document.createElement("div");
     div.className = "bubble " + cls;
-    div.textContent = text;
-    if (tools && tools.length) {
-      const n = document.createElement("span");
-      n.className = "toolnote";
-      n.textContent = "🔧 " + tools.map(t => t.tool).join(", ");
-      div.appendChild(n);
-    }
+    const txt = document.createElement("span");
+    txt.className = "txt"; txt.textContent = text || "";
+    div.appendChild(txt);
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
     return div;
+  };
+  const setToolNote = (bubble, tools) => {
+    if (!tools || !tools.length) return;
+    let n = bubble.querySelector(".toolnote");
+    if (!n) { n = document.createElement("span"); n.className = "toolnote"; bubble.appendChild(n); }
+    n.textContent = "🔧 " + tools.join(", ");
   };
 
   const send = async () => {
@@ -1005,20 +1007,57 @@ function setupChat() {
     input.value = "";
     addBubble("user", text);
     state.chatHistory.push({ role: "user", content: text });
-    const typing = document.createElement("div");
-    typing.className = "typing"; typing.textContent = "Analyse en cours…";
-    log.appendChild(typing); log.scrollTop = log.scrollHeight;
+    const bubble = addBubble("bot", "");
+    const txt = bubble.querySelector(".txt");
+    txt.innerHTML = '<span class="typing">…</span>';
+    let full = "", tools = [], started = false;
+
+    const onEvent = (event, data) => {
+      if (event === "tool") { tools.push(data.tool); setToolNote(bubble, tools); }
+      else if (event === "delta") {
+        if (!started) { txt.textContent = ""; started = true; }
+        full += data.text || ""; txt.textContent = full; log.scrollTop = log.scrollHeight;
+      } else if (event === "done") { setToolNote(bubble, (data.tools || []).map(t => t.tool || t)); }
+      else if (event === "error") { txt.textContent = "Erreur : " + (data.error || "?"); }
+    };
+
     try {
-      const res = await fetchJSON("/api/chat", {
+      const resp = await fetch("/api/chat/stream", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: state.chatHistory }),
       });
-      typing.remove();
-      addBubble("bot", res.reply || "(pas de réponse)", res.tools);
-      state.chatHistory.push({ role: "assistant", content: res.reply || "" });
+      if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const block = buf.slice(0, i); buf = buf.slice(i + 2);
+          let ev = "msg", dat = {};
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event:")) ev = line.slice(6).trim();
+            else if (line.startsWith("data:")) { try { dat = JSON.parse(line.slice(5).trim()); } catch (e) {} }
+          }
+          onEvent(ev, dat);
+        }
+      }
+      if (!started && !full) txt.textContent = "(pas de réponse)";
+      state.chatHistory.push({ role: "assistant", content: full });
     } catch (e) {
-      typing.remove();
-      addBubble("bot", "Erreur : " + e.message);
+      // repli non-streaming
+      try {
+        const res = await fetchJSON("/api/chat", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: state.chatHistory }),
+        });
+        txt.textContent = res.reply || "(pas de réponse)";
+        setToolNote(bubble, (res.tools || []).map(t => t.tool));
+        state.chatHistory.push({ role: "assistant", content: res.reply || "" });
+      } catch (e2) { txt.textContent = "Erreur : " + e2.message; }
     }
   };
 
