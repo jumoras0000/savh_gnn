@@ -8,12 +8,14 @@ Analyse approfondie de la calibration et de l'incertitude.
   - Brier score, log-loss
   - Reliability metrics
 """
-import numpy as np
-from typing import Dict, Tuple, List, Optional
-from sklearn.metrics import brier_score_loss, log_loss
-from scipy import stats
-from pathlib import Path
 import logging
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+from scipy import stats
+from sklearn.metrics import brier_score_loss, log_loss
+
 # NB: matplotlib est importé paresseusement dans reliability_diagram (tracé
 # optionnel) pour que ce module de MÉTRIQUES s'importe même sans matplotlib.
 
@@ -47,7 +49,7 @@ class CalibrationAnalyzer:
     ) -> float:
         """
         Expected Calibration Error (ECE).
-        
+
         Mesure la différence moyenne entre confiance prédite et accuracy réelle.
 
         ECE = Σ |accuracy_i - confidence_i| * fraction_i

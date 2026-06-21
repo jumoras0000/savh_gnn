@@ -12,8 +12,9 @@ Usage :
     python run_phase1.py --download --max_molecules 50000 # subset (rapide Kaggle)
     python run_phase1.py --zinc_csv chemin/vers/zinc.csv  # CSV local
 """
-import sys
 import os
+import sys
+
 os.environ["PYTHONIOENCODING"] = "utf-8"
 import urllib.request
 from pathlib import Path
@@ -21,7 +22,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import CHECKPOINT_DIR, RAW_DIR, PROCESSED_DIR, PHASE1
+from src.config import CHECKPOINT_DIR, PHASE1, PROCESSED_DIR, RAW_DIR
 
 ZINC_FILENAME = "250k_rndm_zinc_drugs_clean_3.csv"
 

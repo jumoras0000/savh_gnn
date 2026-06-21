@@ -2,9 +2,10 @@
 Script de visualisation des résultats Phase 1.
 Extrait l'historique d'entraînement et crée des graphiques d'analyse.
 """
-import torch
-import matplotlib.pyplot as plt
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import torch
 
 # Chemins
 PROJECT_ROOT = Path(__file__).parent

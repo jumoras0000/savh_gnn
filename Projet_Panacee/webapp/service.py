@@ -19,7 +19,11 @@ from src.utils.live_logger import read_live
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 from src.validation.clinical_metrics import (
-    FNR_DANGER, FNR_WARN, AUC_DANGER, AUC_WARN, SENS_DANGER,
+    AUC_DANGER,
+    AUC_WARN,
+    FNR_DANGER,
+    FNR_WARN,
+    SENS_DANGER,
     clinical_score,
 )
 
@@ -376,6 +380,48 @@ def delete_epoch(run_id: str, epoch: int, root: str | Path) -> dict:
 
     return {"ok": True, "epoch": epoch, "removed_ckpt": removed_ckpt,
             "removed_point": removed_point, "remaining": len(kept)}
+
+
+def delete_run(run_id: str, root: str | Path) -> dict:
+    """
+    Supprime un run ENTIER affiché au tableau de bord : son live_metrics.jsonl
+    et tous ses checkpoints par-epoch (dossier epochs/). Sert à retirer les runs
+    « fantômes » qui subsistent après suppression manuelle d'un modèle.
+
+    Ne touche PAS aux .pth principaux (best_model, checkpoint_latest) : ce sont
+    des artefacts d'entraînement, pas des données du dashboard. Garde
+    anti-traversée : tout doit rester sous la racine des runs.
+    """
+    path = resolve_run(run_id, root)
+    if path is None:
+        return {"ok": False, "error": f"run introuvable: {run_id}"}
+
+    root_resolved = Path(root).resolve()
+    run_dir = path.parent
+    try:
+        run_dir.resolve().relative_to(root_resolved)
+    except ValueError:
+        return {"ok": False, "error": "chemin invalide"}
+
+    removed = []
+    # 1) le fichier de métriques temps réel
+    try:
+        path.unlink()
+        removed.append("live_metrics.jsonl")
+    except OSError as e:
+        return {"ok": False, "error": f"suppression impossible: {e}"}
+
+    # 2) les checkpoints par-epoch (dossier epochs/)
+    epochs_dir = run_dir / "epochs"
+    if epochs_dir.is_dir():
+        import shutil
+        try:
+            shutil.rmtree(epochs_dir)
+            removed.append("epochs/")
+        except OSError:
+            pass
+
+    return {"ok": True, "id": run_id, "removed": removed}
 
 
 def compare_runs(root: str | Path = "checkpoints") -> list[dict]:

@@ -10,8 +10,8 @@ Intègre des règles expertes validées pour évaluer les molécules :
   - Propriétés physico-chimiques
 """
 import logging
-from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger("panacee.knowledge")
 

@@ -15,19 +15,19 @@ Les propriétés manquantes sont marquées NaN et ignorées dans la loss.
 """
 import os
 import sys
-import torch
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
+import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Batch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config import EXTERNAL_DIR, SMILES_COLUMN_CANDIDATES
 from src.preprocessing.graph_builder import smiles_to_graph
-from src.config import SMILES_COLUMN_CANDIDATES, EXTERNAL_DIR
-
 
 # ══════════════════════════════════════════════════════════════════════
 # Téléchargement des datasets

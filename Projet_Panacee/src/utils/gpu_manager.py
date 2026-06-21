@@ -9,9 +9,10 @@ Fonctionnalités :
   - Gestion mémoire avec garbage collection
 """
 import gc
-import torch
 import logging
 from typing import Optional
+
+import torch
 
 logger = logging.getLogger("panacee.gpu")
 

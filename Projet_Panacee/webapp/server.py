@@ -29,8 +29,8 @@ import sys
 from pathlib import Path
 
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse, FileResponse, PlainTextResponse
-from starlette.routing import Route, Mount
+from starlette.responses import FileResponse, JSONResponse, PlainTextResponse
+from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -90,6 +90,14 @@ async def api_run(request):
     except (TypeError, ValueError):
         epoch = None
     return JSONResponse(service.get_run(path, root, epoch=epoch))
+
+
+async def api_run_delete(request):
+    """DELETE /api/run?id=<run> → supprime un run entier (métriques + epochs/)."""
+    root = _ckpt_root()
+    run_id = request.query_params.get("id", "")
+    res = service.delete_run(run_id, root)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 404)
 
 
 async def api_epochs(request):
@@ -307,6 +315,35 @@ async def api_descriptors(request):
     return JSONResponse({"results": res})
 
 
+async def api_safety(request):
+    """
+    Sécurité SANS modèle (toujours dispo) : alertes structurelles par endpoint
+    clinique (Ames/DILI/hERG) + domaine d'applicabilité. POST {smiles:[...]}.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    smiles = _parse_smiles(body.get("smiles"))
+    if not smiles:
+        return JSONResponse({"error": "aucun SMILES fourni"}, status_code=400)
+
+    def _run():
+        from webapp import cheminfo
+        out = []
+        for s in smiles:
+            out.append({"smiles": s,
+                        "alerts": cheminfo.structural_alerts(s),
+                        "applicability": cheminfo.applicability_domain(s)})
+        return out
+
+    try:
+        res = await asyncio.to_thread(_run)
+    except Exception as e:  # pragma: no cover
+        return JSONResponse({"error": f"RDKit indisponible: {e}"}, status_code=500)
+    return JSONResponse({"results": res})
+
+
 async def api_depict(request):
     """SVG 2D d'une molécule (?smiles=...&w=..&h=..)."""
     smi = request.query_params.get("smiles", "")
@@ -345,6 +382,12 @@ async def api_libraries(request):
 async def api_capabilities(request):
     from webapp.catalog import CAPABILITIES, LAB_EQUIVALENCE
     return JSONResponse({"capabilities": CAPABILITIES, "lab_equivalence": LAB_EQUIVALENCE})
+
+
+async def api_glossary(request):
+    """Lexique : vue d'ensemble du projet, phases et définitions des mots-clés."""
+    from webapp.catalog import GLOSSARY, PHASES, PROJECT_OVERVIEW
+    return JSONResponse({"overview": PROJECT_OVERVIEW, "phases": PHASES, "glossary": GLOSSARY})
 
 
 def _prepare_chat(body: dict):
@@ -708,6 +751,7 @@ routes = [
     Route("/api/config", api_config),
     Route("/api/runs", api_runs),
     Route("/api/run", api_run),
+    Route("/api/run", api_run_delete, methods=["DELETE"]),
     Route("/api/epochs", api_epochs),
     Route("/api/epoch", api_epoch_delete, methods=["DELETE"]),
     Route("/api/compare", api_compare),
@@ -721,10 +765,12 @@ routes = [
     Route("/api/predict", api_predict, methods=["POST"]),
     Route("/api/combo", api_combo, methods=["POST"]),
     Route("/api/descriptors", api_descriptors, methods=["POST"]),
+    Route("/api/safety", api_safety, methods=["POST"]),
     Route("/api/depict", api_depict),
     Route("/api/libraries", api_libraries),
     Route("/api/screen", api_screen, methods=["POST"]),
     Route("/api/capabilities", api_capabilities),
+    Route("/api/glossary", api_glossary),
     Route("/api/chat", api_chat, methods=["POST"]),
     Route("/api/chat/stream", api_chat_stream, methods=["POST"]),
     Route("/api/chat/status", api_chat_status),

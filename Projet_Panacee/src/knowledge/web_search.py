@@ -9,13 +9,13 @@ Intègre les APIs publiques :
 Toutes les requêtes sont en lecture seule et respectent les rate-limits.
 """
 import json
-import time
 import logging
+import ssl
+import time
 import urllib.parse
 import urllib.request
-import ssl
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import safe_execution
 

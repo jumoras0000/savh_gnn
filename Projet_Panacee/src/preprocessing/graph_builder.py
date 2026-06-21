@@ -2,11 +2,11 @@
 Module de conversion SMILES → Graphes moléculaires (PyTorch Geometric).
 Features normalisées pour stabilité numérique.
 """
-import torch
-from torch_geometric.data import Data
-from rdkit import Chem
-from rdkit import RDLogger
 import warnings
+
+import torch
+from rdkit import Chem, RDLogger
+from torch_geometric.data import Data
 
 RDLogger.DisableLog('rdApp.*')
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="rdkit")

@@ -1,0 +1,25 @@
+# Environnements & caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.git/
+.github/
+
+# Données & artefacts lourds (montés en volume, pas dans l'image)
+checkpoints/
+data/
+logs/
+plots/
+results/
+archives/
+models/*.pt
+models/*.pth
+*.corrupt
+
+# Secrets
+.env
+
+# Notebooks / docs volumineux
+*.ipynb

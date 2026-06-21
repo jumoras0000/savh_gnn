@@ -8,17 +8,18 @@ Mesure :
   - Throughput et latency
   - Scalability analysis
 """
+import json
 import logging
 import time
-import psutil
-import numpy as np
-import torch
-from typing import Callable, Dict, Optional, Any
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-import json
+from typing import Any, Callable, Dict, Optional
+
+import numpy as np
+import psutil
+import torch
 
 logger = logging.getLogger("panacee.profiling")
 

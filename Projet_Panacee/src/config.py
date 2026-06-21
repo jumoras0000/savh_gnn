@@ -2,9 +2,10 @@
 Configuration centralisée pour Projet Panacée.
 Tous les hyperparamètres, chemins et constantes au même endroit.
 """
-import torch
 import sys
 from pathlib import Path
+
+import torch
 
 # ══════════════════════════════════════════════════════════════════════
 # CHEMINS

@@ -8,20 +8,21 @@ Garantit que les expériences peuvent être exactement reproduites :
   - Tracking des hyperparamètres
   - Logging structuré
 """
+import hashlib
+import json
 import logging
 import os
-import sys
-import json
-import torch
-import numpy as np
-import random
 import platform
+import random
+import subprocess
+import sys
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
-from dataclasses import dataclass, asdict
-import subprocess
-import hashlib
+from typing import Any, Dict, Optional
+
+import numpy as np
+import torch
 
 logger = logging.getLogger("panacee.reproducibility")
 
@@ -282,17 +283,30 @@ class ModelVersionManager:
         self.versions: Dict[str, ModelVersion] = self._load_versions()
 
     def _load_versions(self) -> Dict[str, ModelVersion]:
-        """Charge l'historique des versions."""
+        """Charge l'historique des versions (tolérant aux fichiers corrompus)."""
         if not self.versions_file.exists():
             return {}
 
-        with open(self.versions_file) as f:
-            data = json.load(f)
-
-        return {
-            vid: ModelVersion(**v_data)
-            for vid, v_data in data.items()
-        }
+        try:
+            with open(self.versions_file, encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("registre attendu sous forme d'objet JSON")
+            return {
+                vid: ModelVersion(**v_data)
+                for vid, v_data in data.items()
+            }
+        except (json.JSONDecodeError, ValueError, TypeError, UnicodeDecodeError) as e:
+            # Registre illisible / corrompu : on repart d'un registre vide plutôt
+            # que de planter. L'ancien fichier est mis de côté pour inspection.
+            logger.warning(f"versions.json illisible ({e}); registre réinitialisé.")
+            try:
+                self.versions_file.replace(
+                    self.versions_file.with_suffix(".json.corrupt")
+                )
+            except OSError:
+                pass
+            return {}
 
     def _save_versions(self):
         """Sauvegarde l'historique des versions."""

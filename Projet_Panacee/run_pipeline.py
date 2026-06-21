@@ -11,13 +11,13 @@ Usage :
   python run_pipeline.py --analyze           # Analyse avancée seulement
   python run_pipeline.py --status            # Afficher l'état du pipeline
 """
+import argparse
 import os
+import subprocess
 import sys
 import time
-import argparse
-import subprocess
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))

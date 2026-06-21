@@ -16,10 +16,11 @@ Fonctions principales :
 Aucune dépendance au dashboard : module pur, testable seul.
 """
 from __future__ import annotations
+
 import numpy as np
 
 try:
-    from sklearn.metrics import roc_auc_score, average_precision_score
+    from sklearn.metrics import average_precision_score, roc_auc_score
 except Exception:  # pragma: no cover
     roc_auc_score = average_precision_score = None
 
@@ -222,16 +223,24 @@ def evaluate_checkpoint(checkpoint_path, val_csv, smiles_column="smiles",
     """
     import torch
     from torch.utils.data import DataLoader
+
+    from src.config import (
+        ATOM_FEATURE_DIM,
+        ATTENTION_HEADS,
+        BOND_FEATURE_DIM,
+        CONV_TYPE,
+        DROPOUT,
+        HIDDEN_DIM,
+        NUM_GNN_LAYERS,
+        OUTPUT_DIM,
+    )
     from src.models.encoder import MolecularEncoder
     from src.models.toxicity_classifier import ToxicityClassifier
     from src.preprocessing.toxicity_loader import ToxicityDataset, collate_toxicity_batch
-    from src.config import (
-        ATOM_FEATURE_DIM, BOND_FEATURE_DIM, HIDDEN_DIM,
-        NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT, CONV_TYPE, ATTENTION_HEADS,
-    )
 
     dev = torch.device(device)
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    from src.utils.safe_load import safe_load_checkpoint
+    ckpt = safe_load_checkpoint(checkpoint_path)
     cfg = ckpt.get("config", {})
     task_names = ckpt.get("task_names")
     num_tasks = ckpt.get("num_tasks", len(task_names) if task_names else 12)

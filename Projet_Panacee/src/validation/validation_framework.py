@@ -10,11 +10,12 @@ Fonctionnalités :
   - AUC/AUROC, calibration
 """
 import logging
-import numpy as np
-from typing import Dict, List, Callable, Optional
 from dataclasses import dataclass, field
-from sklearn.model_selection import KFold, StratifiedKFold
+from typing import Callable, Dict, List, Optional
+
+import numpy as np
 from scipy import stats
+from sklearn.model_selection import KFold, StratifiedKFold
 
 logger = logging.getLogger("panacee.validation")
 
@@ -75,7 +76,7 @@ class AblationStudyResult:
 class CrossValidator:
     """
     Framework de cross-validation k-fold pour évaluation rigoureuse.
-    
+
     Supporte :
       - K-fold standard et stratifiée
       - Métriques classification et régression
@@ -199,7 +200,7 @@ class CrossValidator:
 
         for train_size in train_sizes:
             n_train = int(len(X) * train_size)
-            
+
             fold_scores = {m: [] for m in ["auc", "f1"]}
             for _fold, (train_idx, test_idx) in enumerate(
                 KFold(n_splits=5, shuffle=True, random_state=42).split(X)
@@ -232,7 +233,7 @@ class CrossValidator:
 class AblationStudy:
     """
     Étude d'ablation pour évaluer l'impact de chaque composant.
-    
+
     Compare les performances avec/sans chaque module.
     """
 
@@ -349,7 +350,7 @@ class AblationStudy:
 class BaselineComparison:
     """
     Compare le modèle avancé avec des baselines simples.
-    
+
     Baselines :
       - Prédictionnaive (classe majoritaire)
       - Régression linéaire
@@ -370,10 +371,10 @@ class BaselineComparison:
         Returns:
             {model_name: {metric_name: value}}
         """
-        from sklearn.model_selection import train_test_split
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.ensemble import RandomForestClassifier
         from sklearn.dummy import DummyClassifier
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.model_selection import train_test_split
 
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=42

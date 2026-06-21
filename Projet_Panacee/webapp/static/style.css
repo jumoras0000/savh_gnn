@@ -162,6 +162,14 @@ body {
   padding: 8px 12px; max-width: 320px;
 }
 .run-select:focus { outline: none; border-color: var(--vital); }
+.run-del {
+  font-size: 13px; line-height: 1; cursor: pointer;
+  background: var(--surface); color: var(--faint);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 8px 10px; transition: color .15s, border-color .15s;
+}
+.run-del:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+.run-del:disabled { opacity: .35; cursor: not-allowed; }
 
 .conn { font-family: var(--mono); font-size: 10.5px; color: var(--faint); letter-spacing: 1px; }
 .conn b { color: var(--vital); }
@@ -576,3 +584,49 @@ textarea { resize: vertical; line-height: 1.5; }
   transition: background .12s, border-color .12s;
 }
 .ep-del:hover { background: rgba(255,61,104,.12); border-color: var(--danger); }
+
+/* ===================== Lexique / Dictionnaire ===================== */
+.lex-hero .lex-pitch { font-size: 15px; line-height: 1.55; margin: 4px 0 14px; }
+.lex-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .lex-grid { grid-template-columns: 1fr; } }
+.lex-box {
+  background: var(--bg); border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+}
+.lex-box p { margin: 4px 0 0; line-height: 1.5; }
+.lex-h { font-weight: 700; color: var(--vital); font-size: 13px; letter-spacing: .02em; }
+.lex-can { margin: 8px 0 12px; padding-left: 20px; }
+.lex-can li { margin: 4px 0; line-height: 1.45; }
+
+.lex-phases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 860px) { .lex-phases { grid-template-columns: 1fr; } }
+.lex-phase {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--bg); padding: 12px 14px;
+}
+.lex-phase-head { font-weight: 700; margin-bottom: 8px; }
+.lex-phase-id {
+  display: inline-block; background: var(--vital); color: #04130f;
+  border-radius: 6px; padding: 1px 7px; font-size: 12px; margin-right: 6px;
+}
+.lex-phase-body > div { font-size: 13px; line-height: 1.5; margin: 3px 0; }
+.lex-analogy { margin-top: 8px !important; color: var(--faint); font-style: italic; }
+
+.lex-search {
+  width: 100%; box-sizing: border-box; margin: 6px 0 14px;
+  font-family: var(--mono); font-size: 13px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.lex-search:focus { outline: none; border-color: var(--vital); }
+.lex-cat { margin-bottom: 18px; }
+.lex-cat-title {
+  font-weight: 700; font-size: 14px; margin-bottom: 8px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.lex-term {
+  border-left: 3px solid var(--vital); padding: 6px 0 6px 12px; margin: 8px 0;
+}
+.lex-term-name { font-weight: 700; color: var(--vital); }
+.lex-term-def { margin: 2px 0; line-height: 1.5; }
+.lex-term-ex { font-size: 13px; color: var(--faint); line-height: 1.45; }

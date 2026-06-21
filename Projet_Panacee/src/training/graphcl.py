@@ -12,21 +12,20 @@ Augmentations (sans réindexation, donc robustes) :
 L'encodeur ainsi pré-entraîné se sauvegarde au MÊME format que la Phase 1 MGM
 (model_state_dict avec préfixe "encoder."), donc la Phase 2 le charge tel quel.
 """
-import time
 import json
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-from torch_geometric.data import Data, Batch
+from torch.utils.data import DataLoader, Dataset
+from torch_geometric.data import Batch, Data
 from tqdm import tqdm
 
-from src.preprocessing.graph_builder import smiles_to_graph
 from src.models.encoder import MolecularEncoder
-
+from src.preprocessing.graph_builder import smiles_to_graph
 
 # ──────────────────────────────────────────────────────────────────────
 # Augmentations
@@ -133,8 +132,14 @@ def nt_xent_loss(z1, z2, temperature: float = 0.2):
 def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
     """Pré-entraîne l'encodeur par GraphCL, sauvegarde au format Phase 1."""
     from src.config import (
-        ATOM_FEATURE_DIM, BOND_FEATURE_DIM, HIDDEN_DIM,
-        NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT, CONV_TYPE, ATTENTION_HEADS,
+        ATOM_FEATURE_DIM,
+        ATTENTION_HEADS,
+        BOND_FEATURE_DIM,
+        CONV_TYPE,
+        DROPOUT,
+        HIDDEN_DIM,
+        NUM_GNN_LAYERS,
+        OUTPUT_DIM,
     )
 
     save_dir = Path(save_dir)

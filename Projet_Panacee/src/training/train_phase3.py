@@ -8,46 +8,60 @@ Pipeline complet :
   4. Entraîner le MolecularReasoner pour l'analyse combinatoire
   5. Sauvegarder le modèle complet : panacee_phase3_complete.pth
 """
-import sys
-import os
-import time
-import json
-import shutil
 import contextlib
-import torch
-import numpy as np
-from pathlib import Path
+import json
+import os
+import shutil
+import sys
+import time
 from datetime import datetime, timedelta
-from torch.utils.data import DataLoader
+from pathlib import Path
+
+import numpy as np
+import torch
+from sklearn.metrics import f1_score, roc_auc_score
 from torch.optim import AdamW
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-from sklearn.metrics import roc_auc_score, f1_score
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config import (
+    ATOM_FEATURE_DIM,
+    ATTENTION_HEADS,
+    BOND_FEATURE_DIM,
+    CHECKPOINT_DIR,
+    CONV_TYPE,
+    DEVICE,
+    DROPOUT,
+    EXTERNAL_DIR,
+    HIDDEN_DIM,
+    LOG_DIR,
+    NUM_GNN_LAYERS,
+    NUM_WORKERS,
+    OUTPUT_DIM,
+    PHASE3,
+    PIN_MEMORY,
+)
 from src.models.encoder import MolecularEncoder
-from src.models.multi_property_head import MultiPropertyPredictor, MultiPropertyLoss
+from src.models.multi_property_head import MultiPropertyLoss, MultiPropertyPredictor
 from src.models.reasoner import MolecularReasoner, ReasonerLoss
 from src.preprocessing.multi_property_loader import (
-    MultiPropertyDataset, collate_multi_property,
-    download_all_phase3_data, merge_datasets,
+    MultiPropertyDataset,
+    collate_multi_property,
+    download_all_phase3_data,
+    merge_datasets,
 )
-from src.config import (
-    DEVICE, NUM_WORKERS, PIN_MEMORY,
-    ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
-    HIDDEN_DIM, NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT,
-    CONV_TYPE, ATTENTION_HEADS,
-    PHASE3, CHECKPOINT_DIR, LOG_DIR, EXTERNAL_DIR,
+from src.utils.error_handler import (
+    HealthMonitor,
+    emergency_save,
+    setup_logging,
 )
 from src.utils.gpu_manager import get_gpu_manager
-from src.utils.error_handler import (
-    setup_logging, HealthMonitor, emergency_save,
-)
 from src.utils.live_logger import LiveLogger
-from src.validation.clinical_metrics import summarize as clinical_summarize
 from src.validation.clinical_metrics import clinical_score as clinical_score_fn
-
+from src.validation.clinical_metrics import summarize as clinical_summarize
 
 # ======================================================================
 # Scheduler warmup + cosine

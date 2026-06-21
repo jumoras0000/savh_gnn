@@ -18,15 +18,18 @@ Le temps réel repose sur la lecture du fichier checkpoints/.../live_metrics.jso
 import sys
 from pathlib import Path
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from dashboard.data_io import (
-    find_live_files, load_run, compare_to_expected, EXPECTED,
+    EXPECTED,
+    compare_to_expected,
+    find_live_files,
+    load_run,
 )
 
 # Auto-refresh optionnel (sans dépendance dure)

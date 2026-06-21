@@ -8,36 +8,45 @@ Corrections :
   4. Utilise MaskedGraphModel._encode_nodes (node-level).
   5. Toutes les constantes lues depuis config.py.
 """
-import sys
-import os
-import time
-import json
 import contextlib
+import json
+import os
+import sys
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-from pathlib import Path
-from datetime import datetime, timedelta
-from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 # -- Path setup --
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.preprocessing.graph_builder import smiles_to_graph, mask_atoms
+from src.config import (
+    ATOM_FEATURE_DIM,
+    ATTENTION_HEADS,
+    BOND_FEATURE_DIM,
+    CHECKPOINT_DIR,
+    CONV_TYPE,
+    DEVICE,
+    DROPOUT,
+    HIDDEN_DIM,
+    LOG_DIR,
+    NUM_GNN_LAYERS,
+    NUM_WORKERS,
+    OUTPUT_DIM,
+    PHASE1,
+    PIN_MEMORY,
+)
 from src.models.encoder import MolecularEncoder
 from src.models.mgm_head import MaskedGraphModel, MGMHead
+from src.preprocessing.graph_builder import mask_atoms, smiles_to_graph
 from src.utils.live_logger import LiveLogger
-from src.config import (
-    DEVICE, NUM_WORKERS, PIN_MEMORY,
-    ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
-    HIDDEN_DIM, NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT,
-    CONV_TYPE, ATTENTION_HEADS,
-    PHASE1, CHECKPOINT_DIR, LOG_DIR,
-)
-
 
 # ======================================================================
 # Dataset

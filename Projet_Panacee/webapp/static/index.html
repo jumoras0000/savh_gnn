@@ -19,6 +19,7 @@
     </div>
     <div class="ecg-wrap"><canvas id="ecg"></canvas></div>
     <select id="runSelect" class="run-select" title="Run d'entraînement"></select>
+    <button id="deleteRunBtn" class="run-del" title="Supprimer ce run du tableau de bord">🗑</button>
     <span id="statusPill" class="status-pill" data-state="idle">
       <span class="dot"></span><span id="statusText">EN ATTENTE</span>
     </span>
@@ -76,6 +77,7 @@
       <button class="tab" data-tab="research">🧪 Recherche</button>
       <button class="tab" data-tab="screen">🧬 Criblage VIH</button>
       <button class="tab" data-tab="chat">💬 Assistant</button>
+      <button class="tab" data-tab="lexique">📖 Lexique</button>
       <button class="tab" data-tab="info">ℹ️ Guide</button>
     </nav>
 
@@ -367,6 +369,25 @@
     </section>
 
     <!-- ---------- Guide / info ---------- -->
+    <!-- ---------- Lexique / Dictionnaire ---------- -->
+    <section class="panel-view" id="view-lexique">
+      <div class="card lex-hero">
+        <h3>🧬 Le projet Panacée, en clair</h3>
+        <div id="lexOverview" class="lex-overview"></div>
+      </div>
+      <div class="card">
+        <h3>🪜 Que se passe-t-il à chaque phase ?</h3>
+        <div class="hint">Le modèle se construit en trois étapes ; chacune part de la précédente.</div>
+        <div id="lexPhases" class="lex-phases"></div>
+      </div>
+      <div class="card">
+        <h3>📖 Dictionnaire des mots-clés</h3>
+        <div class="hint">Chaque terme employé dans le projet, expliqué simplement avec un exemple. Tape pour filtrer.</div>
+        <input type="text" id="lexSearch" class="lex-search" placeholder="🔎 Filtrer un mot (ex. AUC, SMILES, epoch, FNR)…" />
+        <div id="lexGlossary"></div>
+      </div>
+    </section>
+
     <section class="panel-view" id="view-info">
       <div class="card">
         <h3>🚀 Tout ce que vous pouvez faire</h3>

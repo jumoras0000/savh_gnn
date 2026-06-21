@@ -7,8 +7,9 @@ Usage :
     python run_phase2.py --train_csv data/train.csv --val_csv data/val.csv
     python run_phase2.py --pretrained_model checkpoints/phase1/sovereign_encoder_v1.pth
 """
-import sys
 import os
+import sys
+
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 from pathlib import Path
 
@@ -56,17 +57,17 @@ def main():
     # --- Etape 1 : obtenir les CSV ---
     train_csv = args.train_csv
     val_csv = args.val_csv
-    
+
     # Si --download ou pas de CSV fourni
     if args.download or (train_csv is None and val_csv is None):
         print("\n🔄 Téléchargement des données Tox21...")
         from src.preprocessing.toxicity_loader import download_tox21_data
-        
+
         try:
             # Créer le dossier de destination
             tox21_dir = EXTERNAL_DIR / "tox21"
             tox21_dir.mkdir(parents=True, exist_ok=True)
-            
+
             paths = download_tox21_data(str(tox21_dir))
             train_csv = train_csv or paths["train"]
             val_csv = val_csv or paths["val"]
@@ -75,7 +76,7 @@ def main():
             print(f"❌ ERREUR lors du téléchargement: {e}")
             print("   Vérifiez que DeepChem est installé: pip install deepchem")
             sys.exit(1)
-    
+
     # Vérifier que les fichiers existent
     if train_csv is None:
         print("❌ ERREUR: Pas de train CSV spécifié ou téléchargé")
@@ -83,17 +84,17 @@ def main():
     if val_csv is None:
         print("❌ ERREUR: Pas de val CSV spécifié ou téléchargé")
         sys.exit(1)
-    
+
     train_csv = str(train_csv)
     val_csv = str(val_csv)
-    
+
     if not os.path.exists(train_csv):
         print(f"❌ ERREUR: Train CSV introuvable: {train_csv}")
         sys.exit(1)
     if not os.path.exists(val_csv):
         print(f"❌ ERREUR: Val CSV introuvable: {val_csv}")
         sys.exit(1)
-    
+
     print(f"✓ Train CSV: {train_csv}")
     print(f"✓ Val CSV: {val_csv}")
 
@@ -101,9 +102,9 @@ def main():
     print("\n" + "="*80)
     print("▶️ Démarrage du fine-tuning...")
     print("="*80 + "\n")
-    
+
     from src.training.finetune_toxicity import main as ft_main
-    
+
     # Construire les arguments proprement (sans bidouille sys.argv)
     sys_argv_backup = sys.argv.copy()
     try:

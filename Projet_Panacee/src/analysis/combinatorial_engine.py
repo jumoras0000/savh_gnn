@@ -15,31 +15,39 @@ Usage :
   python -m src.analysis.combinatorial_engine --smiles_file molecules.csv --checkpoint phase3.pth
   python -m src.analysis.combinatorial_engine --smiles "CCO,CC(=O)O" --checkpoint phase3.pth
 """
-import sys
-import os
 import json
 import logging
-import torch
-import numpy as np
-import pandas as pd
-from pathlib import Path
+import os
+import sys
 from datetime import datetime
 from itertools import combinations
-from typing import List, Dict, Optional
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+import torch
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config import (
+    ATOM_FEATURE_DIM,
+    ATTENTION_HEADS,
+    BOND_FEATURE_DIM,
+    CHECKPOINT_DIR,
+    CONV_TYPE,
+    DEVICE,
+    DROPOUT,
+    HIDDEN_DIM,
+    NUM_GNN_LAYERS,
+    OUTPUT_DIM,
+    PHASE3,
+)
 from src.models.encoder import MolecularEncoder
 from src.models.multi_property_head import MultiPropertyPredictor
 from src.models.reasoner import MolecularReasoner
 from src.preprocessing.graph_builder import smiles_to_graph
-from src.config import (
-    DEVICE, ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
-    HIDDEN_DIM, NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT,
-    CONV_TYPE, ATTENTION_HEADS,
-    PHASE3, CHECKPOINT_DIR,
-)
 from src.utils.gpu_manager import get_gpu_manager
 
 logger = logging.getLogger("panacee.analysis")
@@ -87,8 +95,9 @@ class PanaceeAnalyzer:
         print(f"   Checkpoint : {checkpoint_path}")
         print(f"   Device : {self.device}")
 
-        # Charger le checkpoint
-        self.ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        # Charger le checkpoint (sécurisé : weights_only par défaut, cf. safe_load)
+        from src.utils.safe_load import safe_load_checkpoint
+        self.ckpt = safe_load_checkpoint(checkpoint_path)
 
         # Reconstruire l'encodeur
         config = self.ckpt.get("config", {})

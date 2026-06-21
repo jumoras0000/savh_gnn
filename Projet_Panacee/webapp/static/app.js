@@ -525,12 +525,40 @@ async function loadRuns() {
     return `<option value="${esc(r.id)}">${tag}${esc(r.id)} · ${r.status} · ${r.points} pts</option>`;
   }).join("");
   updateKaggleBanner();
-  if (!runs.length) { sel.innerHTML = `<option value="">aucun run</option>`; renderAll(); return; }
+  const delBtn = document.getElementById("deleteRunBtn");
+  if (delBtn) delBtn.disabled = !runs.length;
+  if (!runs.length) {
+    sel.innerHTML = `<option value="">aucun run</option>`;
+    resetRunState();
+    return;
+  }
   // garde le run courant si présent, sinon prend le plus récent
   const ids = runs.map(r => r.id);
   if (!state.runId || !ids.includes(state.runId)) state.runId = runs[0].id;
   sel.value = state.runId;
   connectStream(state.runId);
+}
+
+// Remet l'UI à zéro quand AUCUN run n'est sélectionné (évite d'afficher des
+// données « fantômes » d'un run supprimé). Coupe le flux SSE et vide tout l'état dérivé.
+function resetRunState() {
+  if (state.es) { state.es.close(); state.es = null; }
+  state.runId = null;
+  state.epochs = []; state.latest = {}; state.meta = {};
+  state.perTask = {}; state.compare = []; state.observations = [];
+  state.verdict = { level: "NA", title: "Aucun run sélectionné", reasons: ["Lance un entraînement ou sélectionne un run."] };
+  state.status = "idle"; state.pinnedEpoch = null; state.bestEpoch = null;
+  // Vide les blocs spécifiques à une évaluation (sinon ils restent affichés)
+  const agg = document.getElementById("evalAgg"); if (agg) agg.innerHTML = "";
+  const src = document.getElementById("clinSource");
+  if (src) src.textContent = "Aucun run sélectionné — lance un entraînement ou une évaluation.";
+  // Vide la table de gestion des epochs
+  const epBody = document.querySelector("#epochTable tbody");
+  if (epBody) epBody.innerHTML = "";
+  const epMeta = document.getElementById("epochMgmtMeta");
+  if (epMeta) epMeta.textContent = "";
+  renderAll();
+  const conn = document.getElementById("connText"); if (conn) conn.textContent = "—";
 }
 
 // Bannière « Entraînement Kaggle en cours » : visible dès qu'un run distant tourne.
@@ -623,9 +651,12 @@ function setupTabs() {
       if (tab === "clin" || tab === "research") loadFiles();
       if (tab === "screen") { loadFiles(); loadLibraries(); }
       if (tab === "info") loadCapabilities();
+      if (tab === "lexique") loadGlossary();
       if (tab === "chat") refreshChatMode();
     });
   });
+  const lexSearch = document.getElementById("lexSearch");
+  if (lexSearch) lexSearch.addEventListener("input", (e) => renderGlossary(e.target.value));
 }
 
 /* ====================================================================
@@ -719,6 +750,7 @@ const PAGE_HELP = {
       "<b>Champ SMILES</b> — colle une ou plusieurs molécules (ex. <code>CC(=O)Nc1ccc(O)cc1</code>).",
       "<b>Structure 2D</b> — dessin de la molécule, généré automatiquement.",
       "<b>Descripteurs</b> — MW, LogP, TPSA, HBD/HBA, QED, Lipinski (toujours disponibles, sans modèle).",
+      "<b>Sécurité structurelle (sans modèle)</b> — toxicophores par endpoint (mutagénicité Ames, hépatotoxicité DILI, cardiotoxicité hERG) + <b>domaine d'applicabilité</b> (la molécule est-elle proche de ce que le modèle connaît ?).",
       "<b>Risque &amp; propriétés</b> — toxicité/efficacité si un modèle Phase 2/3 est entraîné.",
       "<b>Combinaison</b> — ≥2 molécules → synergie, doses, score (MolecularReasoner, Phase 3).",
       "<b>Export JSON</b> — sauvegarde l'analyse.",
@@ -726,9 +758,10 @@ const PAGE_HELP = {
     howto: [
       "Colle un SMILES et clique « Analyser ».",
       "Mode adaptatif : Phase 3 (complet) → Phase 2 (toxicité) → descripteurs seuls.",
+      "Lis les alertes structurelles : elles fonctionnent MÊME sans modèle entraîné.",
       "Pour une combinaison, entre plusieurs SMILES séparés par une virgule.",
     ],
-    objective: "Évaluer in-silico un candidat médicament en quelques secondes, comme une fiche d'identité chimique + risque.",
+    objective: "Évaluer in-silico un candidat médicament en quelques secondes : fiche chimique + alertes de sécurité + risque modèle.",
   },
   screen: {
     title: "🧬 Criblage VIH — virtual screening (HTS in-silico)",
@@ -763,6 +796,22 @@ const PAGE_HELP = {
       "Réponses en streaming ; tout est sauvegardé automatiquement.",
     ],
     objective: "Parler en langage naturel à ton modèle et obtenir des analyses complètes, même hors-ligne.",
+  },
+  lexique: {
+    title: "📖 Lexique — comprendre le projet et chaque mot-clé",
+    role: "Page pédagogique : <b>ce que fait le projet</b>, son objectif, ce qui se passe à chaque phase, à quoi sert le résultat final, et un <b>dictionnaire</b> de tous les mots-clés (IA, chimie, toxicologie, VIH, données) avec un exemple simple pour chacun.",
+    entries: [
+      "<b>Le projet en clair</b> — pitch, objectif, ce que l'app peut faire, résultat final.",
+      "<b>Phases 1 → 3</b> — but, entrée, sortie et analogie de chaque étape d'entraînement.",
+      "<b>Dictionnaire</b> — chaque terme défini + exemple basique, regroupé par thème.",
+      "<b>Filtre</b> — tape un mot (AUC, SMILES, epoch…) pour ne garder que les définitions utiles.",
+    ],
+    howto: [
+      "Lis « Le projet en clair » pour la vue d'ensemble.",
+      "Parcours les phases pour comprendre l'enchaînement de l'entraînement.",
+      "Cherche un terme dans le dictionnaire dès que tu rencontres un mot inconnu.",
+    ],
+    objective: "Permettre à toute personne, même non spécialiste, de comprendre le projet et le vocabulaire employé partout dans l'application.",
   },
   info: {
     title: "ℹ️ Guide — métriques, risque et flux de travail",
@@ -827,6 +876,28 @@ function setupRunSelect() {
     state.runId = e.target.value;
     if (state.runId) connectStream(state.runId);
   });
+  const del = document.getElementById("deleteRunBtn");
+  if (del) del.addEventListener("click", deleteRunUI);
+}
+
+// Supprime le run sélectionné (run « fantôme » resté après suppression d'un modèle).
+async function deleteRunUI() {
+  const id = state.runId;
+  if (!id) { flashToast("Aucun run sélectionné"); return; }
+  if (!confirm(`Supprimer le run « ${id} » du tableau de bord ?\n\n` +
+               `Cela retire ses métriques temps réel et ses checkpoints par-epoch. ` +
+               `Les modèles principaux (.pth) ne sont pas touchés.`)) return;
+  try {
+    if (state.es) { state.es.close(); state.es = null; }
+    const r = await fetch(`/api/run?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const d = await r.json();
+    if (!d.ok) { flashToast("Échec : " + (d.error || "inconnu")); return; }
+    flashToast(`Run « ${id} » supprimé`);
+    state.runId = null;
+    await loadRuns();           // recharge la liste (et reconnecte un autre run si présent)
+  } catch (e) {
+    flashToast("Erreur réseau pendant la suppression");
+  }
 }
 
 /* ====================================================================
@@ -1168,6 +1239,16 @@ function setupResearch() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ smiles, checkpoint }),
       });
+      // Sécurité SANS modèle (toujours dispo) : alertes structurelles + domaine
+      try {
+        const saf = await fetchJSON("/api/safety", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ smiles }),
+        });
+        const map = {};
+        (saf.results || []).forEach(s => { map[s.smiles] = s; });
+        (res.results || []).forEach(r => { r._safety = map[r.smiles]; });
+      } catch (e) { /* la sécurité est un bonus : on n'échoue pas dessus */ }
       renderPredictions(res);
     } catch (e) { box.innerHTML = errCard(e.message); }
   });
@@ -1237,11 +1318,24 @@ function moleculeCard(r) {
   const obs = (risk.observations || []).map(o =>
     `<div class="obs ${o.level}"><span class="o-ico">${o.level === "DANGER" ? "🔴" : o.level === "WARN" ? "🟠" : "🟢"}</span><span class="o-text">${esc(o.text)}</span></div>`).join("");
 
+  // Confiance du modèle (MC-Dropout) : incertitude moyenne sur les endpoints
+  let confBlock = "";
+  if (r.confidence) {
+    const lv = r.confidence.level || "OK";
+    const ico = lv === "DANGER" ? "🔴" : lv === "WARN" ? "🟠" : "🟢";
+    confBlock = `<div class="obs ${lv}"><span class="o-ico">${ico}</span><span class="o-text">
+      <b>Confiance du modèle</b> — incertitude moyenne ±${r.confidence.mean_std_pct}% (MC-Dropout ×${r.confidence.n_samples})</span></div>`;
+  }
+  const toxList = toxic.map(name => {
+    const u = tox[name] && tox[name].incertitude != null ? ` (±${tox[name].incertitude}%)` : "";
+    return esc(name) + u;
+  });
   const modelBlock = hasModel ? `
       <div class="o-head">Prédictions du modèle</div>
       <table class="mol-tbl">${modelRows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(String(v))}</td></tr>`).join("")}</table>
+      ${confBlock}
       <div class="o-head" style="margin-top:10px">Toxicité Tox21</div>
-      ${toxic.length ? `<div class="tox-alert">⚠ ${toxic.map(esc).join(", ")}</div>` : `<div class="tox-ok">✅ aucun endpoint toxique</div>`}` : "";
+      ${toxList.length ? `<div class="tox-alert">⚠ ${toxList.join(", ")}</div>` : `<div class="tox-ok">✅ aucun endpoint toxique</div>`}` : "";
 
   return `<div class="card mol">
     <h3><span class="badge ${risk.level}">${risk.level}</span>
@@ -1254,10 +1348,40 @@ function moleculeCard(r) {
       </div>
       <div class="mol-side">
         ${modelBlock}
+        ${safetyBlock(r._safety)}
         <div class="o-head" style="margin-top:10px">Observation &amp; risque</div>
         ${obs}
       </div>
     </div></div>`;
+}
+
+// Bloc « Sécurité structurelle (sans modèle) » : toxicophores Ames/DILI/hERG +
+// domaine d'applicabilité. Complète le GNN par des règles de chimie médicinale.
+function safetyBlock(saf) {
+  if (!saf) return "";
+  const a = saf.alerts || {};
+  const ad = saf.applicability || {};
+  let alertsHtml;
+  if (a.valid && (a.endpoints || []).length) {
+    alertsHtml = a.endpoints.map(ep => {
+      const names = ep.hits.map(h => esc(h.name)).join(", ");
+      return `<div class="obs ${ep.key === "ames_mutagenicity" || ep.key === "herg_cardiotox" ? "DANGER" : "WARN"}">
+        <span class="o-ico">⚠️</span><span class="o-text"><b>${esc(ep.label)}</b> — ${names}</span></div>`;
+    }).join("");
+  } else if (a.valid) {
+    alertsHtml = `<div class="obs OK"><span class="o-ico">🟢</span><span class="o-text">Aucun toxicophore connu (Ames / DILI / hERG).</span></div>`;
+  } else {
+    alertsHtml = "";
+  }
+  let adHtml = "";
+  if (ad.valid) {
+    const lv = ad.level || "OK";
+    const ico = lv === "DANGER" ? "🔴" : lv === "WARN" ? "🟠" : "🟢";
+    adHtml = `<div class="obs ${lv}"><span class="o-ico">${ico}</span><span class="o-text">
+      <b>Domaine d'applicabilité</b> — similarité ${ad.max_similarity} (proche : ${esc(ad.nearest || "—")}). ${esc(ad.note || "")}</span></div>`;
+  }
+  if (!alertsHtml && !adHtml) return "";
+  return `<div class="o-head" style="margin-top:10px">Sécurité structurelle (sans modèle)</div>${alertsHtml}${adHtml}`;
 }
 
 function renderCombo(res) {
@@ -1372,6 +1496,68 @@ async function loadCapabilities() {
   thead.innerHTML = "<tr><th>Analyse</th><th>In silico (cette app)</th><th>Équivalent laboratoire</th></tr>";
   tbody.innerHTML = (data.lab_equivalence || []).map(r =>
     `<tr><td>${esc(r.analyse)}</td><td>${esc(r.in_silico)}</td><td>${esc(r.labo)}</td></tr>`).join("");
+}
+
+/* ====================================================================
+   Lexique : vue d'ensemble du projet + phases + dictionnaire des mots-clés
+   ==================================================================== */
+let _glossaryCache = null;
+
+async function loadGlossary() {
+  if (!_glossaryCache) {
+    try { _glossaryCache = await fetchJSON("/api/glossary"); } catch (e) { return; }
+  }
+  const data = _glossaryCache;
+  const o = data.overview || {};
+
+  // Vue d'ensemble
+  const cap = (o.peut_faire || []).map(i => `<li>${esc(i)}</li>`).join("");
+  document.getElementById("lexOverview").innerHTML = `
+    <p class="lex-pitch">${esc(o.pitch || "")}</p>
+    <div class="lex-grid">
+      <div class="lex-box"><div class="lex-h">🎯 Objectif</div><p>${esc(o.objectif || "")}</p></div>
+      <div class="lex-box"><div class="lex-h">🏁 Résultat final</div><p>${esc(o.resultat_final || "")}</p></div>
+    </div>
+    <div class="lex-h" style="margin-top:14px">✅ Ce que l'application peut faire</div>
+    <ul class="lex-can">${cap}</ul>
+    <p class="warn-note">⚠️ ${esc(o.avertissement || "")}</p>`;
+
+  // Phases
+  document.getElementById("lexPhases").innerHTML = (data.phases || []).map(p => `
+    <div class="lex-phase">
+      <div class="lex-phase-head"><span class="lex-phase-id">${esc(p.id)}</span> ${esc(p.nom)}</div>
+      <div class="lex-phase-body">
+        <div><b>But</b> — ${esc(p.but)}</div>
+        <div><b>Entrée</b> — ${esc(p.entree)}</div>
+        <div><b>Sortie</b> — ${esc(p.sortie)}</div>
+        <div class="lex-analogy">💡 ${esc(p.analogie)}</div>
+      </div>
+    </div>`).join("");
+
+  renderGlossary("");
+}
+
+function renderGlossary(filter) {
+  const data = _glossaryCache;
+  if (!data) return;
+  const q = (filter || "").trim().toLowerCase();
+  const html = (data.glossary || []).map(grp => {
+    const terms = grp.terms.filter(t =>
+      !q || t.term.toLowerCase().includes(q) ||
+      (t.def || "").toLowerCase().includes(q) || (t.ex || "").toLowerCase().includes(q));
+    if (!terms.length) return "";
+    return `<div class="lex-cat">
+      <div class="lex-cat-title">${esc(grp.group)}</div>
+      ${terms.map(t => `
+        <div class="lex-term">
+          <div class="lex-term-name">${esc(t.term)}</div>
+          <div class="lex-term-def">${esc(t.def)}</div>
+          <div class="lex-term-ex"><b>Exemple :</b> ${esc(t.ex)}</div>
+        </div>`).join("")}
+    </div>`;
+  }).join("");
+  document.getElementById("lexGlossary").innerHTML =
+    html || `<div style="color:var(--faint);padding:10px">Aucun terme ne correspond à « ${esc(q)} ».</div>`;
 }
 
 /* ====================================================================

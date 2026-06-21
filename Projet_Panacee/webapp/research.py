@@ -38,9 +38,9 @@ def _phase2_default() -> str:
 
 def detect_checkpoint_kind(path: str) -> str:
     """phase3 (multi-propriétés+IA) / phase2 (toxicité) / encoder (Phase 1) / unknown."""
-    import torch
+    from src.utils.safe_load import safe_load_checkpoint
     try:
-        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        ckpt = safe_load_checkpoint(path)
     except Exception:
         return "unknown"
     if not isinstance(ckpt, dict):
@@ -76,13 +76,21 @@ class _Phase2Predictor:
 
     def __init__(self, ckpt_path: str):
         import torch
+
+        from src.config import (
+            ATOM_FEATURE_DIM,
+            ATTENTION_HEADS,
+            BOND_FEATURE_DIM,
+            CONV_TYPE,
+            DROPOUT,
+            HIDDEN_DIM,
+            NUM_GNN_LAYERS,
+            OUTPUT_DIM,
+        )
         from src.models.encoder import MolecularEncoder
         from src.models.toxicity_classifier import ToxicityClassifier
-        from src.config import (
-            ATOM_FEATURE_DIM, BOND_FEATURE_DIM, HIDDEN_DIM,
-            NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT, CONV_TYPE, ATTENTION_HEADS,
-        )
-        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        from src.utils.safe_load import safe_load_checkpoint
+        ckpt = safe_load_checkpoint(ckpt_path)
         cfg = ckpt.get("config", {})
         self.task_names = ckpt.get("task_names") or TOX21_TASKS
         num_tasks = ckpt.get("num_tasks", len(self.task_names))
@@ -101,23 +109,56 @@ class _Phase2Predictor:
         self.model.eval()
         self._torch = torch
 
-    def predict_properties(self, smiles: str):
-        from src.preprocessing.graph_builder import smiles_to_graph
+    def predict_properties(self, smiles: str, n_uncertainty: int = 20):
         from torch_geometric.data import Batch
+
+        from src.preprocessing.graph_builder import smiles_to_graph
         torch = self._torch
         graph = smiles_to_graph(smiles)
         if graph is None:
             return None
+        batch = Batch.from_data_list([graph])
         with torch.no_grad():
-            logits = self.model(Batch.from_data_list([graph]))
+            logits = self.model(batch)
             probs = torch.sigmoid(logits).cpu().numpy()[0]
+
+        # Incertitude épistémique par MC-Dropout : on échantillonne plusieurs
+        # passes à dropout ACTIF ; la dispersion mesure la confiance du modèle.
+        unc = None
+        if n_uncertainty and n_uncertainty >= 2:
+            from src.utils.uncertainty import (
+                enable_mc_dropout,
+                mc_dropout_samples,
+                summarize,
+            )
+            try:
+                if enable_mc_dropout(self.model) > 0:
+                    def _fwd():
+                        with torch.no_grad():
+                            return torch.sigmoid(self.model(batch)).cpu().numpy()[0]
+                    unc = summarize(mc_dropout_samples(_fwd, n_uncertainty))
+            finally:
+                self.model.eval()  # restaure le mode déterministe
+
         result = {"smiles": smiles, "toxicity": {}}
         for i, name in enumerate(self.task_names):
             if i < len(probs):
                 thr = self.thresholds[i] if i < len(self.thresholds) else 0.5
-                result["toxicity"][name] = {"probabilite": round(float(probs[i]) * 100, 1),
-                                            "toxique": bool(probs[i] > thr)}
+                cell = {"probabilite": round(float(probs[i]) * 100, 1),
+                        "toxique": bool(probs[i] > thr)}
+                if unc is not None and i < len(unc["std"]):
+                    cell["incertitude"] = round(float(unc["std"][i]) * 100, 1)
+                    cell["confiance"] = unc["confidence"][i]
+                result["toxicity"][name] = cell
         result["safety_score"] = round((1 - float(probs.mean())) * 100, 1)
+        if unc is not None and unc["std"]:
+            from src.utils.uncertainty import confidence_label
+            worst = max(unc["std"])
+            result["confidence"] = {
+                "level": confidence_label(worst),
+                "mean_std_pct": round(sum(unc["std"]) / len(unc["std"]) * 100, 1),
+                "n_samples": unc["n_samples"],
+            }
         return result
 
 

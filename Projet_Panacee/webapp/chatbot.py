@@ -62,14 +62,19 @@ TOOLS = [
         "name": "screen_library",
         "description": "Criblage virtuel : classe des molécules par objectif. "
                        "objective='efficacy' (anti-VIH, Phase 3), 'safety' (Phase 2-3) ou "
-                       "'drug_likeness' (QED, sans modèle). Fournir smiles OU library "
-                       "('hiv_reference'/'reference_drugs').",
+                       "'drug_likeness' (QED, sans modèle). Fournir smiles OU library : "
+                       "anti-VIH par classe (hiv_reference, hiv_nrti, hiv_nnrti, hiv_pi, "
+                       "hiv_insti), reference_drugs, natural_products, repurposing, "
+                       "toxic_controls.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "objective": {"type": "string", "enum": ["efficacy", "safety", "drug_likeness"]},
                 "smiles": {"type": "array", "items": {"type": "string"}},
-                "library": {"type": "string", "enum": ["hiv_reference", "reference_drugs"]},
+                "library": {"type": "string", "enum": [
+                    "hiv_reference", "hiv_nrti", "hiv_nnrti", "hiv_pi", "hiv_insti",
+                    "reference_drugs", "natural_products", "repurposing", "toxic_controls",
+                ]},
             },
             "required": ["objective"],
         },

@@ -6,20 +6,22 @@ Corrections :
   - Détection robuste de la colonne SMILES et des colonnes de tâches.
   - graph_builder.smiles_to_graph retourne None → filtré automatiquement.
 """
-import sys, io
+import io
+import sys
+
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
+from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Batch
-from pathlib import Path
-from typing import List, Optional
 
 from src.preprocessing.graph_builder import smiles_to_graph
-
 
 # ══════════════════════════════════════════════════════════════════════
 # Constantes

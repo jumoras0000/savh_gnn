@@ -26,11 +26,11 @@ Usage :
     # Combinaisons de taille 3
     python predict_molecules.py --smiles_file candidates.csv --combo_size 3 --top_k 10
 """
-import sys
-import os
 import json
-from pathlib import Path
+import os
+import sys
 from datetime import datetime
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))

@@ -13,8 +13,9 @@ Pré-requis :
     - Phase 2 terminée (best_toxicity_model.pth)
     - DeepChem installé (pip install deepchem)
 """
-import sys
 import os
+import sys
+
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 from pathlib import Path
 

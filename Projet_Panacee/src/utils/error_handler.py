@@ -7,14 +7,14 @@ Fonctionnalités :
   - Alertes de santé du système
   - Sauvegarde automatique en cas de crash
 """
+import functools
+import logging
 import os
 import sys
 import time
-import logging
-import functools
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional, Any
+from typing import Any, Callable, Optional
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 

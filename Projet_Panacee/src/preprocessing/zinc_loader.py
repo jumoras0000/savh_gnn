@@ -4,10 +4,11 @@ Chargeur ZINC – v2.
 Charge, canonise, déduplique et pré-filtre les SMILES ZINC.
 Sauvegarde un .pt contenant uniquement les SMILES valides.
 """
-import os
 import json
-import torch
+import os
+
 import pandas as pd
+import torch
 from rdkit import Chem, RDLogger
 from tqdm import tqdm
 

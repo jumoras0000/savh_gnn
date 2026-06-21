@@ -8,13 +8,14 @@ Génère des documents professionnels pour présenter les résultats :
   - Justifications statistiques
   - Méthodes et résultats
 """
-import re
 import logging
-import numpy as np
-from typing import Dict, List, Any
+import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from dataclasses import dataclass
+from typing import Any, Dict, List
+
+import numpy as np
 
 logger = logging.getLogger("panacee.reporting")
 

@@ -13,15 +13,15 @@ Références :
   - Snoek et al. (2012) "Practical Bayesian Optimization"
   - Preuer et al. (2018) "DeepSynergy"
 """
+import logging
 import math
 import random
-import logging
-from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
 logger = logging.getLogger("panacee.advanced_reasoner")
 

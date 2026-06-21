@@ -93,3 +93,6 @@ htmlcov/
 *.tmp
 *.temp
 *.log
+
+# Fichiers corrompus mis de côté par l'auto-réparation du registre
+*.corrupt

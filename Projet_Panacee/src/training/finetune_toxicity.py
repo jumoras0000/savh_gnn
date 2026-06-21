@@ -15,39 +15,48 @@ Conserve v2 :
   5. Recherche de seuil optimal par tache.
   6. Early stopping sur ROC-AUC moyen.
 """
-import sys
-import os
-import time
 import json
+import os
 import shutil
-import torch
-import numpy as np
-from pathlib import Path
+import sys
+import time
 from datetime import datetime, timedelta
-from torch.utils.data import DataLoader, Subset, Dataset
+from pathlib import Path
+
+import numpy as np
+import torch
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset, Subset
 from tqdm import tqdm
-from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config import (
+    ATOM_FEATURE_DIM,
+    ATTENTION_HEADS,
+    BOND_FEATURE_DIM,
+    CHECKPOINT_DIR,
+    CONV_TYPE,
+    DEVICE,
+    DROPOUT,
+    HIDDEN_DIM,
+    LOG_DIR,
+    NUM_GNN_LAYERS,
+    NUM_WORKERS,
+    OUTPUT_DIM,
+    PHASE2,
+    PIN_MEMORY,
+)
 from src.models.encoder import MolecularEncoder
-from src.models.toxicity_classifier import ToxicityClassifier, MultiTaskBCELoss
-from src.preprocessing.toxicity_loader import ToxicityDataset, collate_toxicity_batch
+from src.models.toxicity_classifier import MultiTaskBCELoss, ToxicityClassifier
 from src.preprocessing.scaffold_split import scaffold_kfold
+from src.preprocessing.toxicity_loader import ToxicityDataset, collate_toxicity_batch
 from src.utils.ema import ModelEMA
 from src.utils.live_logger import LiveLogger
-from src.validation.clinical_metrics import summarize as clinical_summarize
 from src.validation.clinical_metrics import clinical_score as clinical_score_fn
-from src.config import (
-    DEVICE, NUM_WORKERS, PIN_MEMORY,
-    ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
-    HIDDEN_DIM, NUM_GNN_LAYERS, OUTPUT_DIM, DROPOUT,
-    CONV_TYPE, ATTENTION_HEADS,
-    PHASE2, CHECKPOINT_DIR, LOG_DIR,
-)
-
+from src.validation.clinical_metrics import summarize as clinical_summarize
 
 # ======================================================================
 # Scheduler warmup + cosine
