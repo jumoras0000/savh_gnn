@@ -118,7 +118,7 @@ class GPUManager:
             return max(base_batch_size // 4, 1)
 
         try:
-            free, total = torch.cuda.mem_get_info(self.device.index or 0)
+            free, _total = torch.cuda.mem_get_info(self.device.index or 0)
             free_mb = free / 1e6
 
             # Réserver 500 MB pour le système et overhead

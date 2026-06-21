@@ -4,15 +4,18 @@
    ==================================================================== */
 "use strict";
 
-const CSS = getComputedStyle(document.documentElement);
-const C = (n) => CSS.getPropertyValue(n).trim();
-const COL = {
-  vital: C("--vital") || "#28e0bf", blue: C("--blue") || "#4d9bff",
-  ok: C("--ok") || "#36d399", warn: C("--warn") || "#ffb02e",
-  danger: C("--danger") || "#ff3d68", line: C("--line") || "#243044",
-  muted: C("--muted") || "#8294ae", faint: C("--faint") || "#56657f",
-  text: C("--text") || "#e8eef7",
-};
+const C = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL = {};
+function readColors() {
+  Object.assign(COL, {
+    vital: C("--vital") || "#28e0bf", blue: C("--blue") || "#4d9bff",
+    ok: C("--ok") || "#36d399", warn: C("--warn") || "#ffb02e",
+    danger: C("--danger") || "#ff3d68", line: C("--line") || "#243044",
+    muted: C("--muted") || "#8294ae", faint: C("--faint") || "#56657f",
+    text: C("--text") || "#e8eef7",
+  });
+}
+readColors();
 const MONO = '11px "JetBrains Mono", monospace';
 
 /* ---------- état global ---------- */
@@ -21,7 +24,7 @@ const state = {
   expected: {}, thresholds: {}, status: "idle",
   verdict: null, compare: [], perTask: {}, es: null,
   observations: [], files: { checkpoints: [], csvs: [] },
-  trainTimer: null,
+  trainTimer: null, chatHistory: [],
 };
 
 /* ====================================================================
@@ -564,6 +567,7 @@ function setupTabs() {
       if (tab === "clin" || tab === "research") loadFiles();
       if (tab === "screen") { loadFiles(); loadLibraries(); }
       if (tab === "info") loadCapabilities();
+      if (tab === "chat") refreshChatMode();
     });
   });
 }
@@ -951,11 +955,98 @@ async function loadCapabilities() {
 }
 
 /* ====================================================================
+   Thème clair / sombre
+   ==================================================================== */
+function applyTheme(theme) {
+  if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
+  else document.documentElement.removeAttribute("data-theme");
+  const btn = document.getElementById("themeToggle");
+  if (btn) btn.textContent = theme === "light" ? "☀️" : "🌙";
+  readColors();
+  requestAnimationFrame(() => { renderEvolution(); renderCompare(); renderKPIs(); });
+}
+function setupTheme() {
+  let theme = "dark";
+  try { theme = localStorage.getItem("panacee-theme") || "dark"; } catch (e) {}
+  applyTheme(theme);
+  document.getElementById("themeToggle")?.addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    const next = cur === "light" ? "dark" : "light";
+    try { localStorage.setItem("panacee-theme", next); } catch (e) {}
+    applyTheme(next);
+  });
+}
+
+/* ====================================================================
+   Assistant (chatbot)
+   ==================================================================== */
+function setupChat() {
+  const log = document.getElementById("chatLog");
+  const input = document.getElementById("chatInput");
+
+  const addBubble = (cls, text, tools) => {
+    const div = document.createElement("div");
+    div.className = "bubble " + cls;
+    div.textContent = text;
+    if (tools && tools.length) {
+      const n = document.createElement("span");
+      n.className = "toolnote";
+      n.textContent = "🔧 " + tools.map(t => t.tool).join(", ");
+      div.appendChild(n);
+    }
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+    return div;
+  };
+
+  const send = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    addBubble("user", text);
+    state.chatHistory.push({ role: "user", content: text });
+    const typing = document.createElement("div");
+    typing.className = "typing"; typing.textContent = "Analyse en cours…";
+    log.appendChild(typing); log.scrollTop = log.scrollHeight;
+    try {
+      const res = await fetchJSON("/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: state.chatHistory }),
+      });
+      typing.remove();
+      addBubble("bot", res.reply || "(pas de réponse)", res.tools);
+      state.chatHistory.push({ role: "assistant", content: res.reply || "" });
+    } catch (e) {
+      typing.remove();
+      addBubble("bot", "Erreur : " + e.message);
+    }
+  };
+
+  document.getElementById("chatSend").addEventListener("click", send);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  document.querySelectorAll("#view-chat .chip").forEach(c =>
+    c.addEventListener("click", () => { input.value = c.dataset.msg; send(); }));
+}
+
+async function refreshChatMode() {
+  const badge = document.getElementById("chatMode");
+  if (!badge) return;
+  try {
+    const s = await fetchJSON("/api/chat/status");
+    badge.textContent = s.claude ? "Claude " + s.model : "local";
+    badge.className = "badge " + (s.claude ? "OK" : "NA");
+  } catch (e) { badge.textContent = "?"; }
+}
+
+/* ====================================================================
    Démarrage
    ==================================================================== */
 async function main() {
+  setupTheme();
   ecgInit(); setupTabs(); setupRunSelect(); setupEval();
-  setupFiles(); setupTraining(); setupResearch(); setupScreening();
+  setupFiles(); setupTraining(); setupResearch(); setupScreening(); setupChat();
   await loadConfig();
   renderBarème();
   await loadFiles();

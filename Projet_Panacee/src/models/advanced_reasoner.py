@@ -731,7 +731,7 @@ class AdvancedMolecularReasoner:
         if mol_embeddings.dim() == 2:
             mol_embeddings = mol_embeddings.unsqueeze(0)
 
-        B, N, D = mol_embeddings.shape
+        _B, N, _D = mol_embeddings.shape
         mol_names = mol_names or [f"Mol_{i}" for i in range(N)]
 
         # Initialiser la chaîne de pensée

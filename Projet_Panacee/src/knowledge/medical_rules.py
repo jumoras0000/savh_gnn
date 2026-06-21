@@ -306,7 +306,7 @@ def compute_molecular_profile(smiles: str) -> Optional[MolecularProfile]:
         )
 
         # Lipinski
-        profile.lipinski_score, lipinski_violations = LipinskiEvaluator.evaluate(profile)
+        profile.lipinski_score, _lipinski_violations = LipinskiEvaluator.evaluate(profile)
 
         # ADMET
         profile.admet_scores = ADMETEvaluator.evaluate_all(profile)

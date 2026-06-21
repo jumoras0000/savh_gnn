@@ -79,7 +79,42 @@ Le frontend s'adapte aux clés présentes (l'onglet Sécurité reste pertinent l
 | GET  | `/api/libraries`      | Bibliothèques de molécules de référence |
 | POST | `/api/screen`         | Criblage virtuel (`{library` ou `smiles, objective, checkpoint?}`) |
 | GET  | `/api/capabilities`   | Catalogue des capacités + équivalence laboratoire |
+| POST | `/api/ingest?run=<id>`| Réception d'un point de métriques distant (Kaggle → dashboard) |
+| POST | `/api/chat`           | Chatbot (Claude si clé, sinon assistant local) (`{messages}`) |
+| GET  | `/api/chat/status`    | Synchronisation Claude active ? + modèle |
 | GET  | `/api/stream?id=<id>` | Flux **SSE** temps réel (snapshot + epochs + statut) |
+
+## Temps réel depuis Kaggle
+
+Le dashboard tourne chez toi, l'entraînement sur Kaggle, et le suivi reste **temps
+réel** : l'entraînement **pousse** chaque point vers ton dashboard (exposé via un
+tunnel). Dans le notebook Kaggle, **avant** de lancer l'entraînement :
+
+```python
+import os
+os.environ["PANACEE_PUSH_URL"]   = "https://TON-TUNNEL.ngrok.io"  # ton dashboard exposé
+os.environ["PANACEE_PUSH_RUN"]   = "phase2"                        # id du run
+os.environ["PANACEE_PUSH_TOKEN"] = "secret"                        # optionnel
+# puis : python run_phase2.py --download --epochs 60
+```
+
+Côté dashboard, protège l'ingestion avec le même secret :
+`PANACEE_INGEST_TOKEN=secret python -m webapp.run --host 0.0.0.0`. Chaque epoch
+arrive via `POST /api/ingest` et apparaît dans l'onglet Évolution comme un run local.
+Sans tunnel, l'alternative reste l'**import** du `live_metrics.jsonl` téléchargé.
+
+## Assistant (chatbot)
+
+Onglet **💬 Assistant** : converse avec le modèle GNN. Avec `ANTHROPIC_API_KEY`,
+**Claude (claude-opus-4-8)** orchestre les outils du modèle (toxicité, efficacité
+VIH, descripteurs, criblage, synergie, statut) pour des analyses avancées ; sans
+clé, un **assistant local** appelle quand même ces outils (détection SMILES +
+intention). Installe le SDK pour le mode Claude : `pip install anthropic`.
+
+## Thème clair / sombre
+
+Bouton 🌙/☀️ dans la barre — bascule clair/sombre, mémorisé (localStorage), avec
+rafraîchissement des couleurs de tous les graphiques.
 
 ## Tests
 

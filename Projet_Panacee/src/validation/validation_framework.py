@@ -201,7 +201,7 @@ class CrossValidator:
             n_train = int(len(X) * train_size)
             
             fold_scores = {m: [] for m in ["auc", "f1"]}
-            for fold, (train_idx, test_idx) in enumerate(
+            for _fold, (train_idx, test_idx) in enumerate(
                 KFold(n_splits=5, shuffle=True, random_state=42).split(X)
             ):
                 X_train, X_test = X[train_idx[:n_train]], X[test_idx]

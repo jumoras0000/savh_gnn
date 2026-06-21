@@ -84,7 +84,7 @@ class SynergyAnalyzer(nn.Module):
         mol_embeddings: [B, N, D]
         Retourne : synergy_scores [B, N, N] - matrice de synergie par paires
         """
-        B, N, D = mol_embeddings.shape
+        B, N, _D = mol_embeddings.shape
         synergy_matrix = torch.zeros(B, N, N, device=mol_embeddings.device)
         # valid[:, i] = 1 si la molécule i est réelle (pas du padding)
         valid = (~mask).float() if mask is not None else None

@@ -171,7 +171,7 @@ class CalibrationAnalyzer:
 
         if save_path:
             import matplotlib.pyplot as plt  # import paresseux (tracé optionnel)
-            fig, ax = plt.subplots(figsize=(8, 8))
+            _fig, ax = plt.subplots(figsize=(8, 8))
             ax.plot([0, 1], [0, 1], "k--", label="Perfect calibration")
             ax.scatter(bin_confs, bin_accs, s=bin_counts, alpha=0.6, label="Model")
             ax.set_xlabel("Predicted Probability")

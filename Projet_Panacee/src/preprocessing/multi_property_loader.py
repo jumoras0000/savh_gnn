@@ -63,7 +63,7 @@ def download_dataset(name: str, save_dir: str) -> dict:
         raise ValueError(f"Dataset inconnu : {name}. Choix : {list(loaders.keys())}")
 
     print(f"  Téléchargement de {name}...")
-    tasks, datasets, transformers = loaders[name](featurizer="Raw", splitter="scaffold")
+    tasks, datasets, _transformers = loaders[name](featurizer="Raw", splitter="scaffold")
     train_ds, val_ds, test_ds = datasets
 
     paths = {}

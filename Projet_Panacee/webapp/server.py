@@ -91,6 +91,42 @@ async def api_compare(request):
     return JSONResponse({"runs": service.compare_runs(root)})
 
 
+async def api_ingest(request):
+    """
+    Réception d'un point de métriques distant (entraînement Kaggle → ce dashboard).
+    POST /api/ingest?run=<id>&token=<tok>  body = une ligne JSON (_type meta|epoch).
+    Écrit dans checkpoints/<run>/live_metrics.jsonl → repris par le SSE.
+    """
+    run_id = request.query_params.get("run", "remote")
+    token = request.query_params.get("token", "")
+    expected = os.environ.get("PANACEE_INGEST_TOKEN", "")
+    if expected and token != expected:
+        return JSONResponse({"error": "token invalide"}, status_code=403)
+
+    # run_id sûr : pas de séparateur de chemin ni de traversée
+    safe = "".join(c for c in run_id if c.isalnum() or c in ("-", "_")) or "remote"
+    try:
+        rec = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    if not isinstance(rec, dict) or rec.get("_type") not in ("meta", "epoch"):
+        return JSONResponse({"error": "record invalide (_type meta|epoch attendu)"}, status_code=400)
+
+    root = Path(_ckpt_root())
+    dest = (root / safe / "live_metrics.jsonl").resolve()
+    try:
+        dest.relative_to(root.resolve())
+    except ValueError:
+        return JSONResponse({"error": "run invalide"}, status_code=400)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # meta = nouveau run → réinitialise ; epoch = append
+    mode = "w" if rec.get("_type") == "meta" else "a"
+    with open(dest, mode, encoding="utf-8") as f:
+        f.write(json.dumps(rec, default=str) + "\n")
+    return JSONResponse({"ok": True, "run": safe, "type": rec.get("_type")})
+
+
 async def api_files(request):
     """Liste des checkpoints (.pth) et CSV pour alimenter les sélecteurs."""
     return JSONResponse(service.list_files(_ckpt_root()))
@@ -282,6 +318,35 @@ async def api_capabilities(request):
     return JSONResponse({"capabilities": CAPABILITIES, "lab_equivalence": LAB_EQUIVALENCE})
 
 
+async def api_chat(request):
+    """Chatbot : converse avec le modèle GNN (Claude si dispo, sinon assistant local)."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    history = body.get("messages") or []
+    if not isinstance(history, list):
+        return JSONResponse({"error": "messages doit être une liste"}, status_code=400)
+    # garde-fou : borne la taille de l'historique
+    history = history[-20:]
+
+    def _run():
+        from webapp import chatbot
+        return chatbot.chat(history)
+
+    try:
+        res = await asyncio.to_thread(_run)
+    except Exception as e:  # pragma: no cover
+        return JSONResponse({"error": f"chat impossible: {e}"}, status_code=500)
+    return JSONResponse(res)
+
+
+async def api_chat_status(request):
+    """Indique si la synchronisation Claude est active (clé + SDK présents)."""
+    from webapp import chatbot
+    return JSONResponse({"claude": chatbot._claude_available(), "model": chatbot.MODEL})
+
+
 async def api_screen(request):
     """Criblage virtuel d'une bibliothèque (objectif : drug_likeness/safety/efficacy)."""
     try:
@@ -437,6 +502,7 @@ routes = [
     Route("/api/runs", api_runs),
     Route("/api/run", api_run),
     Route("/api/compare", api_compare),
+    Route("/api/ingest", api_ingest, methods=["POST"]),
     Route("/api/files", api_files),
     Route("/api/upload", api_upload, methods=["POST"]),
     Route("/api/evaluate", api_evaluate, methods=["POST"]),
@@ -450,6 +516,8 @@ routes = [
     Route("/api/libraries", api_libraries),
     Route("/api/screen", api_screen, methods=["POST"]),
     Route("/api/capabilities", api_capabilities),
+    Route("/api/chat", api_chat, methods=["POST"]),
+    Route("/api/chat/status", api_chat_status),
     Route("/api/stream", api_stream),
     Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
 ]

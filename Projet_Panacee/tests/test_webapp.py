@@ -299,6 +299,58 @@ def test_screen_efficacy_requires_phase3(client):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Ingestion temps réel à distance (Kaggle → dashboard)
+# ──────────────────────────────────────────────────────────────────────
+
+def test_ingest_creates_run(client):
+    meta = {"_type": "meta", "phase": "phase2", "epochs_total": 3, "conv_type": "attention"}
+    r = client.post("/api/ingest", params={"run": "kaggletest"}, json=meta)
+    assert r.status_code == 200 and r.json()["ok"]
+    ep = {"_type": "epoch", "epoch": 1, "val_auc": 0.81, "macro_fnr": 0.2, "n_danger": 0}
+    assert client.post("/api/ingest", params={"run": "kaggletest"}, json=ep).status_code == 200
+    runs = client.get("/api/runs").json()["runs"]
+    assert any(r["id"] == "kaggletest" for r in runs)
+
+
+def test_ingest_rejects_bad_record(client):
+    r = client.post("/api/ingest", params={"run": "x"}, json={"_type": "bogus"})
+    assert r.status_code == 400
+
+
+def test_ingest_run_id_sanitized(client):
+    # tentative de traversée dans le nom de run → nettoyée, pas d'écriture hors racine
+    r = client.post("/api/ingest", params={"run": "../../evil"},
+                    json={"_type": "meta", "phase": "x"})
+    assert r.status_code == 200
+    assert "/" not in r.json()["run"] and "\\" not in r.json()["run"]
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Chatbot (mode local — pas de clé Claude dans les tests)
+# ──────────────────────────────────────────────────────────────────────
+
+def test_chat_status(client):
+    j = client.get("/api/chat/status").json()
+    assert "claude" in j and "model" in j
+    assert j["model"] == "claude-opus-4-8"
+
+
+def test_chat_local_descriptors(client):
+    r = client.post("/api/chat", json={"messages": [
+        {"role": "user", "content": "donne-moi les descripteurs de CC(=O)Oc1ccccc1C(=O)O"}]})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["mode"] == "local"
+    assert any(t["tool"] in ("compute_descriptors", "predict_molecule") for t in j["tools"])
+
+
+def test_chat_help_when_empty_intent(client):
+    r = client.post("/api/chat", json={"messages": [
+        {"role": "user", "content": "bonjour"}]})
+    assert r.status_code == 200 and "copilote" in r.json()["reply"].lower()
+
+
+# ──────────────────────────────────────────────────────────────────────
 # SSE temps réel
 #
 # NB : on pilote le générateur sse_events() DIRECTEMENT plutôt que via le

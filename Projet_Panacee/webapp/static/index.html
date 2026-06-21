@@ -23,6 +23,7 @@
       <span class="dot"></span><span id="statusText">EN ATTENTE</span>
     </span>
     <span class="conn">SSE&nbsp;<b id="connText">—</b></span>
+    <button id="themeToggle" class="theme-btn" title="Basculer clair / sombre">🌙</button>
   </header>
 
   <main class="wrap">
@@ -74,6 +75,7 @@
       <button class="tab" data-tab="train">🎛️ Entraînement</button>
       <button class="tab" data-tab="research">🧪 Recherche</button>
       <button class="tab" data-tab="screen">🧬 Criblage VIH</button>
+      <button class="tab" data-tab="chat">💬 Assistant</button>
       <button class="tab" data-tab="info">ℹ️ Guide</button>
     </nav>
 
@@ -300,6 +302,27 @@
         <h3>Classement des candidats</h3>
         <div class="hint" id="scHint"></div>
         <div style="overflow-x:auto"><table id="scTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ---------- Assistant (chatbot) ---------- -->
+    <section class="panel-view" id="view-chat">
+      <div class="card">
+        <h3>💬 Assistant Panacée <span id="chatMode" class="badge NA">…</span></h3>
+        <div class="hint">Converse avec le modèle GNN entraîné. Avec une clé <code>ANTHROPIC_API_KEY</code>, Claude (claude-opus-4-8) orchestre les outils du modèle pour des analyses avancées ; sinon, un assistant local appelle quand même les outils GNN.</div>
+        <div id="chatLog" class="chatlog"></div>
+        <div class="form-row" style="margin-top:12px">
+          <div class="field" style="flex:3">
+            <textarea id="chatInput" rows="2" placeholder="Ex : toxicité et risque de CC(=O)Nc1ccc(O)cc1 — ou : crible la bibliothèque anti-VIH par efficacité"></textarea>
+          </div>
+          <button class="btn" id="chatSend">Envoyer</button>
+        </div>
+        <div class="ex">Suggestions :
+          <button class="lnk chip" data-msg="Quelles sont les capacités du modèle pour le VIH ?">capacités VIH</button> ·
+          <button class="lnk chip" data-msg="Toxicité, efficacité et risque de CC(=O)Nc1ccc(O)cc1">analyser le paracétamol</button> ·
+          <button class="lnk chip" data-msg="Crible la bibliothèque anti-VIH par efficacité">criblage anti-VIH</button> ·
+          <button class="lnk chip" data-msg="Statut de l'entraînement">statut entraînement</button>
+        </div>
       </div>
     </section>
 
