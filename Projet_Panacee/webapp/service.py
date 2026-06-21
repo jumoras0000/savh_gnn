@@ -115,6 +115,7 @@ def run_summary(file_path: Path, root: str | Path) -> dict:
         "n_danger": latest.get("n_danger"),
         "last_update": mtime,
         "status": _run_status(file_path, epochs, meta),
+        "source": meta.get("source", "local"),
     }
 
 

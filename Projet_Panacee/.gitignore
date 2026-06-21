@@ -83,6 +83,12 @@ desktop.ini
 # DeepChem cache
 .deepchem/
 
+# Tests / caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
 # Temporary files
 *.tmp
 *.temp

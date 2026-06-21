@@ -198,6 +198,7 @@
 
     <!-- ---------- Entraînement ---------- -->
     <section class="panel-view" id="view-train">
+      <div id="kaggleBanner" class="kaggle-banner" style="display:none"></div>
       <div class="card">
         <h3>🎛️ Contrôle de l'entraînement</h3>
         <div class="hint">Lance une phase directement depuis l'interface. Le suivi temps réel apparaît dans l'onglet Évolution dès le premier epoch. (Serveur local — exécute <code>run_phaseX.py</code>.)</div>
@@ -315,6 +316,7 @@
         </aside>
         <div class="chat-main card">
           <h3>💬 Assistant <span id="chatMode" class="badge NA">…</span>
+            <button class="btn ghost" id="apiKeyDisconnect" title="Déconnecter la clé Claude (revenir au mode local)" style="display:none">🔌 Déconnecter Claude</button>
             <button class="btn ghost" id="chatExport" title="Exporter cette conversation (JSON)" style="margin-left:auto">⬇️ Exporter</button>
           </h3>
           <div class="hint">Converse avec le modèle GNN. Avec une clé Claude (ci‑dessous ou <code>ANTHROPIC_API_KEY</code>), Claude orchestre les outils du modèle et analyse les <b>images</b> ; sinon l'assistant local appelle quand même les outils GNN. Les <b>structures 2D</b> des molécules sont générées automatiquement.</div>
@@ -393,6 +395,18 @@
   </main>
 
   <div id="toast" class="toast"></div>
+
+  <!-- ---------- Modale d'aide « En savoir plus » ---------- -->
+  <div id="helpModal" class="modal-overlay" style="display:none">
+    <div class="modal-box card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="modal-head">
+        <h3 id="helpTitle">Aide</h3>
+        <button class="btn ghost" id="helpClose" title="Fermer">✕</button>
+      </div>
+      <div id="helpBody" class="modal-body"></div>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

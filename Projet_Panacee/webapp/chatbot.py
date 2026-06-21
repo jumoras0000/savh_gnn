@@ -159,6 +159,25 @@ def _client():
     return anthropic.Anthropic(api_key=_get_api_key())
 
 
+def _friendly_error(e: Exception) -> str:
+    """Transforme une erreur API brute en message clair et actionnable."""
+    msg = str(e).lower()
+    if "credit balance" in msg or "too low" in msg or "billing" in msg:
+        return ("⚠️ Crédit Anthropic épuisé. Recharge ton compte sur "
+                "console.anthropic.com (Plans & Billing) ou déconnecte la clé "
+                "pour utiliser le mode local.")
+    if "authentication" in msg or "invalid x-api-key" in msg or "401" in msg:
+        return ("⚠️ Clé API invalide. Vérifie ta clé (sk-ant-…) dans l'onglet "
+                "Assistant, ou déconnecte-la pour le mode local.")
+    if "rate limit" in msg or "429" in msg:
+        return "⚠️ Limite de débit Anthropic atteinte. Réessaie dans quelques instants."
+    if "overloaded" in msg or "529" in msg:
+        return "⚠️ Service Anthropic surchargé. Réessaie dans un instant."
+    if "connection" in msg or "timeout" in msg or "network" in msg:
+        return "⚠️ Connexion à Anthropic impossible. Vérifie ta connexion réseau."
+    return "⚠️ Claude indisponible. Bascule en mode local."
+
+
 def _to_claude_messages(history: list[dict]) -> list[dict]:
     """Convertit l'historique en messages Claude, avec support vision (images base64)."""
     out = []
@@ -368,8 +387,11 @@ def chat(history: list[dict]) -> dict:
         try:
             res = _chat_claude(history)
         except Exception as e:  # pragma: no cover - dépend de l'API
-            res = {"reply": f"Claude indisponible ({e}). Bascule en mode local. "
-                            "Réessaie ta question.", "mode": "local", "tools": []}
+            # Claude a échoué → on exécute quand même l'analyse en mode local
+            local = _chat_local(history)
+            local["reply"] = _friendly_error(e) + "\n\n" + local["reply"]
+            local["claude_error"] = True
+            res = local
     else:
         res = _chat_local(history)
     res["images"] = _smiles_images(history)
@@ -433,7 +455,7 @@ def chat_stream(history: list[dict]):
             yield from _chat_claude_stream(history)
             return
         except Exception as e:  # pragma: no cover
-            yield {"type": "delta", "text": f"Claude indisponible ({e}) → mode local. "}
+            yield {"type": "delta", "text": _friendly_error(e) + "\n\n"}
     # Mode local : outils exécutés d'abord, puis texte diffusé au fil de l'eau
     res = _chat_local(history)
     for t in res.get("tools", []):

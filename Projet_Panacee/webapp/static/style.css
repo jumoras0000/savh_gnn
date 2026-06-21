@@ -485,3 +485,70 @@ textarea { resize: vertical; line-height: 1.5; }
   .mol-grid, .mol-grid3 { grid-template-columns: 1fr; }
   .ecg-wrap { display: none; }
 }
+
+/* ── Bannière entraînement distant (Kaggle) ── */
+.kaggle-banner {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 16px; padding: 14px 18px;
+  border-radius: var(--radius); border: 1px solid var(--blue);
+  background: linear-gradient(90deg, rgba(77,155,255,.16), rgba(40,224,191,.10));
+  color: var(--text); font-family: var(--sans);
+  box-shadow: 0 0 0 1px rgba(77,155,255,.12);
+}
+.kaggle-banner .kb-pulse {
+  width: 12px; height: 12px; border-radius: 50%; background: var(--vital);
+  box-shadow: 0 0 0 0 var(--vital); animation: kbPulse 1.4s infinite; flex: none;
+}
+@keyframes kbPulse {
+  0% { box-shadow: 0 0 0 0 rgba(40,224,191,.55); }
+  70% { box-shadow: 0 0 0 10px rgba(40,224,191,0); }
+  100% { box-shadow: 0 0 0 0 rgba(40,224,191,0); }
+}
+.kaggle-banner b { color: var(--vital); }
+.kaggle-banner .kb-meta { color: var(--muted); font-size: 13px; }
+.kaggle-banner a { color: var(--blue); font-weight: 600; text-decoration: none; }
+.kaggle-banner a:hover { text-decoration: underline; }
+
+/* ── Bouton d'aide « En savoir plus » par page ── */
+.page-help {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 0 0 14px; padding: 7px 14px;
+  background: var(--surface); border: 1px solid var(--line);
+  color: var(--blue); border-radius: 999px; cursor: pointer;
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  transition: background .15s, border-color .15s;
+}
+.page-help:hover { background: var(--panel-2); border-color: var(--blue); }
+
+/* ── Modale d'aide ── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(4, 7, 12, .72); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 6vh 18px; overflow-y: auto;
+}
+.modal-box {
+  max-width: 720px; width: 100%; max-height: 84vh; overflow-y: auto;
+  box-shadow: var(--shadow); animation: modalIn .18s ease;
+}
+@keyframes modalIn { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.modal-head h3 { margin: 0; }
+.modal-body { font-family: var(--sans); font-size: 14px; line-height: 1.6; color: var(--text); }
+.modal-body h4 {
+  margin: 16px 0 6px; font-size: 13px; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--blue);
+}
+.modal-body h4:first-child { margin-top: 4px; }
+.modal-body p { margin: 4px 0; color: var(--muted); }
+.modal-body ul { margin: 4px 0; padding-left: 20px; }
+.modal-body li { margin: 5px 0; color: var(--muted); }
+.modal-body li b, .modal-body p b { color: var(--text); }
+.modal-body .obj {
+  margin-top: 14px; padding: 10px 12px; border-radius: var(--radius-sm);
+  background: var(--vital-dim); border-left: 3px solid var(--vital); color: var(--text);
+}
+.modal-body code {
+  font-family: var(--mono); font-size: 12px; padding: 1px 5px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+}

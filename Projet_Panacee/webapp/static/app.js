@@ -25,6 +25,7 @@ const state = {
   verdict: null, compare: [], perTask: {}, es: null,
   observations: [], files: { checkpoints: [], csvs: [] },
   trainTimer: null, chatHistory: [], currentConv: null, _loadConversations: null,
+  runs: [],
 };
 
 /* ====================================================================
@@ -505,14 +506,43 @@ async function loadRuns() {
   const data = await fetchJSON("/api/runs");
   const sel = document.getElementById("runSelect");
   const runs = data.runs || [];
-  sel.innerHTML = runs.map(r =>
-    `<option value="${esc(r.id)}">${esc(r.id)} · ${r.status} · ${r.points} pts</option>`).join("");
+  state.runs = runs;
+  sel.innerHTML = runs.map(r => {
+    const tag = r.source === "remote" ? "🛰️ Kaggle · " : "";
+    return `<option value="${esc(r.id)}">${tag}${esc(r.id)} · ${r.status} · ${r.points} pts</option>`;
+  }).join("");
+  updateKaggleBanner();
   if (!runs.length) { sel.innerHTML = `<option value="">aucun run</option>`; renderAll(); return; }
   // garde le run courant si présent, sinon prend le plus récent
   const ids = runs.map(r => r.id);
   if (!state.runId || !ids.includes(state.runId)) state.runId = runs[0].id;
   sel.value = state.runId;
   connectStream(state.runId);
+}
+
+// Bannière « Entraînement Kaggle en cours » : visible dès qu'un run distant tourne.
+function updateKaggleBanner() {
+  const banner = document.getElementById("kaggleBanner");
+  if (!banner) return;
+  const remote = (state.runs || []).filter(r => r.source === "remote" && r.status === "running");
+  if (!remote.length) { banner.style.display = "none"; return; }
+  const r = remote[0];
+  const auc = (r.val_auc != null) ? nf(r.val_auc) : "—";
+  const ep = r.epochs_total ? `${r.last_epoch || 0}/${r.epochs_total}` : `${r.last_epoch || 0}`;
+  banner.style.display = "flex";
+  banner.innerHTML =
+    `<span class="kb-pulse"></span>` +
+    `<div><b>🛰️ Entraînement Kaggle en cours</b> — run <code>${esc(r.id)}</code> · ` +
+    `epoch ${ep} · AUC ${auc} · ${r.points} points` +
+    `<div class="kb-meta">Les courbes et le verdict clinique se mettent à jour en temps réel. ` +
+    `<a href="#" id="kbGoEvo">Voir l'évolution →</a></div></div>`;
+  const go = document.getElementById("kbGoEvo");
+  if (go) go.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (r.id !== state.runId) { state.runId = r.id; connectStream(r.id);
+      const sel = document.getElementById("runSelect"); if (sel) sel.value = r.id; }
+    document.querySelector('.tab[data-tab="evo"]').click();
+  });
 }
 
 function applySnapshot(d) {
@@ -569,6 +599,197 @@ function setupTabs() {
       if (tab === "info") loadCapabilities();
       if (tab === "chat") refreshChatMode();
     });
+  });
+}
+
+/* ====================================================================
+   Aide contextuelle « En savoir plus » — une fiche par page
+   ==================================================================== */
+const PAGE_HELP = {
+  evo: {
+    title: "📈 Évolution — suivi temps réel de l'entraînement",
+    role: "Visualise, <b>en direct</b>, l'apprentissage du modèle GNN epoch après epoch : courbes de perte, ROC-AUC et signes vitaux de sécurité. Les données arrivent par flux SSE depuis l'entraînement local <i>ou</i> Kaggle.",
+    entries: [
+      "<b>KPI (cartes du haut)</b> — epoch courant + ETA, ROC-AUC validation, sensibilité, FNR (faux négatifs), endpoints en danger. Chaque carte a une <i>sparkline</i> de tendance.",
+      "<b>Courbes loss / AUC</b> — comparaison train vs validation. Un écart croissant = surapprentissage.",
+      "<b>Signes vitaux de sécurité</b> — sensibilité &amp; FNR avec lignes de cible et zone de danger.",
+      "<b>ECG animé</b> — bat plus vite quand l'entraînement tourne, vire au rouge en cas de DANGER.",
+      "<b>Sélecteur de run</b> (barre du haut) — bascule entre les entraînements détectés.",
+    ],
+    howto: [
+      "Lance un entraînement (onglet Entraînement) ou pousse-le depuis Kaggle.",
+      "Sélectionne le run dans la liste déroulante en haut.",
+      "Observe les courbes se remplir en temps réel ; surveille le verdict clinique en haut de page.",
+    ],
+    objective: "Détecter tôt si un modèle dérape (FNR qui monte, AUC qui stagne) pour arrêter et réajuster sans attendre la fin.",
+  },
+  clin: {
+    title: "🏥 Métriques cliniques — évaluation par endpoint",
+    role: "Calcule le détail des performances <b>endpoint toxicologique par endpoint</b> (les 12 cibles Tox21) à partir d'un checkpoint et d'un CSV de validation.",
+    entries: [
+      "<b>Sélecteur de checkpoint (.pth)</b> — le modèle entraîné à évaluer (détecté automatiquement).",
+      "<b>Sélecteur de CSV de validation</b> — le jeu de données étiqueté pour la mesure.",
+      "<b>Importer</b> — charge un .pth ou .csv qui n'est pas déjà dans le projet.",
+      "<b>Tableau</b> — par endpoint : sensibilité, spécificité, FNR, précision, F1, ROC-AUC, PR-AUC, ECE (calibration).",
+    ],
+    howto: [
+      "Choisis un checkpoint et un CSV dans les sélecteurs.",
+      "Clique « Évaluer ».",
+      "Lis le tableau : repère les endpoints à FNR élevé (toxiques manqués) — les plus risqués.",
+    ],
+    objective: "Savoir précisément OÙ le modèle se trompe pour juger s'il est déployable et sur quels dangers il faut se méfier.",
+  },
+  sec: {
+    title: "🚨 Sécurité — alertes triées par gravité",
+    role: "Concentre tous les <b>signaux de danger</b> du run courant : endpoints où le modèle manque trop de composés toxiques, sensibilité/AUC sous les seuils.",
+    entries: [
+      "<b>Liste d'alertes</b> — chaque ligne = un risque, trié DANGER puis WARN.",
+      "<b>Barème</b> — rappel des seuils (FNR &lt; 30 %, sensibilité &amp; AUC cibles).",
+    ],
+    howto: [
+      "Ouvre l'onglet pendant ou après un entraînement.",
+      "Traite d'abord les alertes 🔴 DANGER, puis 🟠 WARN.",
+    ],
+    objective: "Transformer des chiffres en décisions de sécurité : ce modèle est-il assez sûr pour passer à l'étape suivante ?",
+  },
+  cmp: {
+    title: "🔬 Comparaison — attendu vs obtenu, et runs entre eux",
+    role: "Compare les résultats <b>obtenus</b> aux <b>cibles attendues</b>, et tous les runs entre eux (ROC-AUC par endpoint, métriques globales).",
+    entries: [
+      "<b>Attendu vs obtenu</b> — l'écart à la cible pour chaque métrique clé.",
+      "<b>ROC-AUC par endpoint</b> — barres comparées à la cible.",
+      "<b>Tableau multi-runs</b> — toutes les expériences côte à côte.",
+    ],
+    howto: [
+      "Lance plusieurs entraînements (phases / hyperparamètres différents).",
+      "Reviens ici pour identifier la meilleure configuration.",
+    ],
+    objective: "Choisir objectivement le meilleur modèle et mesurer le chemin restant jusqu'aux objectifs cliniques.",
+  },
+  train: {
+    title: "🎛️ Entraînement — lancer / arrêter une phase",
+    role: "Pilote l'entraînement directement depuis le navigateur, avec console de logs et statut en direct.",
+    entries: [
+      "<b>Phase</b> — 1 (pré-entraînement MGM), 2 (toxicité), 3 (multi-propriétés + anti-VIH).",
+      "<b>Epochs</b> — nombre de passes sur les données.",
+      "<b>Max molécules</b> — limite la taille du jeu (utile pour tester vite).",
+      "<b>Démarrer / Arrêter</b> — contrôle le process ; le suivi temps réel bascule automatiquement dessus.",
+      "<b>Console</b> — logs en direct du process d'entraînement.",
+    ],
+    howto: [
+      "Choisis la phase et les paramètres.",
+      "Clique « Démarrer » — va dans Évolution pour voir les courbes.",
+      "« Arrêter » stoppe proprement à tout moment.",
+    ],
+    objective: "Entraîner un modèle de bout en bout sans ligne de commande, et tout suivre depuis l'interface.",
+  },
+  research: {
+    title: "🧪 Recherche — analyser de vraies molécules",
+    role: "Analyse une ou plusieurs <b>molécules réelles (SMILES)</b> : structure 2D, descripteurs RDKit, puis toxicité / efficacité / ADME / risque selon le modèle disponible.",
+    entries: [
+      "<b>Champ SMILES</b> — colle une ou plusieurs molécules (ex. <code>CC(=O)Nc1ccc(O)cc1</code>).",
+      "<b>Structure 2D</b> — dessin de la molécule, généré automatiquement.",
+      "<b>Descripteurs</b> — MW, LogP, TPSA, HBD/HBA, QED, Lipinski (toujours disponibles, sans modèle).",
+      "<b>Risque &amp; propriétés</b> — toxicité/efficacité si un modèle Phase 2/3 est entraîné.",
+      "<b>Combinaison</b> — ≥2 molécules → synergie, doses, score (MolecularReasoner, Phase 3).",
+      "<b>Export JSON</b> — sauvegarde l'analyse.",
+    ],
+    howto: [
+      "Colle un SMILES et clique « Analyser ».",
+      "Mode adaptatif : Phase 3 (complet) → Phase 2 (toxicité) → descripteurs seuls.",
+      "Pour une combinaison, entre plusieurs SMILES séparés par une virgule.",
+    ],
+    objective: "Évaluer in-silico un candidat médicament en quelques secondes, comme une fiche d'identité chimique + risque.",
+  },
+  screen: {
+    title: "🧬 Criblage VIH — virtual screening (HTS in-silico)",
+    role: "Classe toute une <b>bibliothèque de molécules</b> par objectif : efficacité anti-VIH, sécurité, ou drug-likeness.",
+    entries: [
+      "<b>Bibliothèque</b> — intégrée (antirétroviraux de référence, médicaments courants), collée ou importée.",
+      "<b>Objectif</b> — Efficacité anti-VIH (Phase 3), Sécurité (Phase 2-3) ou Drug-likeness/QED (sans modèle).",
+      "<b>Classement</b> — molécules triées par score, avec QED.",
+      "<b>Export CSV</b> — récupère le palmarès.",
+    ],
+    howto: [
+      "Choisis une bibliothèque (ou colle tes SMILES).",
+      "Sélectionne l'objectif et clique « Cribler ».",
+      "Exporte le top candidats en CSV.",
+    ],
+    objective: "Reproduire un criblage à haut débit (HTS) sans paillasse : trier des centaines de molécules pour ne garder que les meilleures.",
+  },
+  chat: {
+    title: "💬 Assistant — copilote synchronisé au modèle",
+    role: "Un chatbot qui <b>orchestre les outils du modèle GNN</b> (toxicité, efficacité VIH, descripteurs, criblage, synergie). Avec une clé Claude il raisonne et analyse les images ; sans clé, un assistant local appelle quand même les outils.",
+    entries: [
+      "<b>Clé API Anthropic</b> — colle <code>sk-ant-…</code> puis « Activer Claude ». « Déconnecter » revient au mode local.",
+      "<b>Nouvelle conversation / liste</b> — historique multi-chats à gauche (créer, ouvrir, supprimer).",
+      "<b>Recherche</b> — filtre les conversations (Échap pour vider).",
+      "<b>🖼️ Image</b> — joins une image pour analyse vision (nécessite Claude).",
+      "<b>Structures 2D</b> — générées automatiquement à partir des SMILES détectés.",
+      "<b>Exporter</b> — télécharge la conversation courante en JSON.",
+    ],
+    howto: [
+      "(Optionnel) Active Claude avec ta clé pour des analyses avancées.",
+      "Pose une question avec un SMILES, ex. « toxicité et risque de CC(=O)Nc1ccc(O)cc1 ».",
+      "Réponses en streaming ; tout est sauvegardé automatiquement.",
+    ],
+    objective: "Parler en langage naturel à ton modèle et obtenir des analyses complètes, même hors-ligne.",
+  },
+  info: {
+    title: "ℹ️ Guide — métriques, risque et flux de travail",
+    role: "Documentation de référence : signification de chaque métrique, lecture du risque, équivalence laboratoire et flux de travail recommandé.",
+    entries: [
+      "<b>Tout ce que vous pouvez faire</b> — catalogue des capacités.",
+      "<b>Équivalence laboratoire</b> — ce que chaque analyse représente « à la paillasse ».",
+      "<b>Pourquoi ces métriques</b> — ROC-AUC, sensibilité, FNR, etc.",
+      "<b>Lecture du risque</b> — OK / WARN / DANGER.",
+    ],
+    howto: [
+      "Consulte cette page en cas de doute sur un terme ou une métrique.",
+      "Suis le flux de travail recommandé en bas de page.",
+    ],
+    objective: "Comprendre ce que les chiffres veulent dire pour prendre de bonnes décisions.",
+  },
+};
+
+function helpHtml(h) {
+  const li = (arr) => "<ul>" + arr.map(x => "<li>" + x + "</li>").join("") + "</ul>";
+  return (
+    `<h4>À quoi sert cette page</h4><p>${h.role}</p>` +
+    `<h4>Ce que fait chaque élément</h4>${li(h.entries)}` +
+    `<h4>Comment l'utiliser</h4>${li(h.howto)}` +
+    `<div class="obj">🎯 <b>Objectif</b> — ${h.objective}</div>`
+  );
+}
+
+function openHelp(tab) {
+  const h = PAGE_HELP[tab];
+  if (!h) return;
+  document.getElementById("helpTitle").innerHTML = h.title;
+  document.getElementById("helpBody").innerHTML = helpHtml(h);
+  document.getElementById("helpModal").style.display = "flex";
+}
+
+function closeHelp() { document.getElementById("helpModal").style.display = "none"; }
+
+function setupHelp() {
+  // Injecte un bouton « En savoir plus » en tête de chaque page
+  Object.keys(PAGE_HELP).forEach(tab => {
+    const view = document.getElementById("view-" + tab);
+    if (!view) return;
+    const btn = document.createElement("button");
+    btn.className = "page-help";
+    btn.type = "button";
+    btn.innerHTML = "ℹ️ En savoir plus";
+    btn.addEventListener("click", () => openHelp(tab));
+    view.insertBefore(btn, view.firstChild);
+  });
+  document.getElementById("helpClose").addEventListener("click", closeHelp);
+  document.getElementById("helpModal").addEventListener("click", (e) => {
+    if (e.target.id === "helpModal") closeHelp();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.getElementById("helpModal").style.display === "flex") closeHelp();
   });
 }
 
@@ -716,9 +937,12 @@ async function pollTrain(once = false) {
     const map = { running: "WARN", finished: "OK", failed: "DANGER", stopped: "NA", idle: "NA" };
     badge.className = "badge " + (map[s.state] || "NA");
     badge.textContent = s.state || "idle";
+    const remote = (state.runs || []).filter(r => r.source === "remote" && r.status === "running");
     const meta = s.pid
       ? `${s.label || ""} · pid ${s.pid} · ${s.cmd || ""}`
-      : "Aucun entraînement lancé depuis l'interface.";
+      : (remote.length
+          ? `🛰️ Aucun process local — un entraînement Kaggle (${remote[0].id}) pousse ses métriques en temps réel.`
+          : "Aucun entraînement lancé depuis l'interface.");
     document.getElementById("trMeta").textContent = meta;
     document.getElementById("trLog").textContent = (s.log_tail && s.log_tail.length)
       ? s.log_tail.join("\n") : "—";
@@ -1009,7 +1233,11 @@ function setupChat() {
   };
 
   // ---- conversations ----
-  async function loadConversations(q) {
+  // La barre de recherche est la source unique de vérité : la liste reflète
+  // toujours son contenu (évite la désynchro liste ↔ champ de recherche).
+  async function loadConversations() {
+    const sb = document.getElementById("chatSearch");
+    const q = sb ? sb.value.trim() : "";
     try {
       const data = q ? await fetchJSON("/api/conversations/search?q=" + encodeURIComponent(q))
                      : await fetchJSON("/api/conversations");
@@ -1035,9 +1263,14 @@ function setupChat() {
       loadConversations();
     }));
   }
+  function resetSearch() {
+    const sb = document.getElementById("chatSearch");
+    if (sb) sb.value = "";
+  }
   async function openConversation(cid) {
     state.currentConv = cid;
     log.innerHTML = "";
+    resetSearch();
     try {
       const data = await fetchJSON("/api/conversations/" + cid);
       for (const m of data.messages) {
@@ -1050,6 +1283,7 @@ function setupChat() {
     loadConversations();
   }
   async function newConversation() {
+    resetSearch();
     try {
       const c = await fetchJSON("/api/conversations", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -1141,9 +1375,14 @@ function setupChat() {
     c.addEventListener("click", () => { input.value = c.dataset.msg; send(); }));
   document.getElementById("chatNew").addEventListener("click", newConversation);
   let stq = null;
-  document.getElementById("chatSearch").addEventListener("input", (e) => {
-    clearTimeout(stq); const q = e.target.value.trim();
-    stq = setTimeout(() => loadConversations(q || null), 250);
+  const searchBox = document.getElementById("chatSearch");
+  searchBox.addEventListener("input", () => {
+    clearTimeout(stq);
+    stq = setTimeout(() => loadConversations(), 250);
+  });
+  // Échap vide la recherche et restaure la liste complète
+  searchBox.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { searchBox.value = ""; loadConversations(); }
   });
   document.getElementById("chatExport").addEventListener("click", () => {
     if (!state.currentConv) { flashToast("Ouvre une conversation d'abord.", true); return; }
@@ -1153,10 +1392,24 @@ function setupChat() {
     const k = document.getElementById("apiKeyInput").value.trim();
     if (!k) { flashToast("Colle ta clé API.", true); return; }
     try {
-      await fetchJSON("/api/settings/apikey", { method: "POST",
+      const result = await fetchJSON("/api/settings/apikey", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: k }) });
       document.getElementById("apiKeyInput").value = "";
-      flashToast("Clé enregistrée — Claude activé."); refreshChatMode();
+      flashToast(result.claude ? "Clé enregistrée — Claude activé." : "Clé enregistrée.");
+      refreshChatMode();
+    } catch (e) {
+      flashToast("Échec : " + e.message, true);
+    }
+  });
+  const discoBtn = document.getElementById("apiKeyDisconnect");
+  if (discoBtn) discoBtn.addEventListener("click", async () => {
+    if (!confirm("Déconnecter la clé Claude ? L'assistant repassera en mode local.")) return;
+    try {
+      const r = await fetchJSON("/api/settings/apikey", { method: "DELETE" });
+      flashToast(r.env_locked
+        ? "Clé locale effacée (une clé ANTHROPIC_API_KEY reste active côté serveur)."
+        : "Claude déconnecté — mode local.");
+      refreshChatMode();
     } catch (e) { flashToast("Échec : " + e.message, true); }
   });
 
@@ -1172,6 +1425,9 @@ async function refreshChatMode() {
     badge.className = "badge " + (s.claude ? "OK" : "NA");
     const row = document.getElementById("apiKeyRow");
     if (row) row.style.display = s.claude ? "none" : "flex";
+    // Bouton déconnexion : visible si Claude actif ET clé stockée localement (pas env)
+    const disco = document.getElementById("apiKeyDisconnect");
+    if (disco) disco.style.display = (s.claude && s.key_source === "store") ? "inline-flex" : "none";
   } catch (e) { badge.textContent = "?"; }
   if (state._loadConversations) state._loadConversations();
 }
@@ -1181,7 +1437,7 @@ async function refreshChatMode() {
    ==================================================================== */
 async function main() {
   setupTheme();
-  ecgInit(); setupTabs(); setupRunSelect(); setupEval();
+  ecgInit(); setupTabs(); setupHelp(); setupRunSelect(); setupEval();
   setupFiles(); setupTraining(); setupResearch(); setupScreening(); setupChat();
   await loadConfig();
   renderBarème();

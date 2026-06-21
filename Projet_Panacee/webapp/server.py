@@ -120,6 +120,10 @@ async def api_ingest(request):
         return JSONResponse({"error": "run invalide"}, status_code=400)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
+    # Tout point reçu via /api/ingest vient d'un entraînement distant (Kaggle…) :
+    # on tamponne la source pour que l'UI puisse l'afficher distinctement.
+    if rec.get("_type") == "meta":
+        rec.setdefault("source", "remote")
     # meta = nouveau run → réinitialise ; epoch = append
     mode = "w" if rec.get("_type") == "meta" else "a"
     with open(dest, mode, encoding="utf-8") as f:
@@ -381,13 +385,21 @@ async def api_chat_status(request):
 
 
 async def api_settings_apikey(request):
-    """Enregistre (localement) la clé API Anthropic pour activer Claude."""
+    """Active (POST) ou déconnecte (DELETE) la clé API Anthropic — stockée en local."""
     from webapp import chatbot, store
+    if request.method == "DELETE":
+        store.set_setting("anthropic_api_key", None)
+        env_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        return JSONResponse({"ok": True, "claude": chatbot._claude_available(),
+                             "env_locked": env_key})
     try:
         body = await request.json()
     except Exception:
         return JSONResponse({"error": "JSON invalide"}, status_code=400)
     key = (body.get("api_key") or "").strip()
+    if key and not key.startswith("sk-"):
+        return JSONResponse({"error": "Clé invalide : une clé Anthropic commence par « sk-ant- »."},
+                            status_code=400)
     store.set_setting("anthropic_api_key", key or None)
     return JSONResponse({"ok": True, "claude": chatbot._claude_available()})
 
@@ -690,7 +702,7 @@ routes = [
     Route("/api/chat/stream", api_chat_stream, methods=["POST"]),
     Route("/api/chat/status", api_chat_status),
     Route("/api/chat/image", api_chat_image),
-    Route("/api/settings/apikey", api_settings_apikey, methods=["POST"]),
+    Route("/api/settings/apikey", api_settings_apikey, methods=["POST", "DELETE"]),
     Route("/api/conversations", api_conversations, methods=["GET", "POST"]),
     Route("/api/conversations/search", api_conv_search),
     Route("/api/conversations/{cid}/rename", api_conv_rename, methods=["POST"]),
