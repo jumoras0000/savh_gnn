@@ -20,18 +20,14 @@ chaque epoch au navigateur, sans WebSocket ni couplage réseau.
 cd Projet_Panacee
 pip install -r webapp/requirements.txt        # starlette + uvicorn (déjà là le plus souvent)
 
-# 1) Mode démo (sans GPU ni dataset) — génère un run synthétique en temps réel :
-python -m webapp.run --demo
-
-# 2) Suivi d'un vrai entraînement (lance-le dans un autre terminal) :
+# Suivi d'un entraînement (lance-le depuis l'onglet 🎛️ Entraînement ou en CLI) :
 python run_phase2.py --download               # écrit checkpoints/phase2/live_metrics.jsonl
 python -m webapp.run                           # ouvre http://127.0.0.1:8000
 ```
 
 Puis ouvre **http://127.0.0.1:8000**.
 
-Options : `--host 0.0.0.0 --port 8080`, `--root <dossier_checkpoints>`,
-`--demo-epochs 60 --demo-delay 0.5`.
+Options : `--host 0.0.0.0 --port 8080`, `--root <dossier_checkpoints>`.
 
 ## Ce que montre le tableau de bord
 

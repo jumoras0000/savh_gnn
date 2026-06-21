@@ -19,6 +19,7 @@ import sys
 import os
 import time
 import json
+import shutil
 import torch
 import numpy as np
 from pathlib import Path
@@ -38,6 +39,7 @@ from src.preprocessing.scaffold_split import scaffold_kfold
 from src.utils.ema import ModelEMA
 from src.utils.live_logger import LiveLogger
 from src.validation.clinical_metrics import summarize as clinical_summarize
+from src.validation.clinical_metrics import clinical_score as clinical_score_fn
 from src.config import (
     DEVICE, NUM_WORKERS, PIN_MEMORY,
     ATOM_FEATURE_DIM, BOND_FEATURE_DIM,
@@ -261,6 +263,23 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
     os.makedirs(save_dir, exist_ok=True)
     best_path = Path(save_dir) / "best_toxicity_model.pth"
     latest_path = Path(save_dir) / "checkpoint_latest.pth"
+    # Dossier des checkpoints par-epoch (gérables/supprimables depuis le dashboard).
+    epochs_dir = Path(save_dir) / "epochs"
+    save_epochs = bool(getattr(args, "save_epochs", 1))
+    # Nouveau run -> on repart d'un dossier d'epochs propre (cohérent avec le
+    # live_metrics.jsonl qui est lui aussi réinitialisé en tête de run).
+    prev_best_state = None
+    if getattr(args, "warm_start", 1) and best_path.exists():
+        # Warm-start : reprend le MEILLEUR modèle de l'entraînement précédent.
+        try:
+            prev_best_state = torch.load(best_path, map_location="cpu",
+                                         weights_only=False).get("model_state_dict")
+        except Exception:
+            prev_best_state = None
+    if epochs_dir.exists():
+        shutil.rmtree(epochs_dir, ignore_errors=True)
+    if save_epochs:
+        epochs_dir.mkdir(parents=True, exist_ok=True)
     label = f"[{tag}] " if tag else ""
 
     train_loader = DataLoader(
@@ -291,6 +310,15 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
     n_params = sum(pp.numel() for pp in model.parameters())
     print(f"{label}Modele: {n_params:,} params | conv={CONV_TYPE}")
 
+    # Warm-start complet (encodeur + tête) depuis le meilleur modèle précédent.
+    if prev_best_state is not None:
+        try:
+            model.load_state_dict(prev_best_state, strict=False)
+            print(f"{label}Warm-start : meilleur modèle précédent rechargé "
+                  f"(poursuite de l'entraînement).")
+        except Exception as e:
+            print(f"{label}WARN warm-start ignoré ({e})")
+
     criterion = MultiTaskBCELoss(pos_weight=pos_weight.to(device))
     optimizer = AdamW([
         {"params": model.encoder.parameters(), "lr": PHASE2["lr_encoder"]},
@@ -306,6 +334,7 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
     print(f"{label}AMP={use_amp} | EMA={use_ema} | {args.epochs} epochs | patience={args.patience}")
 
     best_auc = 0.0
+    best_score = -1e9          # supervision = meilleure epoch selon le score clinique
     no_improve = 0
     history = []
     freeze_epochs = PHASE2["freeze_encoder_epochs"]
@@ -350,7 +379,9 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
         history.append({"epoch": epoch, "train": train_m, "val": val_m,
                         "lr_encoder": lr_enc, "lr_head": lr_head})
 
-        # Métriques cliniques temps réel (sécurité : FNR / sensibilité / dangers)
+        # Métriques cliniques (sécurité : FNR / sensibilité / dangers) + score de
+        # supervision. Ne doit jamais casser l'entraînement.
+        agg, per_task = {}, {}
         try:
             import torch as _torch
             clin = clinical_summarize(
@@ -358,19 +389,14 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
                 val_targets.cpu().numpy(), task_names=task_names,
             )
             agg = clin["aggregate"]
-            live.log({
-                "epoch": epoch, "train_loss": train_m["loss"], "val_loss": val_m["loss"],
-                "train_auc": train_m["roc_auc"], "val_auc": val_m["roc_auc"],
-                "val_f1": val_m["f1"], "lr_enc": lr_enc, "lr_head": lr_head,
-                "best_auc": max(best_auc, val_m["roc_auc"]),
-                "macro_sensitivity": agg["macro_sensitivity"],
-                "macro_specificity": agg["macro_specificity"],
-                "macro_fnr": agg["macro_fnr"], "n_danger": agg["n_danger"],
-                "n_warn": agg["n_warn"],
-                "per_task_auc": {t["task"]: t["roc_auc"] for t in clin["tasks"]},
-            })
+            per_task = {t["task"]: t["roc_auc"] for t in clin["tasks"]}
         except Exception:
-            pass  # le logging ne doit jamais casser l'entrainement
+            agg = {}
+
+        clin_score = clinical_score_fn(
+            val_m["roc_auc"], agg.get("macro_sensitivity"),
+            agg.get("macro_fnr"), agg.get("n_danger"),
+        )
 
         # state_dict a sauvegarder = EMA si actif, sinon poids courants
         if ema is not None:
@@ -386,6 +412,7 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
             "model_state_dict": state_to_save,
             "val_metrics": val_m,
             "best_auc": best_auc,
+            "clinical_score": clin_score,
             "history": history,
             "num_tasks": num_tasks,
             "task_names": task_names,
@@ -397,16 +424,48 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
         }
         torch.save(ckpt_data, latest_path)
 
-        if val_m["roc_auc"] > best_auc:
-            best_auc = val_m["roc_auc"]
+        # Checkpoint PAR EPOCH (gérable/supprimable depuis le dashboard).
+        # Version allégée : on retire l'historique cumulé pour limiter la taille.
+        ckpt_rel = None
+        if save_epochs:
+            ep_path = epochs_dir / f"epoch_{epoch:03d}.pth"
+            slim = {k: v for k, v in ckpt_data.items() if k != "history"}
+            torch.save(slim, ep_path)
+            ckpt_rel = f"epochs/epoch_{epoch:03d}.pth"
+
+        # Supervision : la MEILLEURE epoch est celle au meilleur score clinique
+        # (AUC + sensibilité + faible FNR − dangers), pas le seul AUC.
+        is_best = clin_score > best_score
+        if is_best:
+            best_score = clin_score
+            best_auc = max(best_auc, val_m["roc_auc"])
             no_improve = 0
             torch.save(ckpt_data, best_path)
-            print(f"{label}  -> Nouveau meilleur AUC={best_auc:.4f} sauvegarde")
+            print(f"{label}  -> Nouvelle meilleure epoch (score clinique="
+                  f"{clin_score:.4f}, AUC={val_m['roc_auc']:.4f}) sauvegardee")
         else:
             no_improve += 1
-            if no_improve >= args.patience:
-                print(f"{label}Early stopping (patience={args.patience})")
-                break
+
+        # Point temps réel pour le dashboard (après calcul is_best / ckpt_rel)
+        try:
+            live.log({
+                "epoch": epoch, "train_loss": train_m["loss"], "val_loss": val_m["loss"],
+                "train_auc": train_m["roc_auc"], "val_auc": val_m["roc_auc"],
+                "val_f1": val_m["f1"], "lr_enc": lr_enc, "lr_head": lr_head,
+                "best_auc": best_auc, "clinical_score": clin_score, "is_best": is_best,
+                "ckpt": ckpt_rel,
+                "macro_sensitivity": agg.get("macro_sensitivity"),
+                "macro_specificity": agg.get("macro_specificity"),
+                "macro_fnr": agg.get("macro_fnr"), "n_danger": agg.get("n_danger"),
+                "n_warn": agg.get("n_warn"), "per_task_auc": per_task,
+            })
+        except Exception:
+            pass
+
+        if no_improve >= args.patience:
+            print(f"{label}Early stopping (patience={args.patience}) — "
+                  f"meilleure epoch conservee (score={best_score:.4f}).")
+            break
 
     # -- Seuils optimaux (sur le meilleur modele) --
     best_ckpt = torch.load(best_path, map_location=device, weights_only=False)
@@ -443,6 +502,10 @@ def main():
     p.add_argument("--cv_folds", type=int, default=0,
                    help="Cross-validation par scaffold (0 = split simple)")
     p.add_argument("--ema", type=int, default=1, help="1=EMA des poids actif, 0=desactive")
+    p.add_argument("--warm_start", type=int, default=1,
+                   help="1=reprend le meilleur modele de l'entrainement precedent (transfert)")
+    p.add_argument("--save_epochs", type=int, default=1,
+                   help="1=sauvegarde un checkpoint par epoch (gerable depuis le dashboard)")
     p.add_argument("--device", type=str, default=str(DEVICE))
     args = p.parse_args()
 

@@ -12,6 +12,7 @@ import sys
 import os
 import time
 import json
+import shutil
 import contextlib
 import torch
 import numpy as np
@@ -45,6 +46,7 @@ from src.utils.error_handler import (
 )
 from src.utils.live_logger import LiveLogger
 from src.validation.clinical_metrics import summarize as clinical_summarize
+from src.validation.clinical_metrics import clinical_score as clinical_score_fn
 
 
 # ======================================================================
@@ -250,6 +252,10 @@ def main():
     p.add_argument("--epochs", type=int, default=PHASE3["epochs"])
     p.add_argument("--batch_size", type=int, default=PHASE3["batch_size"])
     p.add_argument("--patience", type=int, default=PHASE3["patience"])
+    p.add_argument("--warm_start", type=int, default=1,
+                   help="1=reprend le meilleur modele Phase 3 precedent (transfert)")
+    p.add_argument("--save_epochs", type=int, default=1,
+                   help="1=sauvegarde un checkpoint par epoch (gerable depuis le dashboard)")
     p.add_argument("--device", type=str, default=str(DEVICE))
     args = p.parse_args()
 
@@ -372,6 +378,18 @@ def main():
         dropout=DROPOUT, freeze_encoder=True,
     ).to(device)
 
+    # Warm-start : reprend le MEILLEUR modèle Phase 3 précédent s'il existe
+    # (poursuite de l'entraînement sur les phases à venir).
+    prev_best = Path(args.save_dir) / PHASE3["checkpoint_name"]
+    if getattr(args, "warm_start", 1) and prev_best.exists():
+        try:
+            prev = torch.load(prev_best, map_location="cpu", weights_only=False)
+            if isinstance(prev, dict) and "model_state_dict" in prev:
+                model.load_state_dict(prev["model_state_dict"], strict=False)
+                print("  ✓ Warm-start : meilleur modèle Phase 3 précédent rechargé")
+        except Exception as e:
+            print(f"  ⚠ Warm-start Phase 3 ignoré ({e})")
+
     # Raisonneur IA (sera entraîné après le multi-propriétés)
     reasoner = MolecularReasoner(
         mol_dim=OUTPUT_DIM,
@@ -418,6 +436,14 @@ def main():
     best_path = Path(args.save_dir) / PHASE3["checkpoint_name"]
     latest_path = Path(args.save_dir) / "checkpoint_latest.pth"
     freeze_epochs = PHASE3["freeze_encoder_epochs"]
+    # Checkpoints par-epoch (gérables/supprimables depuis le dashboard) ;
+    # nouveau run -> dossier propre, cohérent avec live_metrics.jsonl réinitialisé.
+    epochs_dir = Path(args.save_dir) / "epochs"
+    save_epochs = bool(getattr(args, "save_epochs", 1))
+    if epochs_dir.exists():
+        shutil.rmtree(epochs_dir, ignore_errors=True)
+    if save_epochs:
+        epochs_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'='*80}")
     print("▶️ ENTRAÎNEMENT MULTI-PROPRIÉTÉS")
@@ -505,12 +531,12 @@ def main():
         history.append(history_entry)
 
         # Point temps reel pour le tableau de bord (multi-propriétés + sécurité tox).
-        # Le logging ne doit jamais casser l'entrainement.
+        # Construit ici, journalisé après les checkpoints (pour inclure is_best/ckpt).
+        rec = {
+            "epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+            "composite_score": composite_score, "lr": lrs[0],
+        }
         with contextlib.suppress(Exception):
-            rec = {
-                "epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
-                "composite_score": composite_score, "lr": lrs[0],
-            }
             scalar_map = {"toxicity": ("tox_auc", "roc_auc"),
                           "efficacy": ("eff_auc", "roc_auc"),
                           "bioavailability": ("bio_auc", "roc_auc"),
@@ -536,7 +562,9 @@ def main():
                     "n_danger": agg["n_danger"], "n_warn": agg["n_warn"],
                     "per_task_auc": {t["task"]: t["roc_auc"] for t in clin["tasks"]},
                 })
-            live.log(rec)
+        rec["clinical_score"] = clinical_score_fn(
+            rec.get("val_auc"), rec.get("macro_sensitivity"),
+            rec.get("macro_fnr"), rec.get("n_danger"))
 
         # Checkpoint
         ckpt_data = {
@@ -545,6 +573,7 @@ def main():
             "optimizer_state_dict": optimizer.state_dict(),
             "val_metrics": {k: v for k, v in val_m.items() if not k.startswith("_")},
             "composite_score": composite_score,
+            "clinical_score": rec["clinical_score"],
             "best_score": best_score,
             "history": history,
             "property_dims": train_ds.get_property_dims(),
@@ -561,16 +590,33 @@ def main():
         }
         torch.save(ckpt_data, latest_path)
 
-        if composite_score > best_score:
+        # Checkpoint PAR EPOCH (allégé : sans historique ni optimiseur).
+        ckpt_rel = None
+        if save_epochs:
+            ep_path = epochs_dir / f"epoch_{epoch:03d}.pth"
+            slim = {k: v for k, v in ckpt_data.items()
+                    if k not in ("history", "optimizer_state_dict")}
+            torch.save(slim, ep_path)
+            ckpt_rel = f"epochs/epoch_{epoch:03d}.pth"
+
+        is_best = composite_score > best_score
+        if is_best:
             best_score = composite_score
             no_improve = 0
             torch.save(ckpt_data, best_path)
-            print(f"  → Nouveau meilleur score={best_score:.4f} sauvegardé !")
+            print(f"  → Nouvelle meilleure epoch (score={best_score:.4f}) sauvegardée !")
         else:
             no_improve += 1
-            if no_improve >= args.patience:
-                print(f"  Early stopping (patience={args.patience})")
-                break
+
+        rec["is_best"] = is_best
+        rec["ckpt"] = ckpt_rel
+        with contextlib.suppress(Exception):
+            live.log(rec)
+
+        if no_improve >= args.patience:
+            print(f"  Early stopping (patience={args.patience}) — "
+                  f"meilleure epoch conservée (score={best_score:.4f}).")
+            break
 
         # Monitoring de santé
         if not health.step(val_loss):

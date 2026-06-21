@@ -11,6 +11,7 @@ Schéma d'un point d'epoch (écrit par src/training/finetune_toxicity.py) :
 """
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from src.utils.live_logger import read_live
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 from src.validation.clinical_metrics import (
     FNR_DANGER, FNR_WARN, AUC_DANGER, AUC_WARN, SENS_DANGER,
+    clinical_score,
 )
 
 # ── Cibles attendues (comparaison « attendu vs obtenu »), orientées sécurité ──
@@ -203,25 +205,48 @@ def clinical_verdict(latest: dict) -> dict:
     return {"level": level, "title": titles[level], "reasons": reasons}
 
 
-def get_run(file_path: Path, root: str | Path) -> dict:
-    """Détail complet d'un run pour le frontend."""
+def get_run(file_path: Path, root: str | Path, epoch: int | None = None) -> dict:
+    """
+    Détail complet d'un run pour le frontend.
+
+    Si `epoch` est fourni, l'analyse (verdict, comparaison, observations,
+    per-task, KPIs) porte sur CETTE epoch précise ; sinon sur la dernière.
+    La liste complète des epochs reste renvoyée pour les courbes.
+    """
     meta, epochs = read_live(file_path)
-    latest = epochs[-1] if epochs else {}
+    selected = None
+    if epoch is not None:
+        rec = _epoch_record(epochs, epoch)
+        if rec is not None:
+            selected, latest = epoch, rec
+        else:
+            latest = epochs[-1] if epochs else {}
+    else:
+        latest = epochs[-1] if epochs else {}
+
     overfit = None
-    if len(epochs) >= 1 and latest.get("train_auc") is not None and latest.get("val_auc") is not None:
+    if latest.get("train_auc") is not None and latest.get("val_auc") is not None:
         overfit = float(latest["train_auc"] - latest["val_auc"])
+
+    # per-task de l'epoch sélectionnée si dispo, sinon dernier connu
+    pt = latest.get("per_task_auc")
+    if not (isinstance(pt, dict) and pt):
+        pt = _latest_per_task(epochs)
+
     out = {
         "id": run_id_for(file_path, root),
         "meta": meta,
         "epochs": epochs,
         "latest": latest,
+        "selected_epoch": selected,
+        "best_epoch": best_epoch_number(epochs),
         "status": _run_status(Path(file_path), epochs, meta),
         "compare": compare_to_expected(latest),
         "verdict": clinical_verdict(latest),
         "expected": EXPECTED,
         "thresholds": THRESHOLDS,
         "overfit_gap": overfit,
-        "per_task_auc": _latest_per_task(epochs),
+        "per_task_auc": pt,
         "phase": meta.get("phase", "?"),
     }
     out["observations"] = metric_observations(out)
@@ -235,6 +260,122 @@ def _latest_per_task(epochs: list) -> dict:
         if isinstance(pt, dict) and pt:
             return pt
     return {}
+
+
+def _epoch_record(epochs: list, epoch_num: int) -> dict | None:
+    """Le point correspondant au numéro d'epoch (None si absent)."""
+    for e in epochs:
+        if e.get("epoch") == epoch_num:
+            return e
+    return None
+
+
+def epoch_clinical_score(rec: dict) -> float:
+    """Score clinique d'une epoch : valeur stockée si présente, sinon recalculée."""
+    if rec.get("clinical_score") is not None:
+        try:
+            return float(rec["clinical_score"])
+        except (TypeError, ValueError):
+            pass
+    return clinical_score(rec.get("val_auc"), rec.get("macro_sensitivity"),
+                          rec.get("macro_fnr"), rec.get("n_danger"))
+
+
+def best_epoch_number(epochs: list) -> int | None:
+    """Numéro de la MEILLEURE epoch selon le score clinique (supervision)."""
+    best_n, best_s = None, None
+    for e in epochs:
+        s = epoch_clinical_score(e)
+        if best_s is None or s > best_s:
+            best_s, best_n = s, e.get("epoch")
+    return best_n
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Gestion des epochs sauvegardées (lister / supprimer depuis le dashboard)
+# ──────────────────────────────────────────────────────────────────────
+
+def list_epochs(file_path: Path, root: str | Path) -> dict:
+    """
+    Toutes les epochs d'un run avec leur analyse + l'état de leur checkpoint
+    par-epoch (présent / taille). Permet de distinguer, garder ou supprimer.
+    """
+    meta, epochs = read_live(file_path)
+    run_dir = Path(file_path).parent
+    best_n = best_epoch_number(epochs)
+    rows = []
+    for e in epochs:
+        n = e.get("epoch")
+        cand = None
+        if e.get("ckpt"):
+            cand = run_dir / e["ckpt"]
+        elif n is not None:
+            cand = run_dir / "epochs" / f"epoch_{int(n):03d}.pth"
+        has, size = False, None
+        if cand is not None and cand.exists():
+            has = True
+            try:
+                size = round(cand.stat().st_size / (1024 * 1024), 2)
+            except OSError:
+                size = None
+        rows.append({
+            "epoch": n,
+            "val_auc": e.get("val_auc"),
+            "macro_sensitivity": e.get("macro_sensitivity"),
+            "macro_fnr": e.get("macro_fnr"),
+            "n_danger": e.get("n_danger"),
+            "clinical_score": round(epoch_clinical_score(e), 4),
+            "verdict": clinical_verdict(e)["level"],
+            "has_ckpt": has,
+            "size_mb": size,
+            "is_best": (n is not None and n == best_n),
+        })
+    return {"id": run_id_for(file_path, root), "best_epoch": best_n, "epochs": rows}
+
+
+def delete_epoch(run_id: str, epoch: int, root: str | Path) -> dict:
+    """
+    Supprime une epoch « pas bonne » : son checkpoint par-epoch ET son point de
+    métriques dans live_metrics.jsonl (le run reste cohérent, l'analyse aussi).
+    Garde anti-traversée : tout reste sous la racine des runs.
+    """
+    path = resolve_run(run_id, root)
+    if path is None:
+        return {"ok": False, "error": f"run introuvable: {run_id}"}
+    try:
+        epoch = int(epoch)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "epoch invalide"}
+
+    root_resolved = Path(root).resolve()
+    run_dir = path.parent
+
+    # 1) supprimer le checkpoint par-epoch (s'il existe)
+    removed_ckpt = False
+    ep_path = (run_dir / "epochs" / f"epoch_{epoch:03d}.pth").resolve()
+    try:
+        ep_path.relative_to(root_resolved)
+    except ValueError:
+        return {"ok": False, "error": "chemin invalide"}
+    if ep_path.exists():
+        try:
+            ep_path.unlink()
+            removed_ckpt = True
+        except OSError as e:
+            return {"ok": False, "error": f"suppression impossible: {e}"}
+
+    # 2) retirer le point de métriques du live_metrics.jsonl (réécriture)
+    meta, epochs = read_live(path)
+    kept = [e for e in epochs if e.get("epoch") != epoch]
+    removed_point = len(kept) != len(epochs)
+    with open(path, "w", encoding="utf-8") as f:
+        if meta:
+            f.write(json.dumps(meta, default=str) + "\n")
+        for e in kept:
+            f.write(json.dumps(e, default=str) + "\n")
+
+    return {"ok": True, "epoch": epoch, "removed_ckpt": removed_ckpt,
+            "removed_point": removed_point, "remaining": len(kept)}
 
 
 def compare_runs(root: str | Path = "checkpoints") -> list[dict]:

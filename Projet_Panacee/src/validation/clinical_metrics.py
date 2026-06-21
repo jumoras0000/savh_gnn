@@ -73,6 +73,23 @@ def expected_calibration_error(y_true, probs, n_bins: int = 10) -> float:
     return float(ece)
 
 
+def clinical_score(val_auc, macro_sensitivity, macro_fnr, n_danger=0) -> float:
+    """
+    Score de qualité clinique d'une epoch, orienté SÉCURITÉ — sert à la
+    supervision (sélection de la « meilleure epoch ») et à l'affichage.
+
+    Combine le pouvoir discriminant (AUC), la sensibilité (détection des
+    toxiques), le complément du FNR (faux négatifs = erreur la plus grave) et
+    pénalise chaque endpoint en DANGER. Plus haut = meilleur.
+    Borné en pratique dans ~[-0.6, 1.0].
+    """
+    auc = float(val_auc) if val_auc is not None else 0.0
+    sens = float(macro_sensitivity) if macro_sensitivity is not None else 0.0
+    fnr = float(macro_fnr) if macro_fnr is not None else 1.0
+    nd = int(n_danger or 0)
+    return float(0.45 * auc + 0.30 * sens + 0.25 * (1.0 - fnr) - 0.05 * nd)
+
+
 def _danger_level(auc, sensitivity, fnr, support):
     """Niveau de risque d'un endpoint toxicologique (orienté faux négatifs)."""
     if support < MIN_SUPPORT:

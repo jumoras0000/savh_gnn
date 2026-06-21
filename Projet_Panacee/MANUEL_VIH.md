@@ -213,7 +213,6 @@ l'onglet Recherche, il coche :
 ```bash
 # Tableau de bord
 python -m webapp.run                       # http://127.0.0.1:8000
-python -m webapp.run --demo                # démo temps réel sans GPU
 
 # Entraînement (UI onglet Entraînement, ou CLI / Kaggle)
 python run_phase2.py --download --epochs 60

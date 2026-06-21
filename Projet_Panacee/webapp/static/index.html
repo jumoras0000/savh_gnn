@@ -84,10 +84,21 @@
       <div id="evoEmpty" class="empty" style="display:none">
         <div class="big">🫀</div>
         En attente du lancement de l'entraînement…<br>
-        Lance <code>python run_phase2.py --download</code> ou
-        <code>python -m webapp.run --demo</code> pour une démonstration.
+        Lance <code>python run_phase2.py --download</code> (ou l'onglet
+        🎛️ Entraînement) pour voir les courbes se remplir en temps réel.
       </div>
       <div id="evoCharts">
+        <div class="card epoch-analyze" id="epochAnalyzeBar">
+          <h3>🎚️ Analyse d'une epoch précise</h3>
+          <div class="hint">Choisis l'epoch à analyser : le verdict, les KPIs, les observations et les métriques par endpoint se recalculent pour CETTE epoch. ⭐ = meilleure epoch retenue par la supervision (score clinique).</div>
+          <div class="epoch-controls">
+            <input type="range" id="epochSlider" min="1" max="1" value="1" step="1" />
+            <span class="epoch-label" id="epochLabel">epoch —</span>
+            <span class="epoch-mode badge NA" id="epochMode">live</span>
+            <button class="btn ghost" id="epochBestBtn" title="Analyser la meilleure epoch">⭐ Meilleure</button>
+            <button class="btn ghost" id="epochLiveBtn" title="Revenir au suivi temps réel (dernier point)">⏩ Dernier / live</button>
+          </div>
+        </div>
         <div class="grid-2">
           <div class="card">
             <h3>Perte (train / val)</h3>
@@ -123,6 +134,16 @@
           <h3>🔎 Observation &amp; risque (lecture automatique)</h3>
           <div class="hint">Interprétation des métriques courantes — ce que disent les chiffres et le risque associé.</div>
           <div id="observations"></div>
+        </div>
+        <div class="card">
+          <h3>🗂️ Épochs sauvegardées — garder / supprimer</h3>
+          <div class="hint">Chaque epoch a son checkpoint, distinct et géré ici. Supprime celles dont l'analyse n'est pas bonne (le point de la courbe ET le checkpoint sont retirés). ⭐ = meilleure epoch (conservée par la supervision). Clique une ligne pour analyser cette epoch.</div>
+          <div class="form-row">
+            <button class="btn ghost" id="epochPrune" title="Supprimer toutes les epochs en DANGER (sauf la meilleure)">🧹 Supprimer les epochs faibles</button>
+            <button class="btn ghost" id="epochRefresh" title="Rafraîchir la liste">⟳ Rafraîchir</button>
+            <span id="epochMgmtMeta" class="upmsg"></span>
+          </div>
+          <div style="overflow-x:auto"><table id="epochTable"><thead></thead><tbody></tbody></table></div>
         </div>
       </div>
     </section>

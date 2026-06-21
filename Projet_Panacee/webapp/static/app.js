@@ -26,6 +26,8 @@ const state = {
   observations: [], files: { checkpoints: [], csvs: [] },
   trainTimer: null, chatHistory: [], currentConv: null, _loadConversations: null,
   runs: [],
+  // Analyse par epoch + gestion des epochs sauvegardées
+  pinnedEpoch: null, bestEpoch: null, epochList: [],
 };
 
 /* ====================================================================
@@ -115,6 +117,14 @@ function lineChart(canvas, series, opts = {}) {
     ctx.fillStyle = s.color; ctx.beginPath();
     ctx.arc(X(last.x), Y(last.y), 3, 0, Math.PI * 2); ctx.fill();
   });
+
+  // marqueur vertical (epoch analysée / sélectionnée)
+  if (opts.vline != null && opts.vline >= xMin && opts.vline <= xMax) {
+    const vx = X(opts.vline);
+    ctx.strokeStyle = COL.text; ctx.globalAlpha = 0.55; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(vx, padT); ctx.lineTo(vx, padT + plotH); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
 }
 
 function emptyChart(ctx, w, h) {
@@ -295,21 +305,24 @@ function renderEvolution() {
   document.getElementById("evoCharts").style.display = has ? "block" : "none";
   if (!has) return;
 
+  // Marqueur vertical = epoch analysée (si l'utilisateur en a épinglé une)
+  const vline = state.pinnedEpoch != null ? state.pinnedEpoch : undefined;
+
   lineChart(document.getElementById("chartLoss"),
     [{ name: "train", color: COL.blue, data: series("train_loss") },
      { name: "val", color: COL.vital, data: series("val_loss") }],
-    { yMin: 0 });
+    { yMin: 0, vline });
 
   lineChart(document.getElementById("chartAuc"),
     [{ name: "train", color: COL.blue, data: series("train_auc") },
      { name: "val", color: COL.vital, data: series("val_auc") }],
-    { yMin: 0.4, yMax: 1.0, refs: [{ y: state.expected.val_auc || 0.85, color: COL.warn }] });
+    { yMin: 0.4, yMax: 1.0, vline, refs: [{ y: state.expected.val_auc || 0.85, color: COL.warn }] });
 
   const fnrDanger = state.thresholds.fnr_danger || 0.5;
   lineChart(document.getElementById("chartSafety"),
     [{ name: "sens", color: COL.ok, data: series("macro_sensitivity") },
      { name: "fnr", color: COL.danger, data: series("macro_fnr") }],
-    { yMin: 0, yMax: 1.0,
+    { yMin: 0, yMax: 1.0, vline,
       bands: [{ from: fnrDanger, to: 1.0, color: "rgba(255,61,104,.06)" }],
       refs: [{ y: state.expected.macro_fnr_max || 0.3, color: COL.warn },
              { y: fnrDanger, color: COL.danger }] });
@@ -551,7 +564,12 @@ function applySnapshot(d) {
   state.perTask = d.per_task_auc || {}; state.expected = d.expected || state.expected;
   state.thresholds = d.thresholds || state.thresholds;
   state.observations = d.observations || [];
+  state.bestEpoch = d.best_epoch != null ? d.best_epoch : state.bestEpoch;
+  // un nouveau run / nouveau snapshot annule l'épingle d'epoch
+  state.pinnedEpoch = null;
   renderAll();
+  updateEpochSlider();
+  loadEpochManagement();
 }
 
 function connectStream(runId) {
@@ -565,9 +583,16 @@ function connectStream(runId) {
   es.addEventListener("waiting", () => { conn.textContent = "en attente"; });
   es.addEventListener("epoch", (ev) => {
     const e = JSON.parse(ev.data);
-    state.epochs.push(e); state.latest = e;
-    if (e.per_task_auc) state.perTask = e.per_task_auc;
-    renderKPIs(); renderEvolution(); renderObservations(); renderClinicalFromLive(); renderAlerts(); renderCompare();
+    state.epochs.push(e);
+    // Si l'utilisateur analyse une epoch épinglée, on ne change pas l'affichage
+    // des KPIs/verdict ; on met juste à jour les courbes et le curseur.
+    if (state.pinnedEpoch == null) {
+      state.latest = e;
+      if (e.per_task_auc) state.perTask = e.per_task_auc;
+      renderKPIs(); renderObservations(); renderClinicalFromLive(); renderAlerts(); renderCompare();
+    }
+    renderEvolution();
+    updateEpochSlider();
     flashToast(`Epoch ${e.epoch} · AUC ${nf(e.val_auc)} · FNR ${pct(e.macro_fnr)}`);
   });
   es.addEventListener("status", (ev) => {
@@ -593,6 +618,7 @@ function setupTabs() {
       document.getElementById("view-" + tab).classList.add("active");
       // redessine les charts du panneau affiché (canvas a maintenant une taille)
       requestAnimationFrame(() => { renderEvolution(); renderCompare(); });
+      if (tab === "evo") loadEpochManagement();
       if (tab === "train") pollTrain();
       if (tab === "clin" || tab === "research") loadFiles();
       if (tab === "screen") { loadFiles(); loadLibraries(); }
@@ -611,17 +637,20 @@ const PAGE_HELP = {
     role: "Visualise, <b>en direct</b>, l'apprentissage du modèle GNN epoch après epoch : courbes de perte, ROC-AUC et signes vitaux de sécurité. Les données arrivent par flux SSE depuis l'entraînement local <i>ou</i> Kaggle.",
     entries: [
       "<b>KPI (cartes du haut)</b> — epoch courant + ETA, ROC-AUC validation, sensibilité, FNR (faux négatifs), endpoints en danger. Chaque carte a une <i>sparkline</i> de tendance.",
-      "<b>Courbes loss / AUC</b> — comparaison train vs validation. Un écart croissant = surapprentissage.",
+      "<b>🎚️ Analyse d'une epoch précise</b> — curseur pour rejouer l'analyse (verdict, KPIs, observations, endpoints) de N'IMPORTE quelle epoch. ⭐ = meilleure epoch (score clinique). « Dernier / live » revient au temps réel.",
+      "<b>Courbes loss / AUC</b> — comparaison train vs validation. Un écart croissant = surapprentissage. Trait vertical = epoch analysée.",
       "<b>Signes vitaux de sécurité</b> — sensibilité &amp; FNR avec lignes de cible et zone de danger.",
+      "<b>🗂️ Épochs sauvegardées</b> — chaque epoch a son checkpoint ; tableau pour comparer, analyser (clic) et <b>supprimer</b> celles dont l'analyse n'est pas bonne (🗑 ou « Supprimer les epochs faibles »). La meilleure (⭐) est protégée.",
       "<b>ECG animé</b> — bat plus vite quand l'entraînement tourne, vire au rouge en cas de DANGER.",
       "<b>Sélecteur de run</b> (barre du haut) — bascule entre les entraînements détectés.",
     ],
     howto: [
       "Lance un entraînement (onglet Entraînement) ou pousse-le depuis Kaggle.",
       "Sélectionne le run dans la liste déroulante en haut.",
-      "Observe les courbes se remplir en temps réel ; surveille le verdict clinique en haut de page.",
+      "Observe les courbes en temps réel ; déplace le curseur pour analyser une epoch donnée.",
+      "Dans « Épochs sauvegardées », supprime les epochs faibles et garde la meilleure.",
     ],
-    objective: "Détecter tôt si un modèle dérape (FNR qui monte, AUC qui stagne) pour arrêter et réajuster sans attendre la fin.",
+    objective: "Détecter tôt si un modèle dérape (FNR qui monte, AUC qui stagne), analyser chaque epoch, et ne garder que les meilleurs checkpoints. La supervision arrête l'entraînement sur la meilleure epoch (score clinique) et garde le meilleur modèle pour les phases suivantes.",
   },
   clin: {
     title: "🏥 Métriques cliniques — évaluation par endpoint",
@@ -798,6 +827,173 @@ function setupRunSelect() {
     state.runId = e.target.value;
     if (state.runId) connectStream(state.runId);
   });
+}
+
+/* ====================================================================
+   Analyse par epoch + gestion des epochs sauvegardées
+   ==================================================================== */
+function lastEpochNum() {
+  const ep = state.epochs;
+  return ep.length ? (ep[ep.length - 1].epoch || ep.length) : 1;
+}
+
+function updateEpochSlider() {
+  const slider = document.getElementById("epochSlider");
+  const label = document.getElementById("epochLabel");
+  const mode = document.getElementById("epochMode");
+  if (!slider) return;
+  const lo = state.epochs.length ? (state.epochs[0].epoch || 1) : 1;
+  const hi = lastEpochNum();
+  slider.min = lo; slider.max = Math.max(lo, hi);
+  const cur = state.pinnedEpoch != null ? state.pinnedEpoch : hi;
+  slider.value = cur;
+  const best = state.bestEpoch != null ? ` · ⭐ meilleure : epoch ${state.bestEpoch}` : "";
+  if (label) label.textContent = `epoch ${cur} / ${hi}${best}`;
+  if (mode) {
+    const live = state.pinnedEpoch == null;
+    mode.textContent = live ? "live" : "épinglée";
+    mode.className = "epoch-mode badge " + (live ? "NA" : "WARN");
+  }
+}
+
+// Applique l'analyse renvoyée par /api/run (point = epoch choisie ou dernière)
+function applyPoint(d) {
+  state.latest = d.latest || {};
+  state.verdict = d.verdict; state.compare = d.compare || [];
+  state.perTask = d.per_task_auc || {};
+  state.bestEpoch = d.best_epoch != null ? d.best_epoch : state.bestEpoch;
+  renderVerdict(); renderKPIs(); renderObservations();
+  renderClinicalFromLive(); renderAlerts(); renderCompare(); renderEvolution();
+  updateEpochSlider();
+}
+
+async function selectEpoch(n) {
+  if (!state.runId) return;
+  try {
+    const d = await fetchJSON(`/api/run?id=${encodeURIComponent(state.runId)}&epoch=${n}`);
+    state.pinnedEpoch = (d.selected_epoch != null) ? d.selected_epoch : n;
+    applyPoint(d);
+    flashToast(`Analyse de l'epoch ${state.pinnedEpoch}`);
+  } catch (e) { flashToast("Epoch introuvable : " + e.message, true); }
+}
+
+async function unpinEpoch() {
+  state.pinnedEpoch = null;
+  if (!state.runId) { updateEpochSlider(); return; }
+  try {
+    const d = await fetchJSON(`/api/run?id=${encodeURIComponent(state.runId)}`);
+    applyPoint(d);
+  } catch (e) { updateEpochSlider(); }
+  flashToast("Suivi temps réel (dernier point)");
+}
+
+async function loadEpochManagement() {
+  if (!state.runId) return;
+  try {
+    const d = await fetchJSON(`/api/epochs?id=${encodeURIComponent(state.runId)}`);
+    state.epochList = d.epochs || [];
+    state.bestEpoch = d.best_epoch != null ? d.best_epoch : state.bestEpoch;
+    renderEpochTable();
+    updateEpochSlider();
+  } catch (e) { /* ignore */ }
+}
+
+function renderEpochTable() {
+  const thead = document.querySelector("#epochTable thead");
+  const tbody = document.querySelector("#epochTable tbody");
+  if (!tbody) return;
+  thead.innerHTML = "<tr><th>Epoch</th><th>Score clinique</th><th>ROC-AUC</th><th>Sensib.</th><th>FNR</th><th>Danger</th><th>Verdict</th><th>Checkpoint</th><th></th></tr>";
+  const rows = (state.epochList || []).map(r => {
+    const star = r.is_best ? ' <span class="best-star" title="Meilleure epoch">⭐</span>' : "";
+    const ckpt = r.has_ckpt ? `${r.size_mb != null ? r.size_mb + " Mo" : "✓"}` : "—";
+    const pinned = (r.epoch === state.pinnedEpoch) ? ' class="ep-pinned"' : "";
+    return `<tr data-level="${r.verdict}" data-ep="${r.epoch}"${pinned}>
+      <td><b>${r.epoch}</b>${star}</td>
+      <td>${nf(r.clinical_score)}</td>
+      <td>${nf(r.val_auc)}</td>
+      <td>${pct(r.macro_sensitivity)}</td>
+      <td>${pct(r.macro_fnr)}</td>
+      <td>${r.n_danger ?? "—"}</td>
+      <td><span class="badge ${r.verdict}">${r.verdict}</span></td>
+      <td>${ckpt}</td>
+      <td><button class="ep-del" data-ep="${r.epoch}" title="Supprimer cette epoch (checkpoint + point)">🗑</button></td>
+    </tr>`;
+  });
+  tbody.innerHTML = rows.join("") ||
+    `<tr><td colspan="9" style="color:var(--faint)">Aucune epoch sauvegardée pour ce run.</td></tr>`;
+  // clic ligne = analyser l'epoch ; clic 🗑 = supprimer
+  tbody.querySelectorAll("tr[data-ep]").forEach(tr => tr.addEventListener("click", (e) => {
+    if (e.target.classList.contains("ep-del")) return;
+    const n = parseInt(tr.dataset.ep, 10);
+    if (!Number.isNaN(n)) selectEpoch(n);
+  }));
+  tbody.querySelectorAll(".ep-del").forEach(b => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    deleteEpochUI(parseInt(b.dataset.ep, 10));
+  }));
+}
+
+async function deleteEpochUI(n) {
+  if (Number.isNaN(n)) return;
+  if (!confirm(`Supprimer l'epoch ${n} ? Son checkpoint et son point de métriques seront effacés.`)) return;
+  try {
+    const r = await fetch(`/api/epoch?id=${encodeURIComponent(state.runId)}&epoch=${n}`, { method: "DELETE" });
+    if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch (e) {} throw new Error(m); }
+    flashToast(`Epoch ${n} supprimée.`);
+    if (state.pinnedEpoch === n) state.pinnedEpoch = null;
+    // recharge le run (courbes) + la liste de gestion
+    const d = await fetchJSON(`/api/run?id=${encodeURIComponent(state.runId)}`);
+    state.epochs = d.epochs || []; state.latest = d.latest || {};
+    state.verdict = d.verdict; state.compare = d.compare || []; state.perTask = d.per_task_auc || {};
+    state.bestEpoch = d.best_epoch;
+    renderAll();
+    loadEpochManagement();
+  } catch (e) { flashToast("Suppression échouée : " + e.message, true); }
+}
+
+async function pruneWeakEpochs() {
+  const weak = (state.epochList || []).filter(r => r.verdict === "DANGER" && !r.is_best);
+  if (!weak.length) { flashToast("Aucune epoch faible à supprimer."); return; }
+  if (!confirm(`Supprimer ${weak.length} epoch(s) en DANGER (la meilleure est conservée) ?`)) return;
+  const meta = document.getElementById("epochMgmtMeta");
+  if (meta) meta.textContent = "Suppression…";
+  let ok = 0;
+  for (const r of weak) {
+    try {
+      const resp = await fetch(`/api/epoch?id=${encodeURIComponent(state.runId)}&epoch=${r.epoch}`, { method: "DELETE" });
+      if (resp.ok) ok++;
+    } catch (e) { /* continue */ }
+  }
+  if (meta) meta.textContent = "";
+  flashToast(`${ok}/${weak.length} epoch(s) faible(s) supprimée(s).`);
+  state.pinnedEpoch = null;
+  try {
+    const d = await fetchJSON(`/api/run?id=${encodeURIComponent(state.runId)}`);
+    state.epochs = d.epochs || []; state.latest = d.latest || {};
+    state.verdict = d.verdict; state.compare = d.compare || []; state.perTask = d.per_task_auc || {};
+    state.bestEpoch = d.best_epoch;
+    renderAll();
+  } catch (e) {}
+  loadEpochManagement();
+}
+
+function setupEpochTools() {
+  const slider = document.getElementById("epochSlider");
+  if (slider) {
+    // pendant le glissement : aperçu du numéro ; au relâché : analyse réelle
+    slider.addEventListener("input", () => {
+      const label = document.getElementById("epochLabel");
+      if (label) label.textContent = `epoch ${slider.value} / ${lastEpochNum()}`;
+    });
+    slider.addEventListener("change", () => selectEpoch(parseInt(slider.value, 10)));
+  }
+  document.getElementById("epochBestBtn")?.addEventListener("click", () => {
+    if (state.bestEpoch != null) selectEpoch(state.bestEpoch);
+    else flashToast("Pas encore de meilleure epoch.", true);
+  });
+  document.getElementById("epochLiveBtn")?.addEventListener("click", unpinEpoch);
+  document.getElementById("epochRefresh")?.addEventListener("click", loadEpochManagement);
+  document.getElementById("epochPrune")?.addEventListener("click", pruneWeakEpochs);
 }
 
 function setupEval() {
@@ -1437,7 +1633,7 @@ async function refreshChatMode() {
    ==================================================================== */
 async function main() {
   setupTheme();
-  ecgInit(); setupTabs(); setupHelp(); setupRunSelect(); setupEval();
+  ecgInit(); setupTabs(); setupHelp(); setupRunSelect(); setupEpochTools(); setupEval();
   setupFiles(); setupTraining(); setupResearch(); setupScreening(); setupChat();
   await loadConfig();
   renderBarème();

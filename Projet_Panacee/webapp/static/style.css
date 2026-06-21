@@ -552,3 +552,27 @@ textarea { resize: vertical; line-height: 1.5; }
   font-family: var(--mono); font-size: 12px; padding: 1px 5px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
 }
+
+/* ── Analyse par epoch (curseur) ── */
+.epoch-controls {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px;
+}
+.epoch-controls #epochSlider {
+  flex: 1; min-width: 200px; accent-color: var(--vital); cursor: pointer;
+}
+.epoch-controls .epoch-label {
+  font-family: var(--mono); font-size: 13px; color: var(--text); white-space: nowrap;
+}
+.epoch-controls .epoch-mode { flex: none; }
+
+/* ── Tableau de gestion des epochs ── */
+#epochTable tbody tr[data-ep] { cursor: pointer; transition: background .12s; }
+#epochTable tbody tr[data-ep]:hover { background: var(--panel-2); }
+#epochTable tbody tr.ep-pinned { outline: 1px solid var(--vital); background: var(--vital-dim); }
+#epochTable .best-star { font-size: 13px; }
+.ep-del {
+  background: transparent; border: 1px solid var(--line); color: var(--danger);
+  border-radius: 6px; cursor: pointer; padding: 3px 8px; font-size: 13px;
+  transition: background .12s, border-color .12s;
+}
+.ep-del:hover { background: rgba(255,61,104,.12); border-color: var(--danger); }

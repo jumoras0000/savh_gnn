@@ -46,7 +46,6 @@ pip install anthropic        # + export ANTHROPIC_API_KEY=...
 
 ```bash
 python -m webapp.run            # http://127.0.0.1:8000
-python -m webapp.run --demo     # démo temps réel sans GPU
 ```
 
 Onglets : **Évolution · Métriques cliniques · Sécurité · Comparaison ·

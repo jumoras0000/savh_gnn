@@ -83,7 +83,32 @@ async def api_run(request):
     path = service.resolve_run(run_id, root)
     if path is None:
         return JSONResponse({"error": f"run introuvable: {run_id}"}, status_code=404)
-    return JSONResponse(service.get_run(path, root))
+    # ?epoch=N → analyse de cette epoch précise (sinon la dernière)
+    epoch = request.query_params.get("epoch")
+    try:
+        epoch = int(epoch) if epoch not in (None, "") else None
+    except (TypeError, ValueError):
+        epoch = None
+    return JSONResponse(service.get_run(path, root, epoch=epoch))
+
+
+async def api_epochs(request):
+    """Liste des epochs d'un run + état de leur checkpoint (gestion/suppression)."""
+    root = _ckpt_root()
+    run_id = request.query_params.get("id", "")
+    path = service.resolve_run(run_id, root)
+    if path is None:
+        return JSONResponse({"error": f"run introuvable: {run_id}"}, status_code=404)
+    return JSONResponse(service.list_epochs(path, root))
+
+
+async def api_epoch_delete(request):
+    """DELETE /api/epoch?id=<run>&epoch=N → supprime l'epoch (checkpoint + point)."""
+    root = _ckpt_root()
+    run_id = request.query_params.get("id", "")
+    epoch = request.query_params.get("epoch", "")
+    res = service.delete_epoch(run_id, epoch, root)
+    return JSONResponse(res, status_code=200 if res.get("ok") else 404)
 
 
 async def api_compare(request):
@@ -683,6 +708,8 @@ routes = [
     Route("/api/config", api_config),
     Route("/api/runs", api_runs),
     Route("/api/run", api_run),
+    Route("/api/epochs", api_epochs),
+    Route("/api/epoch", api_epoch_delete, methods=["DELETE"]),
     Route("/api/compare", api_compare),
     Route("/api/ingest", api_ingest, methods=["POST"]),
     Route("/api/files", api_files),
