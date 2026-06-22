@@ -51,7 +51,10 @@ def process_zinc_dataset(csv_path: str, output_path: str, max_molecules: int | N
         else:
             invalid += 1
 
-    unique = list(set(valid))
+    # Déduplication DÉTERMINISTE : dict.fromkeys préserve l'ordre de première
+    # apparition. set() donnerait un ordre aléatoire (PYTHONHASHSEED) → le split
+    # train/val (smiles[:split]) changerait à chaque run = non reproductible.
+    unique = list(dict.fromkeys(valid))
     print(f"  {len(valid)} valides, {invalid} invalides, {len(unique)} uniques")
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
