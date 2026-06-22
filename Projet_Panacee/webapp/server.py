@@ -223,7 +223,11 @@ async def api_train_start(request):
     except (TypeError, ValueError):
         return JSONResponse({"error": "phase invalide"}, status_code=400)
     res = MANAGER.start(phase, body)
-    return JSONResponse(res, status_code=200 if res.get("ok") else 409)
+    if res.get("ok"):
+        return JSONResponse(res, status_code=200)
+    # 409 = conflit (entraînement déjà en cours) ; 400 = requête invalide (phase…)
+    code = 409 if "en cours" in res.get("error", "") else 400
+    return JSONResponse(res, status_code=code)
 
 
 async def api_train_stop(request):
@@ -349,8 +353,16 @@ async def api_depict(request):
     smi = request.query_params.get("smiles", "")
     if not smi:
         return PlainTextResponse("smiles manquant", status_code=400)
-    w = int(request.query_params.get("w", "260") or 260)
-    h = int(request.query_params.get("h", "200") or 200)
+
+    # Dimensions bornées : int() ne plante pas sur entrée invalide, pas de
+    # taille délirante (canvas énorme → mémoire).
+    def _dim(name, default):
+        try:
+            return max(50, min(int(request.query_params.get(name, default) or default), 1200))
+        except (TypeError, ValueError):
+            return default
+    w = _dim("w", 260)
+    h = _dim("h", 200)
 
     def _run():
         from webapp import cheminfo
@@ -733,7 +745,13 @@ async def api_stream(request):
 
     root = _ckpt_root()
     run_id = request.query_params.get("id", "")
-    poll = float(request.query_params.get("poll", "2.0"))
+    # poll borné : évite un float() qui plante (entrée non numérique → 500) et
+    # une boucle serrée si poll <= 0.
+    try:
+        poll = float(request.query_params.get("poll", "2.0"))
+    except (TypeError, ValueError):
+        poll = 2.0
+    poll = max(0.25, min(poll, 10.0))
     gen = sse_events(run_id, root, poll, is_disconnected=request.is_disconnected)
     headers = {
         "Cache-Control": "no-cache",

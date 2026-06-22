@@ -378,7 +378,8 @@ class ModelVersionManager:
         if not model_path.exists():
             raise FileNotFoundError(f"Model file not found: {model_path}")
 
-        model.load_state_dict(torch.load(model_path))
+        # weights_only=True : ne désérialise que des tenseurs (pas de pickle arbitraire)
+        model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
         logger.info(f"Model version {version_id} loaded")
 
         return model

@@ -74,3 +74,38 @@ def test_delete_run_missing_is_404(client):
 def test_upload_rejects_bad_extension(client):
     r = client.post("/api/upload?name=evil.exe", content=b"data")
     assert r.status_code == 400
+
+
+def test_train_start_invalid_phase(client):
+    r = client.post("/api/train/start", json={"phase": 9})
+    assert r.status_code == 400
+
+
+def test_ingest_run_id_sanitized(client):
+    """Une tentative de traversée dans ?run= est neutralisée (pas de / ni ..)."""
+    r = client.post("/api/ingest?run=../../etc/x", json={"_type": "meta", "phase": "p"})
+    assert r.status_code == 200
+    run = r.json()["run"]
+    assert "/" not in run and ".." not in run and "\\" not in run
+
+
+def test_phase1_run_is_pretrain_via_api(client):
+    """Chaîne Kaggle Phase 1 : le dashboard la traite en pré-entraînement (pas toxicité)."""
+    client.post("/api/ingest?run=pre1",
+                json={"_type": "meta", "phase": "phase1", "epochs_total": 3})
+    for ep, vl in ((1, 0.9), (2, 0.5), (3, 0.3)):
+        client.post("/api/ingest?run=pre1",
+                    json={"_type": "epoch", "epoch": ep, "val_loss": vl,
+                          "train_loss": vl + 0.02, "lr": 5e-4})
+    detail = client.get("/api/run?id=pre1").json()
+    assert detail["is_pretrain"] is True
+    assert detail["best_epoch"] == 3  # perte minimale, PAS l'epoch 1
+    assert "sécurité" not in detail["verdict"]["title"].lower()
+
+
+def test_depict_clamps_bad_dimensions(client):
+    """Dimensions invalides (?w=abc&h=-5) → repli borné, jamais une 500."""
+    import pytest
+    pytest.importorskip("rdkit")
+    r = client.get("/api/depict", params={"smiles": "CCO", "w": "abc", "h": "-5"})
+    assert r.status_code == 200

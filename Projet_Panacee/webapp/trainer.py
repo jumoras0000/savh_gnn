@@ -44,7 +44,19 @@ class TrainingManager:
     def __init__(self):
         self._lock = threading.Lock()
         self._proc: subprocess.Popen | None = None
+        self._log_fh = None
         self._info: dict = {}
+
+    # ── interne (toujours appelé sous _lock) ───────────────────────────
+    def _close_log_if_done(self) -> None:
+        """Ferme le fichier de log dès que le process est terminé (évite la fuite
+        de descripteur sur une fin NORMALE, pas seulement via stop())."""
+        if self._proc is not None and self._proc.poll() is not None:
+            fh = self._log_fh
+            if fh is not None and not fh.closed:
+                with contextlib.suppress(Exception):
+                    fh.close()
+                self._log_fh = None
 
     # ── état ──────────────────────────────────────────────────────────
     def is_running(self) -> bool:
@@ -61,6 +73,7 @@ class TrainingManager:
                 else:
                     info["state"] = "finished" if rc == 0 else "failed"
                     info["returncode"] = rc
+                    self._close_log_if_done()  # fin normale → libère le descripteur
             else:
                 info.setdefault("state", "idle")
         info["log_tail"] = self._read_log_tail(info.get("log_file"), 40)
@@ -70,8 +83,6 @@ class TrainingManager:
     def start(self, phase: int, params: dict) -> dict:
         if phase not in _PHASES:
             return {"ok": False, "error": f"phase invalide: {phase}"}
-        if self.is_running():
-            return {"ok": False, "error": "un entraînement est déjà en cours"}
 
         script, out_dir, label = _PHASES[phase]
         epochs = _as_int(params.get("epochs"), 1, 1000, 20)
@@ -96,17 +107,23 @@ class TrainingManager:
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUNBUFFERED"] = "1"
 
-        fh = open(log_file, "w", encoding="utf-8", errors="replace")  # noqa: SIM115
-        try:
-            proc = subprocess.Popen(
-                argv, cwd=str(PROJECT_ROOT), env=env,
-                stdout=fh, stderr=subprocess.STDOUT,
-            )
-        except Exception as e:
-            fh.close()
-            return {"ok": False, "error": f"lancement impossible: {e}"}
-
+        # Vérif « déjà en cours » + démarrage SOUS le verrou → pas de double-spawn
+        # (deux POST /api/train/start concurrents ne peuvent plus passer la garde).
         with self._lock:
+            if self._proc is not None and self._proc.poll() is None:
+                return {"ok": False, "error": "un entraînement est déjà en cours"}
+            self._close_log_if_done()  # ferme le log d'un run précédent terminé
+
+            fh = open(log_file, "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+            try:
+                proc = subprocess.Popen(
+                    argv, cwd=str(PROJECT_ROOT), env=env,
+                    stdout=fh, stderr=subprocess.STDOUT,
+                )
+            except Exception as e:
+                fh.close()
+                return {"ok": False, "error": f"lancement impossible: {e}"}
+
             self._proc = proc
             self._log_fh = fh
             self._info = {
@@ -116,7 +133,7 @@ class TrainingManager:
                 "run_id": Path(out_dir).name,  # ex: "phase2" → id de run pour le SSE
                 "state": "running",
             }
-        return {"ok": True, **self._info}
+            return {"ok": True, **self._info}
 
     # ── arrêt ─────────────────────────────────────────────────────────
     def stop(self) -> dict:
@@ -130,9 +147,10 @@ class TrainingManager:
         except subprocess.TimeoutExpired:
             proc.kill()
         with self._lock:
-            if getattr(self, "_log_fh", None):
+            if self._log_fh is not None and not self._log_fh.closed:
                 with contextlib.suppress(Exception):
                     self._log_fh.close()
+            self._log_fh = None
             self._info["state"] = "stopped"
         return {"ok": True, "state": "stopped"}
 
