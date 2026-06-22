@@ -756,6 +756,9 @@ function connectStream(runId) {
     const s = JSON.parse(ev.data);
     state.status = s.status; state.verdict = s.verdict; state.compare = s.compare || state.compare;
     if (s.epochs_total) state.meta.epochs_total = s.epochs_total;
+    // Rafraîchit la meilleure epoch (⭐) en direct — sinon elle reste figée
+    // sur le snapshot initial (ex. epoch 1) même quand la perte continue de baisser.
+    if (s.best_epoch != null) { state.bestEpoch = s.best_epoch; updateEpochSlider(); }
     renderStatus(); renderVerdict(); renderKPIs();
   });
   es.addEventListener("ping", () => { conn.innerHTML = "<b>actif</b>"; });

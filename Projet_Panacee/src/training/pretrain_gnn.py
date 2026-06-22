@@ -123,7 +123,7 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
 
         optimizer.zero_grad()
         if use_amp:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 preds = model(
                     batch_graph.x, batch_graph.edge_index, batch_graph.edge_attr,
                     batch_graph.batch, masked_indices,
@@ -252,7 +252,7 @@ def main():
 
     # -- AMP (mixed precision) : gros gain de vitesse sur GPU P100 --
     use_amp = (device.type == "cuda")
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     if use_amp:
         print("  AMP (mixed precision) active")
 

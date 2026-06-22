@@ -708,6 +708,7 @@ async def sse_events(run_id, root, poll=2.0, is_disconnected=None, max_idle_tick
                         "status": service._run_status(path, epochs, meta),
                         "verdict": service.run_verdict(meta, epochs, latest),
                         "compare": service.run_compare(meta, epochs, latest),
+                        "best_epoch": service.best_epoch_number(epochs, meta),
                         "n_points": sent,
                         "epochs_total": meta.get("epochs_total"),
                     })
