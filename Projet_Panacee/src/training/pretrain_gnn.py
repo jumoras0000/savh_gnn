@@ -41,6 +41,7 @@ from src.config import (
     OUTPUT_DIM,
     PHASE1,
     loader_kwargs,
+    lr_scale_for_batch,
 )
 from src.models.encoder import MolecularEncoder
 from src.models.mgm_head import MaskedGraphModel, MGMHead
@@ -286,8 +287,16 @@ def main():
     print(f"  Modele: {num_params:,} params")
 
     # -- Optimiseur / Scheduler --
+    # Mise à l'échelle du LR pour le batch effectif (règle racine carrée) :
+    # un gros batch = moins de mises à jour/epoch, on compense pour ne pas
+    # sous-entraîner (le scheduler est par-epoch). Voir lr_scale_for_batch.
+    lr_scale = lr_scale_for_batch(args.batch_size, PHASE1["batch_size"])
+    scaled_lr = args.lr * lr_scale
+    if lr_scale > 1.0:
+        print(f"  LR x{lr_scale:.2f} pour batch {args.batch_size} "
+              f"(ref {PHASE1['batch_size']}) : {args.lr:.2e} -> {scaled_lr:.2e}")
     optimizer = AdamW(
-        model.parameters(), lr=args.lr, weight_decay=PHASE1["weight_decay"],
+        model.parameters(), lr=scaled_lr, weight_decay=PHASE1["weight_decay"],
     )
     scheduler = WarmupCosineScheduler(
         optimizer, PHASE1["warmup_epochs"], args.epochs, PHASE1["lr_min"],

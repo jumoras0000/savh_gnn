@@ -47,6 +47,7 @@ from src.config import (
     OUTPUT_DIM,
     PHASE2,
     loader_kwargs,
+    lr_scale_for_batch,
 )
 from src.models.encoder import MolecularEncoder
 from src.models.toxicity_classifier import MultiTaskBCELoss, ToxicityClassifier
@@ -330,9 +331,18 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
             print(f"{label}WARN warm-start ignoré ({e})")
 
     criterion = MultiTaskBCELoss(pos_weight=pos_weight.to(device))
+    # LR mis à l'échelle pour le batch effectif (règle racine carrée) : compense
+    # le nombre réduit de mises à jour/epoch quand le batch grossit (anti-biais).
+    lr_scale = lr_scale_for_batch(args.batch_size, PHASE2["batch_size"])
+    lr_enc = PHASE2["lr_encoder"] * lr_scale
+    lr_hd = PHASE2["lr_head"] * lr_scale
+    if lr_scale > 1.0:
+        print(f"  LR x{lr_scale:.2f} pour batch {args.batch_size} (ref {PHASE2['batch_size']}) : "
+              f"encodeur {PHASE2['lr_encoder']:.2e}->{lr_enc:.2e}, "
+              f"tete {PHASE2['lr_head']:.2e}->{lr_hd:.2e}")
     optimizer = AdamW([
-        {"params": model.encoder.parameters(), "lr": PHASE2["lr_encoder"]},
-        {"params": model.classifier.parameters(), "lr": PHASE2["lr_head"]},
+        {"params": model.encoder.parameters(), "lr": lr_enc},
+        {"params": model.classifier.parameters(), "lr": lr_hd},
     ], weight_decay=PHASE2["weight_decay"])
     scheduler = WarmupCosineScheduler(
         optimizer, PHASE2["warmup_epochs"], args.epochs, PHASE2["lr_min"],

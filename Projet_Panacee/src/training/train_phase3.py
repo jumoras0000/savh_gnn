@@ -42,6 +42,7 @@ from src.config import (
     OUTPUT_DIM,
     PHASE3,
     loader_kwargs,
+    lr_scale_for_batch,
 )
 from src.models.encoder import MolecularEncoder
 from src.models.multi_property_head import MultiPropertyLoss, MultiPropertyPredictor
@@ -430,15 +431,26 @@ def main():
         tox_pos_weight = tox_pos_weight.to(device)
     criterion = MultiPropertyLoss(tox_pos_weight=tox_pos_weight).to(device)
 
+    # LR mis à l'échelle pour le batch EFFECTIF (après optimize_batch_size) via
+    # la règle racine carrée : compense les mises à jour/epoch réduites quand le
+    # batch grossit (anti-biais). NB : le raisonneur (plus bas) s'entraîne sur des
+    # combinaisons, pas sur ce batch → son LR n'est PAS mis à l'échelle.
+    lr_scale = lr_scale_for_batch(batch_size, PHASE3["batch_size"])
+    lr_enc = PHASE3["lr_encoder"] * lr_scale
+    lr_hd = PHASE3["lr_heads"] * lr_scale
+    if lr_scale > 1.0:
+        print(f"  LR x{lr_scale:.2f} pour batch {batch_size} (ref {PHASE3['batch_size']}) : "
+              f"encodeur {PHASE3['lr_encoder']:.2e}->{lr_enc:.2e}, "
+              f"tetes {PHASE3['lr_heads']:.2e}->{lr_hd:.2e}")
     optimizer = AdamW([
-        {"params": model.encoder.parameters(), "lr": PHASE3["lr_encoder"]},
-        {"params": model.shared_layer.parameters(), "lr": PHASE3["lr_heads"]},
-        {"params": model.toxicity_head.parameters(), "lr": PHASE3["lr_heads"]},
-        {"params": model.efficacy_head.parameters(), "lr": PHASE3["lr_heads"]},
-        {"params": model.solubility_head.parameters(), "lr": PHASE3["lr_heads"]},
-        {"params": model.lipophilicity_head.parameters(), "lr": PHASE3["lr_heads"]},
-        {"params": model.bioavailability_head.parameters(), "lr": PHASE3["lr_heads"]},
-        {"params": model.metabolic_stability_head.parameters(), "lr": PHASE3["lr_heads"]},
+        {"params": model.encoder.parameters(), "lr": lr_enc},
+        {"params": model.shared_layer.parameters(), "lr": lr_hd},
+        {"params": model.toxicity_head.parameters(), "lr": lr_hd},
+        {"params": model.efficacy_head.parameters(), "lr": lr_hd},
+        {"params": model.solubility_head.parameters(), "lr": lr_hd},
+        {"params": model.lipophilicity_head.parameters(), "lr": lr_hd},
+        {"params": model.bioavailability_head.parameters(), "lr": lr_hd},
+        {"params": model.metabolic_stability_head.parameters(), "lr": lr_hd},
     ], weight_decay=PHASE3["weight_decay"])
 
     scheduler = WarmupCosineScheduler(

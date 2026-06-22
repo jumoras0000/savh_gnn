@@ -53,6 +53,23 @@ def loader_kwargs(num_workers: int | None = None) -> dict:
         kw["prefetch_factor"] = PREFETCH_FACTOR
     return kw
 
+
+def lr_scale_for_batch(actual_batch: int, reference_batch: int, cap: float = 2.0) -> float:
+    """Facteur de mise à l'échelle du LR quand le batch s'écarte de la référence.
+
+    Règle racine carrée (LR ∝ √batch, recommandée pour Adam). Le scheduler est
+    par-epoch : à batch plus grand, il y a MOINS de mises à jour de gradient par
+    epoch ; sans compenser le LR, le modèle « avance » moins = sous-entraînement
+    (biais des résultats). On augmente donc le LR pour préserver la dynamique.
+    Plafonné à `cap` par prudence : un LR trop élevé sous AMP peut diverger ;
+    warmup + grad-clip protègent le démarrage. Jamais < 1.0 (on ne réduit pas
+    le LR sous la référence — un petit batch garde le LR tuné).
+    """
+    if actual_batch <= 0 or reference_batch <= 0:
+        return 1.0
+    scale = (actual_batch / reference_batch) ** 0.5
+    return max(1.0, min(cap, scale))
+
 # ══════════════════════════════════════════════════════════════════════
 # FEATURES MOLÉCULAIRES
 # ══════════════════════════════════════════════════════════════════════
