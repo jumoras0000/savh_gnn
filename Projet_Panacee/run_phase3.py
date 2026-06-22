@@ -91,7 +91,6 @@ def main():
 
     if args.run_name:
         safe_name = "".join(c for c in args.run_name if c.isalnum() or c in ("-", "_"))
-        args.save_dir = str(CHECKPOINT_DIR / safe_name)
         os.environ.setdefault("PANACEE_PUSH_RUN", safe_name)
 
     # ── Bannière ──

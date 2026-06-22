@@ -46,11 +46,10 @@ def main():
     p.add_argument("--ema", type=int, default=1, help="1=EMA des poids actif, 0=desactive")
     args = p.parse_args()
 
-    # --run_name fixe le répertoire de sauvegarde ET l'identifiant push distant
+    # --run_name : identifiant du run dans le dashboard (LiveLogger PANACEE_PUSH_RUN).
+    # NE change PAS save_dir → Phase 3 trouve toujours checkpoints/phase2/best_toxicity_model.pth
     if args.run_name:
         safe_name = "".join(c for c in args.run_name if c.isalnum() or c in ("-", "_"))
-        args.save_dir = str(CHECKPOINT_DIR / safe_name)
-        # PANACEE_PUSH_RUN est lu par LiveLogger → identifiant du run dans le dashboard
         os.environ.setdefault("PANACEE_PUSH_RUN", safe_name)
 
     # --- Etape 0 : Verifications preliminaires ---

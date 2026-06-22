@@ -71,6 +71,8 @@ def main():
                    help="Telecharge ZINC si absent localement")
     p.add_argument("--zinc_csv", type=str, default=None,
                    help="Chemin d'un CSV ZINC local (colonne 'smiles')")
+    p.add_argument("--run_name", type=str, default=None,
+                   help="Nom du run (dashboard + dossier). Prend le dessus sur --save_dir.")
     p.add_argument("--save_dir", type=str, default=str(CHECKPOINT_DIR / "phase1"))
     p.add_argument("--epochs", type=int, default=PHASE1["epochs"])
     p.add_argument("--batch_size", type=int, default=PHASE1["batch_size"])
@@ -83,9 +85,20 @@ def main():
                    help="mgm = masked graph modeling | graphcl = pre-entrainement contrastif")
     args = p.parse_args()
 
+    if args.run_name:
+        safe = "".join(c for c in args.run_name if c.isalnum() or c in ("-", "_"))
+        args.save_dir = str(CHECKPOINT_DIR / safe)
+        os.environ.setdefault("PANACEE_PUSH_RUN", safe)
+
     print("=" * 80)
     print("🚀 PHASE 1 - PRE-ENTRAINEMENT MGM (ZINC)")
     print("=" * 80)
+    push_url = os.environ.get("PANACEE_PUSH_URL", "")
+    push_run = os.environ.get("PANACEE_PUSH_RUN", "")
+    if push_url:
+        print(f"  📡 Push Kaggle → {push_url}  (run={push_run or 'auto'})")
+    else:
+        print("  💾 Entraînement local")
 
     # --- Etape 1 : obtenir le CSV ZINC ---
     if args.zinc_csv:
