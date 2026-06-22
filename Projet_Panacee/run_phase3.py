@@ -80,11 +80,19 @@ def main():
                    help=f"Taille de batch (défaut: {PHASE3['batch_size']})")
     p.add_argument("--patience", type=int, default=PHASE3["patience"],
                    help=f"Patience early stopping (défaut: {PHASE3['patience']})")
+    p.add_argument("--run_name", type=str, default=None,
+                   help="Nom du run (dashboard + dossier checkpoints). "
+                        "Prend le dessus sur --save_dir et fixe PANACEE_PUSH_RUN.")
     p.add_argument("--save_dir", type=str, default=str(CHECKPOINT_DIR / "phase3"),
                    help="Dossier de sauvegarde")
     p.add_argument("--skip_checks", action="store_true",
                    help="Ignorer les vérifications de pré-requis")
     args = p.parse_args()
+
+    if args.run_name:
+        safe_name = "".join(c for c in args.run_name if c.isalnum() or c in ("-", "_"))
+        args.save_dir = str(CHECKPOINT_DIR / safe_name)
+        os.environ.setdefault("PANACEE_PUSH_RUN", safe_name)
 
     # ── Bannière ──
     print("=" * 80)

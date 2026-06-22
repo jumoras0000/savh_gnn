@@ -3,9 +3,15 @@
 Lanceur Phase 2 - Fine-tuning toxicite.
 
 Usage :
-    python run_phase2.py --download                          # telecharge Tox21 + lance
+    python run_phase2.py --download                              # telecharge Tox21 + lance
+    python run_phase2.py --download --run_name kaggle_run01      # nom du run (Kaggle/dashboard)
     python run_phase2.py --train_csv data/train.csv --val_csv data/val.csv
     python run_phase2.py --pretrained_model checkpoints/phase1/sovereign_encoder_v1.pth
+
+Sur Kaggle, définir PANACEE_PUSH_URL + PANACEE_PUSH_TOKEN avant de lancer :
+    import os
+    os.environ["PANACEE_PUSH_URL"]   = "https://xxxx.ngrok.io"
+    os.environ["PANACEE_PUSH_TOKEN"] = "mon_token_secret"
 """
 import os
 import sys
@@ -30,6 +36,9 @@ def main():
     p.add_argument("--epochs", type=int, default=PHASE2["epochs"], help="Number of epochs")
     p.add_argument("--batch_size", type=int, default=PHASE2["batch_size"], help="Batch size")
     p.add_argument("--smiles_column", type=str, default="smiles", help="SMILES column name")
+    p.add_argument("--run_name", type=str, default=None,
+                   help="Nom du run (dashboard + dossier checkpoints). "
+                        "Prend le dessus sur --save_dir et fixe PANACEE_PUSH_RUN.")
     p.add_argument("--save_dir", type=str, default=str(CHECKPOINT_DIR / "phase2"), help="Save directory")
     p.add_argument("--patience", type=int, default=PHASE2["patience"], help="Early stopping patience")
     p.add_argument("--max_molecules", type=int, default=None, help="Limite de molecules (runs rapides Kaggle)")
@@ -37,10 +46,23 @@ def main():
     p.add_argument("--ema", type=int, default=1, help="1=EMA des poids actif, 0=desactive")
     args = p.parse_args()
 
+    # --run_name fixe le répertoire de sauvegarde ET l'identifiant push distant
+    if args.run_name:
+        safe_name = "".join(c for c in args.run_name if c.isalnum() or c in ("-", "_"))
+        args.save_dir = str(CHECKPOINT_DIR / safe_name)
+        # PANACEE_PUSH_RUN est lu par LiveLogger → identifiant du run dans le dashboard
+        os.environ.setdefault("PANACEE_PUSH_RUN", safe_name)
+
     # --- Etape 0 : Verifications preliminaires ---
     print("="*80)
     print("🚀 PHASE 2 - FINE-TUNING TOXICITE")
     print("="*80)
+    push_url = os.environ.get("PANACEE_PUSH_URL", "")
+    push_run = os.environ.get("PANACEE_PUSH_RUN", "")
+    if push_url:
+        print(f"  📡 Push Kaggle → {push_url}  (run={push_run or 'auto'})")
+    else:
+        print("  💾 Entraînement local (pas de push distant configuré)")
 
     # Modèle pré-entraîné Phase 1 : OPTIONNEL.
     # S'il est absent, on fine-tune un encodeur initialisé aléatoirement.
