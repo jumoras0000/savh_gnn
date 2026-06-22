@@ -139,7 +139,7 @@
         </div>
         <div class="card">
           <h3>🗂️ Épochs sauvegardées — garder / supprimer</h3>
-          <div class="hint">Chaque epoch a son checkpoint, distinct et géré ici. Supprime celles dont l'analyse n'est pas bonne (le point de la courbe ET le checkpoint sont retirés). ⭐ = meilleure epoch (conservée par la supervision). Clique une ligne pour analyser cette epoch.</div>
+          <div class="hint" id="epochHint">Chaque epoch a son checkpoint, distinct et géré ici. Supprime celles dont l'analyse n'est pas bonne (le point de la courbe ET le checkpoint sont retirés). ⭐ = meilleure epoch (conservée par la supervision). Clique une ligne pour analyser cette epoch.</div>
           <div class="form-row">
             <button class="btn ghost" id="epochPrune" title="Supprimer toutes les epochs en DANGER (sauf la meilleure)">🧹 Supprimer les epochs faibles</button>
             <button class="btn ghost" id="epochRefresh" title="Rafraîchir la liste">⟳ Rafraîchir</button>

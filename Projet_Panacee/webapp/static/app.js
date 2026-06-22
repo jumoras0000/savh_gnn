@@ -1141,6 +1141,17 @@ function renderEpochTable() {
   const tbody = document.querySelector("#epochTable tbody");
   if (!tbody) return;
   const pre = isPretrain();
+  // Le libellé d'aide diffère selon la phase : la Phase 1 (auto-supervisée) ne
+  // sauvegarde pas de checkpoint par-epoch (best + latest seulement) → colonne
+  // « — » normale ; les Phases 2/3 en ont un par-epoch (taille si présent en local).
+  setText("epochHint", pre
+    ? "Analyse de chaque epoch (perte val/train, écart). En Phase 1, seuls le meilleur "
+      + "encodeur et le dernier sont sauvegardés : pas de checkpoint par-epoch, donc la "
+      + "colonne reste « — » (normal). ⭐ = perte de validation minimale. Clique une ligne pour l'analyser."
+    : "Chaque epoch peut avoir son checkpoint par-epoch, géré ici. Supprime celles dont "
+      + "l'analyse n'est pas bonne (le point ET le checkpoint local sont retirés). La colonne "
+      + "affiche la taille si le .pth est présent en local (« — » si l'entraînement tourne encore "
+      + "sur Kaggle). ⭐ = meilleure epoch (conservée par la supervision). Clique une ligne pour l'analyser.");
   // Pour le pré-entraînement, l'étoile est recalculée côté client (perte min)
   // pour rester correcte même si le backend renvoie un is_best périmé.
   const clientBest = computeBestEpoch();
