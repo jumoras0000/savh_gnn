@@ -168,6 +168,19 @@ def pretrain_observations(epochs: list, latest: dict) -> list[dict]:
             obs.append({"level": "OK", "metric": "Généralisation",
                         "text": f"Écart val−train = {gap:.4f} : généralisation correcte."})
 
+    # Exactitude de prédiction du type d'atome masqué (objectif MGM par classification)
+    acc = latest.get("val_acc")
+    if _finite(acc):
+        if acc >= 0.80:
+            obs.append({"level": "OK", "metric": "Exactitude (type)",
+                        "text": f"Type d'atome masqué prédit à {acc*100:.0f}% : l'encodeur capte la chimie locale."})
+        elif acc >= 0.50:
+            obs.append({"level": "INFO", "metric": "Exactitude (type)",
+                        "text": f"Type d'atome prédit à {acc*100:.0f}% : apprentissage en cours."})
+        else:
+            obs.append({"level": "WARN", "metric": "Exactitude (type)",
+                        "text": f"Type d'atome prédit à seulement {acc*100:.0f}% : encodeur encore faible."})
+
     if _finite(lr):
         obs.append({"level": "INFO", "metric": "Learning rate",
                     "text": f"LR courant = {lr:.2e}."})
@@ -266,6 +279,7 @@ def run_summary(file_path: Path, root: str | Path) -> dict:
         "val_loss": latest.get("val_loss"),
         "train_loss": latest.get("train_loss"),
         "best_loss": latest.get("best_loss"),
+        "val_acc": latest.get("val_acc"),
         "last_update": mtime,
         "status": _run_status(file_path, epochs, meta),
         "source": meta.get("source", "local"),

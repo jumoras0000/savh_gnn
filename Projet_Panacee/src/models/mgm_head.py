@@ -11,17 +11,23 @@ import torch.nn as nn
 
 class MGMHead(nn.Module):
     """
-    Prédit les features atomiques masquées à partir des embeddings
+    Prédit le TYPE d'atome masqué (classification) à partir des embeddings
     au niveau nœud (sortie des couches GNN *avant* pooling global).
+
+    La sortie est un vecteur de logits sur le vocabulaire de types d'atomes
+    (cross-entropy), pas une régression du vecteur de features : l'identité de
+    l'élément ne se déduit pas de la topologie, l'objectif est donc difficile.
     """
 
-    def __init__(self, hidden_dim: int = 256, atom_dim: int = 9):
+    def __init__(self, hidden_dim: int = 256, num_classes: int = 13, atom_dim: int | None = None):
         super().__init__()
+        # `atom_dim` conservé pour compatibilité d'appel ; la sortie est num_classes.
+        self.num_classes = num_classes
         self.predictor = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.SiLU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim // 2, atom_dim),
+            nn.Linear(hidden_dim // 2, num_classes),
         )
 
     def forward(self, node_embeddings, masked_indices_per_graph, batch_vector):

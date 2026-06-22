@@ -22,6 +22,21 @@ _MAX_HS         = 8.0
 ATOM_DIM = 9
 BOND_DIM = 6
 
+# ── Vocabulaire de TYPES d'atomes (pré-entraînement MGM par classification) ──
+# L'identité de l'élément (C/N/O/S/halogènes…) ne se déduit PAS de la topologie
+# du graphe, contrairement aux features structurelles (degré, cycle, valence).
+# Prédire ce type force donc l'encodeur à apprendre une vraie chimie locale.
+# Éléments fréquents en chimie médicinale ; tout le reste → classe « autre ».
+ATOM_TYPE_LIST = [6, 7, 8, 9, 15, 16, 17, 35, 53, 5, 14, 34]  # C N O F P S Cl Br I B Si Se
+_ATOM_TYPE_TO_CLASS = {z: i for i, z in enumerate(ATOM_TYPE_LIST)}
+ATOM_TYPE_OTHER = len(ATOM_TYPE_LIST)              # index de la classe « autre »
+ATOM_TYPE_VOCAB_SIZE = len(ATOM_TYPE_LIST) + 1     # +1 pour « autre »
+
+
+def atomic_num_to_class(z: int) -> int:
+    """Numéro atomique → index de classe dans le vocabulaire de types d'atomes."""
+    return _ATOM_TYPE_TO_CLASS.get(int(round(z)), ATOM_TYPE_OTHER)
+
 
 def smiles_to_graph(smiles: str):
     """
@@ -107,14 +122,26 @@ def mask_atoms(graph: Data, mask_prob: float = 0.15):
     Ceci empêche le modèle de se fier au signal "tout-zéro" et améliore
     la qualité des représentations apprises (Hu et al. 2020).
 
+    La CIBLE de pré-entraînement est le **type d'atome** (classe d'élément),
+    qui ne fuit pas par la topologie — l'objectif est donc réellement difficile.
+
     Returns:
-        (graph_masked, masked_indices_list, masked_features_tensor)
+        (graph_masked, masked_indices_list, masked_features_tensor, masked_types_tensor)
+        - masked_features_tensor : [M, ATOM_DIM]  features originales (cible auxiliaire)
+        - masked_types_tensor    : [M]            classe d'élément (cible principale)
     """
     num_atoms = graph.x.size(0)
     num_masked = max(1, int(num_atoms * mask_prob))
 
     perm = torch.randperm(num_atoms)[:num_masked]
     masked_features = graph.x[perm].clone()
+
+    # Cible principale : type d'atome. feature[0] = numéro_atomique / 118.
+    masked_types = torch.tensor(
+        [atomic_num_to_class(masked_features[i, 0].item() * _MAX_ATOMIC_NUM)
+         for i in range(masked_features.size(0))],
+        dtype=torch.long,
+    )
 
     graph_masked = graph.clone()
 
@@ -126,4 +153,4 @@ def mask_atoms(graph: Data, mask_prob: float = 0.15):
             graph_masked.x[idx] = torch.rand(ATOM_DIM)       # 10 % bruit
         # 10 % restants : inchangé
 
-    return graph_masked, perm.tolist(), masked_features
+    return graph_masked, perm.tolist(), masked_features, masked_types

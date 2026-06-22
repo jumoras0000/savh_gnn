@@ -277,8 +277,10 @@ function renderKPIs() {
     setKpiLabel("kpiAuc", "Perte validation");
     setKpi("kpiAuc", L.val_loss, nf(L.val_loss, 4), col("val_loss"), COL.vital,
       lossRising() ? "warn" : (L.val_loss != null ? "good" : ""));
-    setKpiLabel("kpiSens", "Perte entraînement");
-    setKpi("kpiSens", L.train_loss, nf(L.train_loss, 4), col("train_loss"), COL.blue, "");
+    // Exactitude de prédiction du type d'atome masqué : vrai signal d'apprentissage.
+    setKpiLabel("kpiSens", "Exactitude (type)");
+    setKpi("kpiSens", L.val_acc, L.val_acc != null ? pct(L.val_acc) : "—", col("val_acc"), COL.ok,
+      L.val_acc == null ? "" : (L.val_acc >= 0.8 ? "good" : L.val_acc >= 0.5 ? "warn" : "bad"));
     setKpiLabel("kpiFnr", "Meilleure perte");
     const best = bestLoss();
     setKpi("kpiFnr", best, nf(best, 4), col("val_loss"), COL.ok, "");
@@ -437,6 +439,11 @@ function computeObservations() {
     }
     if (lossRising())
       out.push({ level: "WARN", metric: "Tendance", text: "val_loss remonte sur les dernières epochs : learning rate trop élevé ?" });
+    const acc = L.val_acc;
+    if (acc != null) {
+      const lvl = acc >= 0.8 ? "OK" : acc >= 0.5 ? "INFO" : "WARN";
+      out.push({ level: lvl, metric: "Exactitude (type)", text: `Type d'atome masqué prédit à ${pct(acc)} (objectif : reconstruire la chimie locale).` });
+    }
     if (lr != null)
       out.push({ level: "INFO", metric: "Learning rate", text: `LR courant = ${Number(lr).toExponential(1)}.` });
     return out.length ? out : [{ level: "INFO", metric: "—", text: "Pré-entraînement en cours." }];

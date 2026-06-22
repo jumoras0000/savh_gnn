@@ -45,7 +45,11 @@ from src.config import (
 )
 from src.models.encoder import MolecularEncoder
 from src.models.mgm_head import MaskedGraphModel, MGMHead
-from src.preprocessing.graph_builder import mask_atoms, smiles_to_graph
+from src.preprocessing.graph_builder import (
+    ATOM_TYPE_VOCAB_SIZE,
+    mask_atoms,
+    smiles_to_graph,
+)
 from src.utils.live_logger import LiveLogger
 
 # ======================================================================
@@ -69,16 +73,16 @@ class PretrainDataset(Dataset):
                     break
             if graph is None:
                 raise RuntimeError("Aucun SMILES valide dans le dataset")
-        graph_masked, masked_idx, masked_feat = mask_atoms(graph, self.mask_prob)
-        return graph_masked, masked_idx, masked_feat
+        graph_masked, masked_idx, _masked_feat, masked_types = mask_atoms(graph, self.mask_prob)
+        return graph_masked, masked_idx, masked_types
 
 
 def collate_fn(batch):
     from torch_geometric.data import Batch
-    graphs, indices, features = zip(*batch, strict=False)
+    graphs, indices, types = zip(*batch, strict=False)
     batch_graph = Batch.from_data_list(graphs)
-    all_features = torch.cat(features, dim=0)
-    return batch_graph, list(indices), all_features
+    all_types = torch.cat(types, dim=0)
+    return batch_graph, list(indices), all_types
 
 
 # ======================================================================
@@ -114,41 +118,45 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
     model.train()
     total_loss = 0.0
     n_atoms = 0
+    n_correct = 0
     use_amp = scaler is not None and scaler.is_enabled()
+    criterion = nn.CrossEntropyLoss()
 
     pbar = tqdm(loader, desc=f"[Train] Epoch {epoch}")
-    for batch_graph, masked_indices, masked_features in pbar:
+    for batch_graph, masked_indices, masked_types in pbar:
         batch_graph = batch_graph.to(device)
-        masked_features = masked_features.to(device)
+        masked_types = masked_types.to(device)
 
         optimizer.zero_grad()
         if use_amp:
             with torch.amp.autocast("cuda"):
-                preds = model(
+                logits = model(
                     batch_graph.x, batch_graph.edge_index, batch_graph.edge_attr,
                     batch_graph.batch, masked_indices,
                 )
-                loss = nn.MSELoss()(preds.float(), masked_features)
+                loss = criterion(logits.float(), masked_types)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             scaler.step(optimizer)
             scaler.update()
         else:
-            preds = model(
+            logits = model(
                 batch_graph.x, batch_graph.edge_index, batch_graph.edge_attr,
                 batch_graph.batch, masked_indices,
             )
-            loss = nn.MSELoss()(preds, masked_features)
+            loss = criterion(logits, masked_types)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
 
-        total_loss += loss.item() * masked_features.size(0)
-        n_atoms += masked_features.size(0)
-        pbar.set_postfix(loss=f"{loss.item():.5f}")
+        bs = masked_types.size(0)
+        total_loss += loss.item() * bs
+        n_atoms += bs
+        n_correct += (logits.argmax(dim=1) == masked_types).sum().item()
+        pbar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{n_correct / max(n_atoms, 1):.3f}")
 
-    return total_loss / max(n_atoms, 1)
+    return total_loss / max(n_atoms, 1), n_correct / max(n_atoms, 1)
 
 
 @torch.no_grad()
@@ -156,20 +164,24 @@ def evaluate(model, loader, device):
     model.eval()
     total_loss = 0.0
     n_atoms = 0
+    n_correct = 0
+    criterion = nn.CrossEntropyLoss()
 
-    for batch_graph, masked_indices, masked_features in loader:
+    for batch_graph, masked_indices, masked_types in loader:
         batch_graph = batch_graph.to(device)
-        masked_features = masked_features.to(device)
+        masked_types = masked_types.to(device)
 
-        preds = model(
+        logits = model(
             batch_graph.x, batch_graph.edge_index, batch_graph.edge_attr,
             batch_graph.batch, masked_indices,
         )
-        loss = nn.MSELoss()(preds, masked_features)
-        total_loss += loss.item() * masked_features.size(0)
-        n_atoms += masked_features.size(0)
+        loss = criterion(logits, masked_types)
+        bs = masked_types.size(0)
+        total_loss += loss.item() * bs
+        n_atoms += bs
+        n_correct += (logits.argmax(dim=1) == masked_types).sum().item()
 
-    return total_loss / max(n_atoms, 1)
+    return total_loss / max(n_atoms, 1), n_correct / max(n_atoms, 1)
 
 
 # ======================================================================
@@ -236,7 +248,7 @@ def main():
         conv_type=CONV_TYPE,
         attention_heads=ATTENTION_HEADS,
     )
-    mgm_head = MGMHead(hidden_dim=HIDDEN_DIM, atom_dim=ATOM_FEATURE_DIM)
+    mgm_head = MGMHead(hidden_dim=HIDDEN_DIM, num_classes=ATOM_TYPE_VOCAB_SIZE)
     model = MaskedGraphModel(encoder, mgm_head).to(device)
 
     num_params = sum(pp.numel() for pp in model.parameters())
@@ -275,15 +287,17 @@ def main():
         scheduler.step(epoch - 1)
         lr = scheduler.get_last_lr()[0]
 
-        train_loss = train_one_epoch(
+        train_loss, train_acc = train_one_epoch(
             model, train_loader, optimizer, device, PHASE1["grad_clip"], epoch, scaler,
         )
-        val_loss = evaluate(model, val_loader, device)
+        val_loss, val_acc = evaluate(model, val_loader, device)
 
-        # Point temps reel (Phase 1 = reconstruction MGM : pas d'AUC/securite)
+        # Point temps reel (Phase 1 = MGM par classification du type d'atome).
+        # train_acc/val_acc = exactitude de prediction du type d'atome masque.
         # Le logging ne doit jamais casser l'entrainement.
         with contextlib.suppress(Exception):
             live.log({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                      "train_acc": train_acc, "val_acc": val_acc,
                       "lr": lr, "best_loss": min(best_val_loss, val_loss)})
 
         elapsed = time.time() - t0
@@ -291,14 +305,16 @@ def main():
 
         print(
             f"Epoch {epoch:3d}/{args.epochs} | "
-            f"train_loss={train_loss:.5f} | val_loss={val_loss:.5f} | "
-            f"lr={lr:.2e} | ETA {eta}"
+            f"train_loss={train_loss:.4f} | val_loss={val_loss:.4f} | "
+            f"val_acc={val_acc:.3f} | lr={lr:.2e} | ETA {eta}"
         )
 
         history.append({
             "epoch": epoch,
             "train_loss": train_loss,
             "val_loss": val_loss,
+            "train_acc": train_acc,
+            "val_acc": val_acc,
             "lr": lr,
         })
 
