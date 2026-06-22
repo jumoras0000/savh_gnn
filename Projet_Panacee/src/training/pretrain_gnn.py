@@ -66,8 +66,12 @@ class PretrainDataset(Dataset):
     workers (fork) partagent ce cache en lecture (copy-on-write).
     """
 
-    def __init__(self, smiles_list, mask_prob=0.15, cache_graphs=True, desc="graphes"):
+    def __init__(self, smiles_list, mask_prob=0.15, cache_graphs=True, desc="graphes",
+                 for_parallel=False):
         self.mask_prob = mask_prob
+        # for_parallel : mode multi-GPU (torch_geometric DataParallel) → __getitem__
+        # renvoie un seul Data portant ses cibles, au lieu du tuple (graph, idx, types).
+        self.for_parallel = for_parallel
         if cache_graphs:
             self.graphs = []
             for smi in tqdm(smiles_list, desc=f"Pré-construction {desc}"):
@@ -101,6 +105,13 @@ class PretrainDataset(Dataset):
         # mask_atoms clone le graphe en interne → le cache n'est jamais muté.
         graph_masked, masked_idx, _masked_feat, masked_types = mask_atoms(
             self._graph_at(idx), self.mask_prob)
+        if self.for_parallel:
+            # Multi-GPU : tout porter DANS le Data pour qu'il soit dispatché avec
+            # le graphe. La clé 'masked_node_index' contient « index » → PyG la
+            # DÉCALE automatiquement en indices GLOBAUX lors de la collation par GPU.
+            graph_masked.masked_node_index = torch.as_tensor(masked_idx, dtype=torch.long)
+            graph_masked.masked_types = masked_types
+            return graph_masked
         return graph_masked, masked_idx, masked_types
 
 
@@ -110,6 +121,86 @@ def collate_fn(batch):
     batch_graph = Batch.from_data_list(graphs)
     all_types = torch.cat(types, dim=0)
     return batch_graph, list(indices), all_types
+
+
+# ======================================================================
+# Multi-GPU (opt-in) — torch_geometric.nn.DataParallel
+# ======================================================================
+# Activé UNIQUEMENT si PANACEE_MULTI_GPU=1 ET ≥2 GPU CUDA. Le chemin mono-GPU
+# par défaut reste strictement inchangé. Pour ce modèle (~1.5M params, limité
+# par le chargement), le multi-GPU peut ne PAS dépasser 80 %/GPU et même
+# ralentir : à activer et mesurer au cas par cas.
+
+def _multi_gpu_active(device) -> bool:
+    return (device.type == "cuda"
+            and torch.cuda.device_count() > 1
+            and os.environ.get("PANACEE_MULTI_GPU", "0") == "1")
+
+
+def _unwrap(model):
+    """Modèle sous-jacent (déballe un éventuel DataParallel) — checkpoints stables."""
+    return model.module if hasattr(model, "module") else model
+
+
+class MGMParallelWrapper(nn.Module):
+    """Adaptateur Phase 1 pour torch_geometric.nn.DataParallel.
+
+    DataParallel dispatche une LISTE de Data sur les GPU et regroupe les SORTIES.
+    Ce wrapper porte donc les cibles (masked_types) à travers le forward pour
+    qu'elles soient regroupées ALIGNÉES avec les logits. Mêmes sous-modules et
+    mêmes noms que MaskedGraphModel (encoder, mgm_head) → le state_dict produit
+    est identique, donc 100 % compatible avec le chargement Phase 2/3.
+    """
+
+    def __init__(self, encoder, mgm_head):
+        super().__init__()
+        self.encoder = encoder
+        self.mgm_head = mgm_head
+
+    def forward(self, data):
+        # data est un Batch collationné PAR CE GPU (sous-ensemble du batch global).
+        node_emb = self.encoder.encode_nodes(data.x, data.edge_index, data.edge_attr)
+        selected = node_emb[data.masked_node_index]   # indices déjà GLOBAUX (décalés)
+        logits = self.mgm_head.predictor(selected)    # [M, num_classes]
+        return logits, data.masked_types
+
+
+def train_one_epoch_parallel(model, loader, optimizer, device, grad_clip, epoch):
+    """Boucle d'entraînement multi-GPU. AMP désactivé ici (autocast + DataParallel
+    multi-thread est fragile) ; le gain AMP est marginal sur ce petit modèle."""
+    model.train()
+    total_loss, n_atoms, n_correct = 0.0, 0, 0
+    criterion = nn.CrossEntropyLoss()
+    pbar = tqdm(loader, desc=f"[Train] Epoch {epoch}")
+    for data_list in pbar:
+        # DataParallel scatter la LISTE vers les GPU ; ne pas .to(device) ici.
+        optimizer.zero_grad()
+        logits, types = model(data_list)              # sorties regroupées sur cuda:0
+        loss = criterion(logits, types)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        optimizer.step()
+        bs = types.size(0)
+        total_loss += loss.item() * bs
+        n_atoms += bs
+        n_correct += (logits.argmax(dim=1) == types).sum().item()
+        pbar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{n_correct / max(n_atoms, 1):.3f}")
+    return total_loss / max(n_atoms, 1), n_correct / max(n_atoms, 1)
+
+
+@torch.no_grad()
+def evaluate_parallel(model, loader, device):
+    model.eval()
+    total_loss, n_atoms, n_correct = 0.0, 0, 0
+    criterion = nn.CrossEntropyLoss()
+    for data_list in loader:
+        logits, types = model(data_list)
+        loss = criterion(logits, types)
+        bs = types.size(0)
+        total_loss += loss.item() * bs
+        n_atoms += bs
+        n_correct += (logits.argmax(dim=1) == types).sum().item()
+    return total_loss / max(n_atoms, 1), n_correct / max(n_atoms, 1)
 
 
 # ======================================================================
@@ -251,21 +342,35 @@ def main():
         run_graphcl_pretraining(smiles_list, args, device, args.save_dir, PHASE1)
         return
 
+    multi_gpu = _multi_gpu_active(device)
+
     split = int(len(smiles_list) * (1 - PHASE1["val_split"]))
-    train_ds = PretrainDataset(smiles_list[:split], args.mask_prob, desc="graphes (train)")
-    val_ds = PretrainDataset(smiles_list[split:], args.mask_prob, desc="graphes (val)")
+    train_ds = PretrainDataset(smiles_list[:split], args.mask_prob,
+                               desc="graphes (train)", for_parallel=multi_gpu)
+    val_ds = PretrainDataset(smiles_list[split:], args.mask_prob,
+                             desc="graphes (val)", for_parallel=multi_gpu)
 
     # cuDNN benchmark : laisse cuDNN choisir les kernels les plus rapides.
     torch.backends.cudnn.benchmark = True
 
-    train_loader = DataLoader(
-        train_ds, batch_size=args.batch_size, shuffle=True,
-        collate_fn=collate_fn, **loader_kwargs(),
-    )
-    val_loader = DataLoader(
-        val_ds, batch_size=args.batch_size, shuffle=False,
-        collate_fn=collate_fn, **loader_kwargs(),
-    )
+    if multi_gpu:
+        # DataListLoader : renvoie une LISTE de Data (DataParallel la dispatche).
+        from torch_geometric.loader import DataListLoader
+        train_loader = DataListLoader(
+            train_ds, batch_size=args.batch_size, shuffle=True, **loader_kwargs())
+        val_loader = DataListLoader(
+            val_ds, batch_size=args.batch_size, shuffle=False, **loader_kwargs())
+        print(f"  Multi-GPU ACTIF : {torch.cuda.device_count()} GPU "
+              f"(batch global={args.batch_size}, réparti entre GPU)")
+    else:
+        train_loader = DataLoader(
+            train_ds, batch_size=args.batch_size, shuffle=True,
+            collate_fn=collate_fn, **loader_kwargs(),
+        )
+        val_loader = DataLoader(
+            val_ds, batch_size=args.batch_size, shuffle=False,
+            collate_fn=collate_fn, **loader_kwargs(),
+        )
     print(f"  DataLoader : batch={args.batch_size}, "
           f"workers={loader_kwargs()['num_workers']}, graphes en cache")
 
@@ -281,9 +386,13 @@ def main():
         attention_heads=ATTENTION_HEADS,
     )
     mgm_head = MGMHead(hidden_dim=HIDDEN_DIM, num_classes=ATOM_TYPE_VOCAB_SIZE)
-    model = MaskedGraphModel(encoder, mgm_head).to(device)
+    if multi_gpu:
+        from torch_geometric.nn import DataParallel as GeoDataParallel
+        model = GeoDataParallel(MGMParallelWrapper(encoder, mgm_head)).to(device)
+    else:
+        model = MaskedGraphModel(encoder, mgm_head).to(device)
 
-    num_params = sum(pp.numel() for pp in model.parameters())
+    num_params = sum(pp.numel() for pp in _unwrap(model).parameters())
     print(f"  Modele: {num_params:,} params")
 
     # -- Optimiseur / Scheduler --
@@ -303,7 +412,8 @@ def main():
     )
 
     # -- AMP (mixed precision) : gros gain de vitesse sur GPU P100 --
-    use_amp = (device.type == "cuda")
+    # Désactivé en multi-GPU (autocast peu fiable à travers les threads DataParallel).
+    use_amp = (device.type == "cuda") and not multi_gpu
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     if use_amp:
         print("  AMP (mixed precision) active")
@@ -327,10 +437,16 @@ def main():
         scheduler.step(epoch - 1)
         lr = scheduler.get_last_lr()[0]
 
-        train_loss, train_acc = train_one_epoch(
-            model, train_loader, optimizer, device, PHASE1["grad_clip"], epoch, scaler,
-        )
-        val_loss, val_acc = evaluate(model, val_loader, device)
+        if multi_gpu:
+            train_loss, train_acc = train_one_epoch_parallel(
+                model, train_loader, optimizer, device, PHASE1["grad_clip"], epoch,
+            )
+            val_loss, val_acc = evaluate_parallel(model, val_loader, device)
+        else:
+            train_loss, train_acc = train_one_epoch(
+                model, train_loader, optimizer, device, PHASE1["grad_clip"], epoch, scaler,
+            )
+            val_loss, val_acc = evaluate(model, val_loader, device)
 
         # Point temps reel (Phase 1 = MGM par classification du type d'atome).
         # train_acc/val_acc = exactitude de prediction du type d'atome masque.
@@ -361,7 +477,9 @@ def main():
         # -- Checkpoint --
         ckpt = {
             "epoch": epoch,
-            "model_state_dict": model.state_dict(),
+            # _unwrap → clés encoder.*/mgm_head.* identiques en mono- et multi-GPU
+            # (pas de préfixe « module. ») → chargement Phase 2/3 inchangé.
+            "model_state_dict": _unwrap(model).state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "train_loss": train_loss,
             "val_loss": val_loss,
