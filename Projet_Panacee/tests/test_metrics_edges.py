@@ -48,6 +48,35 @@ def test_phase3_r2_reasonable_when_target_varies():
     assert 0.9 < m["lipophilicity"]["r2"] <= 1.0
 
 
+def test_phase3_efficacy_trained_with_bce_not_huber():
+    """efficacy (label binaire HIV) doit être entraînée en BCE — cohérent avec
+    son évaluation classification (AUC) — et NON en Huber (régression)."""
+    import torch.nn.functional as F
+
+    from src.models.multi_property_head import MultiPropertyLoss
+
+    loss_fn = MultiPropertyLoss()
+    pred = {"efficacy": torch.tensor([[2.0], [-1.0], [0.5]])}
+    tgt = {"efficacy": torch.tensor([[1.0], [0.0], [1.0]])}
+    _, details = loss_fn(pred, tgt)
+    expected_bce = F.binary_cross_entropy_with_logits(pred["efficacy"], tgt["efficacy"]).item()
+    assert abs(details["efficacy"] - expected_bce) < 1e-5
+
+
+def test_phase3_regression_uses_huber_not_bce():
+    """Une vraie propriété de régression (solubilité) reste en Huber."""
+    import torch.nn.functional as F
+
+    from src.models.multi_property_head import MultiPropertyLoss
+
+    loss_fn = MultiPropertyLoss()
+    pred = {"solubility": torch.tensor([[0.5], [1.2], [-0.3]])}
+    tgt = {"solubility": torch.tensor([[0.4], [1.0], [-0.5]])}
+    _, details = loss_fn(pred, tgt)
+    expected_huber = F.huber_loss(pred["solubility"], tgt["solubility"], delta=1.0).item()
+    assert abs(details["solubility"] - expected_huber) < 1e-5
+
+
 def test_phase3_toxicity_f1_not_inflated_by_single_class():
     """F1 toxicité : une tâche mono-classe n'ajoute pas de 0 fictif à la macro."""
     from src.training.train_phase3 import compute_phase3_metrics

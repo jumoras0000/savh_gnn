@@ -8,6 +8,8 @@ RDKit est importé paresseusement pour ne pas alourdir le démarrage du serveur.
 """
 from __future__ import annotations
 
+from functools import lru_cache
+
 from webapp.catalog import LIBRARIES
 
 
@@ -97,7 +99,10 @@ TOXICOPHORES = {
 _HERG_BASIC_AMINE = "[NX3;!$(NC=O);!$(N=*);!$([N+]);!$(Nc);!$(NS=O)]"
 
 
+@lru_cache(maxsize=256)
 def _compile(smarts: str):
+    # Mise en cache : les motifs SMARTS sont constants. Sans cache, structural_alerts
+    # recompilait ~25 motifs PAR molécule (coûteux lors d'un criblage de bibliothèque).
     from rdkit import Chem
     return Chem.MolFromSmarts(smarts)
 

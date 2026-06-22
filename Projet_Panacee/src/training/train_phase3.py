@@ -357,7 +357,7 @@ def main():
     torch.backends.cudnn.benchmark = True  # kernels cuDNN les plus rapides
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_multi_property, **loader_kwargs(),
+        collate_fn=collate_multi_property, drop_last=True, **loader_kwargs(),
     )
     val_loader = DataLoader(
         val_ds, batch_size=batch_size, shuffle=False,

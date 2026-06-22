@@ -189,7 +189,10 @@ class MultiPropertyLoss(nn.Module):
                 continue
             target_safe = torch.where(valid_mask, target, torch.zeros_like(target))
 
-            if name in ("toxicity", "bioavailability", "metabolic_stability"):
+            # efficacy = hiv_HIV_active : label BINAIRE (0/1) → classification (BCE),
+            # cohérent avec l'évaluation (sigmoid + ROC-AUC). Auparavant en Huber
+            # (régression) par erreur → loss incohérente avec la métrique.
+            if name in ("toxicity", "efficacy", "bioavailability", "metabolic_stability"):
                 # Classification : BCE par element (reduction='none' -> masque ensuite)
                 if name == "toxicity" and self.tox_pos_weight is not None:
                     per = F.binary_cross_entropy_with_logits(
