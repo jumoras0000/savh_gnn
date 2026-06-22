@@ -2,6 +2,7 @@
 Configuration centralisée pour Projet Panacée.
 Tous les hyperparamètres, chemins et constantes au même endroit.
 """
+import os
 import sys
 from pathlib import Path
 
@@ -27,8 +28,30 @@ for d in [RAW_DIR, PROCESSED_DIR, EXTERNAL_DIR, CHECKPOINT_DIR, LOG_DIR, PLOT_DI
 # DEVICE
 # ══════════════════════════════════════════════════════════════════════
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-NUM_WORKERS = 0 if sys.platform == "win32" else 4
+
+# Nombre de workers du DataLoader. Sur Windows : 0 (le spawn re-sérialise tout).
+# Sinon : tous les cœurs CPU disponibles, pour nourrir le GPU sans famine.
+# Surchargé par la variable d'environnement PANACEE_NUM_WORKERS (utile sur Kaggle).
+_DEFAULT_WORKERS = 0 if sys.platform == "win32" else (os.cpu_count() or 4)
+NUM_WORKERS = int(os.environ.get("PANACEE_NUM_WORKERS", _DEFAULT_WORKERS))
 PIN_MEMORY = torch.cuda.is_available()
+
+# Nombre de batchs préchargés par worker (recouvre calcul GPU et préparation CPU).
+PREFETCH_FACTOR = int(os.environ.get("PANACEE_PREFETCH_FACTOR", 4))
+
+
+def loader_kwargs(num_workers: int | None = None) -> dict:
+    """Arguments DataLoader optimisés pour saturer GPU + CPU (anti-famine).
+
+    - workers persistants : évite de relancer les processus à chaque epoch
+    - prefetch : prépare les prochains batchs pendant que le GPU calcule
+    """
+    nw = NUM_WORKERS if num_workers is None else num_workers
+    kw = {"num_workers": nw, "pin_memory": PIN_MEMORY}
+    if nw > 0:
+        kw["persistent_workers"] = True
+        kw["prefetch_factor"] = PREFETCH_FACTOR
+    return kw
 
 # ══════════════════════════════════════════════════════════════════════
 # FEATURES MOLÉCULAIRES

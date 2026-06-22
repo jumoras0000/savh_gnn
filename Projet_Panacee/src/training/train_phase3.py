@@ -39,10 +39,9 @@ from src.config import (
     HIDDEN_DIM,
     LOG_DIR,
     NUM_GNN_LAYERS,
-    NUM_WORKERS,
     OUTPUT_DIM,
     PHASE3,
-    PIN_MEMORY,
+    loader_kwargs,
 )
 from src.models.encoder import MolecularEncoder
 from src.models.multi_property_head import MultiPropertyLoss, MultiPropertyPredictor
@@ -351,15 +350,14 @@ def main():
     batch_size = gpu.optimize_batch_size(args.batch_size, model_size_mb=50)
     print(f"  Batch size : {batch_size} (demandé: {args.batch_size})")
 
+    torch.backends.cudnn.benchmark = True  # kernels cuDNN les plus rapides
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True,
-        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
-        collate_fn=collate_multi_property,
+        collate_fn=collate_multi_property, **loader_kwargs(),
     )
     val_loader = DataLoader(
         val_ds, batch_size=batch_size, shuffle=False,
-        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
-        collate_fn=collate_multi_property,
+        collate_fn=collate_multi_property, **loader_kwargs(),
     )
 
     # ── Étape 4 : Construire le modèle ───────────────────────────────

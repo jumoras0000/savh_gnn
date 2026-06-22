@@ -38,10 +38,9 @@ from src.config import (
     HIDDEN_DIM,
     LOG_DIR,
     NUM_GNN_LAYERS,
-    NUM_WORKERS,
     OUTPUT_DIM,
     PHASE1,
-    PIN_MEMORY,
+    loader_kwargs,
 )
 from src.models.encoder import MolecularEncoder
 from src.models.mgm_head import MaskedGraphModel, MGMHead
@@ -57,14 +56,36 @@ from src.utils.live_logger import LiveLogger
 # ======================================================================
 
 class PretrainDataset(Dataset):
-    def __init__(self, smiles_list, mask_prob=0.15):
-        self.smiles_list = smiles_list
+    """Dataset de pré-entraînement MGM.
+
+    Les graphes sont PRÉ-CONSTRUITS une seule fois (cache) puis réutilisés à
+    chaque epoch : on évite de relancer RDKit (smiles_to_graph) 300× par
+    molécule, ce qui était le principal goulot (GPU affamé, ~40 % d'usage).
+    Le masquage, lui, reste aléatoire à chaque accès. Sur Linux/Kaggle, les
+    workers (fork) partagent ce cache en lecture (copy-on-write).
+    """
+
+    def __init__(self, smiles_list, mask_prob=0.15, cache_graphs=True, desc="graphes"):
         self.mask_prob = mask_prob
+        if cache_graphs:
+            self.graphs = []
+            for smi in tqdm(smiles_list, desc=f"Pré-construction {desc}"):
+                g = smiles_to_graph(smi)
+                if g is not None:
+                    self.graphs.append(g)
+            if not self.graphs:
+                raise RuntimeError("Aucun SMILES valide dans le dataset")
+            self.smiles_list = None
+        else:
+            self.graphs = None
+            self.smiles_list = smiles_list
 
     def __len__(self):
-        return len(self.smiles_list)
+        return len(self.graphs) if self.graphs is not None else len(self.smiles_list)
 
-    def __getitem__(self, idx):
+    def _graph_at(self, idx):
+        if self.graphs is not None:
+            return self.graphs[idx]
         graph = smiles_to_graph(self.smiles_list[idx])
         if graph is None:
             for j in range(1, len(self.smiles_list)):
@@ -73,7 +94,12 @@ class PretrainDataset(Dataset):
                     break
             if graph is None:
                 raise RuntimeError("Aucun SMILES valide dans le dataset")
-        graph_masked, masked_idx, _masked_feat, masked_types = mask_atoms(graph, self.mask_prob)
+        return graph
+
+    def __getitem__(self, idx):
+        # mask_atoms clone le graphe en interne → le cache n'est jamais muté.
+        graph_masked, masked_idx, _masked_feat, masked_types = mask_atoms(
+            self._graph_at(idx), self.mask_prob)
         return graph_masked, masked_idx, masked_types
 
 
@@ -225,17 +251,22 @@ def main():
         return
 
     split = int(len(smiles_list) * (1 - PHASE1["val_split"]))
-    train_ds = PretrainDataset(smiles_list[:split], args.mask_prob)
-    val_ds = PretrainDataset(smiles_list[split:], args.mask_prob)
+    train_ds = PretrainDataset(smiles_list[:split], args.mask_prob, desc="graphes (train)")
+    val_ds = PretrainDataset(smiles_list[split:], args.mask_prob, desc="graphes (val)")
+
+    # cuDNN benchmark : laisse cuDNN choisir les kernels les plus rapides.
+    torch.backends.cudnn.benchmark = True
 
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True,
-        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY, collate_fn=collate_fn,
+        collate_fn=collate_fn, **loader_kwargs(),
     )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch_size, shuffle=False,
-        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY, collate_fn=collate_fn,
+        collate_fn=collate_fn, **loader_kwargs(),
     )
+    print(f"  DataLoader : batch={args.batch_size}, "
+          f"workers={loader_kwargs()['num_workers']}, graphes en cache")
 
     # -- Modele --
     encoder = MolecularEncoder(

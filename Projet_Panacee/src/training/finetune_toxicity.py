@@ -44,10 +44,9 @@ from src.config import (
     HIDDEN_DIM,
     LOG_DIR,
     NUM_GNN_LAYERS,
-    NUM_WORKERS,
     OUTPUT_DIM,
     PHASE2,
-    PIN_MEMORY,
+    loader_kwargs,
 )
 from src.models.encoder import MolecularEncoder
 from src.models.toxicity_classifier import MultiTaskBCELoss, ToxicityClassifier
@@ -291,15 +290,14 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
         epochs_dir.mkdir(parents=True, exist_ok=True)
     label = f"[{tag}] " if tag else ""
 
+    torch.backends.cudnn.benchmark = True  # kernels cuDNN les plus rapides
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True,
-        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
-        collate_fn=collate_toxicity_batch, drop_last=True,
+        collate_fn=collate_toxicity_batch, drop_last=True, **loader_kwargs(),
     )
     val_loader = DataLoader(
         val_ds, batch_size=args.batch_size, shuffle=False,
-        num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY,
-        collate_fn=collate_toxicity_batch,
+        collate_fn=collate_toxicity_batch, **loader_kwargs(),
     )
 
     # -- Modele --
