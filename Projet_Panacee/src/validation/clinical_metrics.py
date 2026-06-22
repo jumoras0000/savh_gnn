@@ -95,6 +95,10 @@ def _danger_level(auc, sensitivity, fnr, support):
     """Niveau de risque d'un endpoint toxicologique (orienté faux négatifs)."""
     if support < MIN_SUPPORT:
         return "NA"
+    # Sans exemples positifs, sensibilité et FNR sont indéfinis (None) :
+    # la détection des toxiques ne peut pas être évaluée → NA.
+    if sensitivity is None or fnr is None:
+        return "NA"
     if fnr >= FNR_DANGER or sensitivity < SENS_DANGER or (auc is not None and auc < AUC_DANGER):
         return "DANGER"
     if fnr >= FNR_WARN or (auc is not None and auc < AUC_WARN):
@@ -138,13 +142,21 @@ def per_task_metrics(probs, targets, task_names=None, thresholds=None):
         n_neg = int((y == 0).sum())
 
         tp, tn, fp, fn = confusion_counts(y, pred)
-        sensitivity = _safe_div(tp, tp + fn)       # rappel sur les toxiques
-        specificity = _safe_div(tn, tn + fp)
-        fnr = _safe_div(fn, fn + tp)               # faux négatifs (DANGER)
-        fpr = _safe_div(fp, fp + tn)
-        precision = _safe_div(tp, tp + fp)
-        f1 = _safe_div(2 * precision * sensitivity, precision + sensitivity)
-        balanced_acc = (sensitivity + specificity) / 2.0
+        # Métriques INDÉFINIES si la classe concernée est absente → None (pas 0.0,
+        # qui fausserait les moyennes macro et le verdict clinique).
+        #   sensibilité / FNR : indéfinis sans positif  (n_pos == 0)
+        #   spécificité / FPR : indéfinis sans négatif  (n_neg == 0)
+        sensitivity = _safe_div(tp, tp + fn) if n_pos > 0 else None   # rappel toxiques
+        fnr = _safe_div(fn, fn + tp) if n_pos > 0 else None           # faux négatifs (DANGER)
+        specificity = _safe_div(tn, tn + fp) if n_neg > 0 else None
+        fpr = _safe_div(fp, fp + tn) if n_neg > 0 else None
+        precision = _safe_div(tp, tp + fp) if (tp + fp) > 0 else None
+        if precision is not None and sensitivity is not None and (precision + sensitivity) > 0:
+            f1 = _safe_div(2 * precision * sensitivity, precision + sensitivity)
+        else:
+            f1 = None
+        balanced_acc = ((sensitivity + specificity) / 2.0
+                        if sensitivity is not None and specificity is not None else None)
 
         auc = None
         pr_auc = None
@@ -201,8 +213,10 @@ def summarize(probs, targets, task_names=None, thresholds=None) -> dict:
                 "fnr": t["fnr"], "sensitivity": t["sensitivity"],
                 "roc_auc": t["roc_auc"],
                 "message": (
-                    f"{t['task']} : {t['fnr']*100:.0f}% des composés toxiques "
-                    f"manqués (sensibilité {t['sensitivity']*100:.0f}%, "
+                    f"{t['task']} : "
+                    f"{('%.0f%%' % (t['fnr']*100)) if t['fnr'] is not None else 'NA'} "
+                    f"des composés toxiques manqués (sensibilité "
+                    f"{('%.0f%%' % (t['sensitivity']*100)) if t['sensitivity'] is not None else 'NA'}, "
                     f"AUC {('%.2f' % t['roc_auc']) if t['roc_auc'] is not None else 'NA'})"
                 ),
             })

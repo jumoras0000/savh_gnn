@@ -48,3 +48,29 @@ def test_verdict_na_without_data():
 def test_epoch_clinical_score_uses_stored_value():
     # si clinical_score est déjà dans le record, il est réutilisé tel quel
     assert service.epoch_clinical_score({"clinical_score": 0.42}) == 0.42
+
+
+def test_endpoint_without_positives_is_undefined_not_zero():
+    """Un endpoint sans toxique : sensibilité/FNR = None (indéfinis), pas 0.0,
+    et il ne doit PAS faire chuter les moyennes macro ni déclencher une alerte."""
+    import numpy as np
+
+    from src.validation.clinical_metrics import per_task_metrics, summarize
+
+    n = 40
+    probs = np.column_stack([
+        np.linspace(0.1, 0.9, n),   # tâche 0 : mélange normal
+        np.full(n, 0.2),            # tâche 1 : AUCUN positif
+    ])
+    targets = np.column_stack([
+        np.array([0, 1] * (n // 2), dtype=float),  # tâche 0 : positifs + négatifs
+        np.zeros(n),                                # tâche 1 : que des négatifs
+    ])
+    tasks = per_task_metrics(probs, targets, task_names=["t0", "t1"])
+    t1 = tasks[1]
+    assert t1["sensitivity"] is None and t1["fnr"] is None
+    assert t1["danger"] == "NA"  # inévaluable, pas OK/DANGER trompeur
+
+    agg = summarize(probs, targets, task_names=["t0", "t1"])["aggregate"]
+    # la macro-sensibilité ne doit refléter que la tâche évaluable (t0), pas un 0 fictif
+    assert agg["macro_sensitivity"] == tasks[0]["sensitivity"]

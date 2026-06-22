@@ -47,6 +47,10 @@ def _ckpt_root() -> str:
     return os.environ.get("PANACEE_CKPT_ROOT", str(PROJECT_ROOT / "checkpoints"))
 
 
+# Sérialise les écritures /api/ingest concurrentes (voir api_ingest).
+_INGEST_LOCK = asyncio.Lock()
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Pages
 # ──────────────────────────────────────────────────────────────────────
@@ -159,8 +163,12 @@ async def api_ingest(request):
         rec.setdefault("source", "remote")
     # meta = nouveau run → réinitialise ; epoch = append
     mode = "w" if rec.get("_type") == "meta" else "a"
-    with open(dest, mode, encoding="utf-8") as f:
-        f.write(json.dumps(rec, default=str) + "\n")
+    line = json.dumps(rec, default=str) + "\n"
+    # Verrou : sérialise les écritures concurrentes (rafales d'epochs / runs
+    # multiples) → pas de lignes entremêlées dans le .jsonl.
+    async with _INGEST_LOCK:
+        with open(dest, mode, encoding="utf-8") as f:
+            f.write(line)
     return JSONResponse({"ok": True, "run": safe, "type": rec.get("_type")})
 
 
@@ -805,4 +813,49 @@ routes = [
     Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
 ]
 
-app = Starlette(routes=routes)
+def _host_is_local(host: str) -> bool:
+    """Vrai si la requête vient de la machine locale (navigateur sur 127.0.0.1)."""
+    h = (host or "").rsplit(":", 1)[0].strip().lower().strip("[]")
+    return h in ("127.0.0.1", "localhost", "::1", "")
+
+
+class TokenGuard:
+    """
+    Middleware ASGI : quand PANACEE_INGEST_TOKEN est défini, exige ce token pour
+    tout /api/* (sauf /api/health) provenant d'un accès EXTERNE (ex. via ngrok).
+    Les requêtes locales (127.0.0.1, le navigateur du poste) passent librement.
+
+    Pourquoi : le tunnel ngrok n'est ouvert que pour que Kaggle POST /api/ingest.
+    Sans ce garde, n'importe qui connaissant l'URL ngrok pourrait lancer un
+    entraînement, importer un fichier, etc. Le token (le même que côté Kaggle)
+    referme cette porte. Pur ASGI → ne bufferise pas le flux SSE.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            token = os.environ.get("PANACEE_INGEST_TOKEN", "")
+            path = scope.get("path", "")
+            if token and path.startswith("/api/") and path != "/api/health":
+                headers = dict(scope.get("headers") or [])
+                host = headers.get(b"host", b"").decode("latin-1")
+                if not _host_is_local(host):
+                    provided = headers.get(b"x-panacee-token", b"").decode("latin-1")
+                    if not provided:
+                        from urllib.parse import parse_qs
+                        qs = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+                        provided = (qs.get("token") or [""])[0]
+                    import hmac
+                    if not hmac.compare_digest(provided, token):
+                        resp = JSONResponse(
+                            {"error": "Accès externe : token requis "
+                                      "(en-tête X-Panacee-Token ou ?token=)."},
+                            status_code=403)
+                        await resp(scope, receive, send)
+                        return
+        await self.app(scope, receive, send)
+
+
+app = TokenGuard(Starlette(routes=routes))
