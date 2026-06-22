@@ -33,9 +33,10 @@ ENV/
 *.swo
 *~
 
-# Jupyter
+# Jupyter (exploration locale exclue, notebooks Kaggle versionnés explicitement)
 .ipynb_checkpoints/
 *.ipynb
+!notebooks/*.ipynb
 
 # Données
 data/raw/**/*
