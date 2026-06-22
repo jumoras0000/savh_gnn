@@ -111,22 +111,22 @@
               <span style="color:var(--vital)"><i style="background:var(--vital)"></i>val_loss</span>
             </div>
           </div>
-          <div class="card">
-            <h3>ROC-AUC (train / val)</h3>
-            <div class="hint">Pouvoir discriminant. Cible val ≥ 0.85 (ligne pointillée).</div>
+          <div class="card" id="cardAuc">
+            <h3 id="cardAucTitle">ROC-AUC (train / val)</h3>
+            <div class="hint" id="cardAucHint">Pouvoir discriminant. Cible val ≥ 0.85 (ligne pointillée).</div>
             <div class="chart-box"><canvas id="chartAuc"></canvas></div>
-            <div class="legend">
+            <div class="legend" id="cardAucLegend">
               <span style="color:var(--blue)"><i style="background:var(--blue)"></i>train_auc</span>
               <span style="color:var(--vital)"><i style="background:var(--vital)"></i>val_auc</span>
               <span style="color:var(--warn)"><i class="dash" style="color:var(--warn)"></i>cible</span>
             </div>
           </div>
         </div>
-        <div class="card">
-          <h3>🫀 Signes vitaux de sécurité — Sensibilité &amp; FNR</h3>
-          <div class="hint">Le FNR (faux négatifs = molécules toxiques déclarées « sûres ») est l'indicateur le plus critique. Zone rouge = danger.</div>
+        <div class="card" id="cardSafety">
+          <h3 id="cardSafetyTitle">🫀 Signes vitaux de sécurité — Sensibilité &amp; FNR</h3>
+          <div class="hint" id="cardSafetyHint">Le FNR (faux négatifs = molécules toxiques déclarées « sûres ») est l'indicateur le plus critique. Zone rouge = danger.</div>
           <div class="chart-box" style="height:260px"><canvas id="chartSafety"></canvas></div>
-          <div class="legend">
+          <div class="legend" id="cardSafetyLegend">
             <span style="color:var(--ok)"><i style="background:var(--ok)"></i>sensibilité (↑ mieux)</span>
             <span style="color:var(--danger)"><i style="background:var(--danger)"></i>FNR (↓ mieux)</span>
             <span style="color:var(--warn)"><i class="dash" style="color:var(--warn)"></i>seuils danger/cible</span>

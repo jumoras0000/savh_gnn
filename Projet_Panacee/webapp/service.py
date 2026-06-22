@@ -12,6 +12,7 @@ Schéma d'un point d'epoch (écrit par src/training/finetune_toxicity.py) :
 from __future__ import annotations
 
 import json
+import math
 import time
 from pathlib import Path
 
@@ -44,6 +45,148 @@ THRESHOLDS = {
 
 # Un run est considéré « actif » si son fichier a bougé il y a moins de N secondes
 RUNNING_WINDOW_S = 90
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 1 (pré-entraînement auto-supervisé) : métriques basées sur la PERTE
+# La Phase 1 n'a pas de classification (AUC, FNR, endpoints). Le suivi porte
+# donc sur la convergence de la perte, pas sur la sécurité clinique.
+# ──────────────────────────────────────────────────────────────────────
+
+def _finite(x) -> bool:
+    """True si x est un nombre fini (ni None, ni NaN, ni Inf)."""
+    return isinstance(x, (int, float)) and math.isfinite(x)
+
+
+def is_pretrain(meta: dict | None, latest: dict | None = None) -> bool:
+    """Détecte un run de pré-entraînement (Phase 1).
+
+    Vrai si la phase est explicitement « phase1 », ou — heuristique de repli —
+    si le dernier point a une perte mais AUCUNE métrique de classification.
+    """
+    phase = str((meta or {}).get("phase", "")).lower()
+    if phase in ("phase1", "1", "pretrain", "pretraining"):
+        return True
+    if latest:
+        has_clf = any(latest.get(k) is not None
+                      for k in ("val_auc", "macro_sensitivity", "macro_fnr", "n_danger"))
+        if not has_clf and latest.get("val_loss") is not None:
+            return True
+    return False
+
+
+def pretrain_verdict(epochs: list, latest: dict) -> dict:
+    """Verdict de convergence pour la Phase 1 (basé sur la perte, pas la sécurité)."""
+    if not latest:
+        return {"level": "NA", "title": "En attente de données",
+                "reasons": ["Aucune métrique de pré-entraînement reçue."]}
+
+    tl, vl = latest.get("train_loss"), latest.get("val_loss")
+
+    # Divergence numérique : perte NaN/Inf → arrêt recommandé
+    if (vl is not None and not _finite(vl)) or (tl is not None and not _finite(tl)):
+        return {"level": "DANGER",
+                "title": "🔴 Pré-entraînement instable — perte invalide (NaN/Inf)",
+                "reasons": ["La perte a divergé (NaN/Inf) : réduis le learning rate "
+                            "ou le grad-clip, puis relance."]}
+
+    vlosses = [e.get("val_loss") for e in epochs if _finite(e.get("val_loss"))]
+    reasons: list[str] = []
+    level = "OK"
+
+    # Tendance récente : la val_loss remonte sur les 4 dernières epochs ?
+    if len(vlosses) >= 4 and vlosses[-1] > vlosses[-4] * 1.05:
+        level = "WARN"
+        reasons.append(f"val_loss remonte ({vlosses[-4]:.4f} → {vlosses[-1]:.4f}) : "
+                       "sur-apprentissage probable ou LR trop élevé.")
+
+    # Écart val/train : l'encodeur mémorise ?
+    if _finite(tl) and _finite(vl) and tl > 0 and (vl - tl) / abs(tl) > 0.5:
+        level = "WARN" if level != "DANGER" else level
+        reasons.append(f"Écart val−train = {vl - tl:.4f} : l'encodeur sur-apprend.")
+
+    # Aucun progrès depuis le début ?
+    if len(vlosses) >= 3 and (vlosses[0] - min(vlosses)) <= 0:
+        level = "WARN" if level == "OK" else level
+        reasons.append("Aucune amélioration de val_loss depuis le départ : "
+                       "vérifie les données et le learning rate.")
+
+    if level == "OK":
+        best = min(vlosses) if vlosses else vl
+        reasons.append(f"La perte décroît normalement (val_loss = {vl:.4f}, "
+                       f"meilleure = {best:.4f}).")
+
+    titles = {
+        "OK": "🟢 Pré-entraînement sain — la perte décroît",
+        "WARN": "🟠 Pré-entraînement à surveiller",
+        "DANGER": "🔴 Pré-entraînement instable",
+    }
+    return {"level": level, "title": titles[level], "reasons": reasons}
+
+
+def compare_pretrain(epochs: list, latest: dict) -> list[dict]:
+    """Comparaison « obtenu vs référence » pour la Phase 1 (perte)."""
+    if not latest:
+        return []
+    vl, tl = latest.get("val_loss"), latest.get("train_loss")
+    vlosses = [e.get("val_loss") for e in epochs if _finite(e.get("val_loss"))]
+    best = min(vlosses) if vlosses else vl
+    rows: list[dict] = []
+    if _finite(vl):
+        rows.append({"metric": "Perte val (vs meilleure)", "key": "val_loss",
+                     "obtenu": vl, "attendu": best, "sens": "max",
+                     "ok": _finite(best) and vl <= best * 1.02})
+    if _finite(tl) and _finite(vl):
+        rows.append({"metric": "Écart val−train", "key": "loss_gap",
+                     "obtenu": vl - tl, "attendu": 0.0, "sens": "max",
+                     "ok": tl <= 0 or (vl - tl) <= abs(tl) * 0.5})
+    return rows
+
+
+def pretrain_observations(epochs: list, latest: dict) -> list[dict]:
+    """Lecture automatique des métriques de Phase 1 (convergence, sur-apprentissage)."""
+    tl, vl, lr = latest.get("train_loss"), latest.get("val_loss"), latest.get("lr")
+    obs: list[dict] = []
+
+    if _finite(vl):
+        vlosses = [e.get("val_loss") for e in epochs if _finite(e.get("val_loss"))]
+        best = min(vlosses) if vlosses else vl
+        if vl <= best + 1e-12:
+            obs.append({"level": "OK", "metric": "Perte val",
+                        "text": f"val_loss = {vl:.4f} : meilleure valeur atteinte jusqu'ici."})
+        else:
+            obs.append({"level": "INFO", "metric": "Perte val",
+                        "text": f"val_loss = {vl:.4f} (meilleure = {best:.4f})."})
+
+    if _finite(tl) and _finite(vl):
+        gap = vl - tl
+        if tl > 0 and gap / abs(tl) > 0.5:
+            obs.append({"level": "WARN", "metric": "Sur-apprentissage",
+                        "text": f"Écart val−train = {gap:.4f} : l'encodeur mémorise "
+                                "(réduis les epochs ou augmente les données)."})
+        else:
+            obs.append({"level": "OK", "metric": "Généralisation",
+                        "text": f"Écart val−train = {gap:.4f} : généralisation correcte."})
+
+    if _finite(lr):
+        obs.append({"level": "INFO", "metric": "Learning rate",
+                    "text": f"LR courant = {lr:.2e}."})
+
+    return obs or [{"level": "INFO", "metric": "—", "text": "Pré-entraînement en cours."}]
+
+
+def run_verdict(meta: dict, epochs: list, latest: dict) -> dict:
+    """Verdict adapté à la phase : convergence (Phase 1) ou sécurité clinique (Phase 2/3)."""
+    if is_pretrain(meta, latest):
+        return pretrain_verdict(epochs, latest)
+    return clinical_verdict(latest)
+
+
+def run_compare(meta: dict, epochs: list, latest: dict) -> list[dict]:
+    """Comparaison adaptée à la phase."""
+    if is_pretrain(meta, latest):
+        return compare_pretrain(epochs, latest)
+    return compare_to_expected(latest)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -109,6 +252,7 @@ def run_summary(file_path: Path, root: str | Path) -> dict:
     return {
         "id": run_id_for(file_path, root),
         "phase": meta.get("phase", "?"),
+        "is_pretrain": is_pretrain(meta, latest),
         "conv_type": meta.get("conv_type", "?"),
         "ema": meta.get("ema"),
         "tag": meta.get("tag", ""),
@@ -119,6 +263,9 @@ def run_summary(file_path: Path, root: str | Path) -> dict:
         "macro_fnr": latest.get("macro_fnr"),
         "macro_sensitivity": latest.get("macro_sensitivity"),
         "n_danger": latest.get("n_danger"),
+        "val_loss": latest.get("val_loss"),
+        "train_loss": latest.get("train_loss"),
+        "best_loss": latest.get("best_loss"),
         "last_update": mtime,
         "status": _run_status(file_path, epochs, meta),
         "source": meta.get("source", "local"),
@@ -243,15 +390,16 @@ def get_run(file_path: Path, root: str | Path, epoch: int | None = None) -> dict
         "epochs": epochs,
         "latest": latest,
         "selected_epoch": selected,
-        "best_epoch": best_epoch_number(epochs),
+        "best_epoch": best_epoch_number(epochs, meta),
         "status": _run_status(Path(file_path), epochs, meta),
-        "compare": compare_to_expected(latest),
-        "verdict": clinical_verdict(latest),
+        "compare": run_compare(meta, epochs, latest),
+        "verdict": run_verdict(meta, epochs, latest),
         "expected": EXPECTED,
         "thresholds": THRESHOLDS,
         "overfit_gap": overfit,
         "per_task_auc": pt,
         "phase": meta.get("phase", "?"),
+        "is_pretrain": is_pretrain(meta, latest),
     }
     out["observations"] = metric_observations(out)
     return out
@@ -285,11 +433,21 @@ def epoch_clinical_score(rec: dict) -> float:
                           rec.get("macro_fnr"), rec.get("n_danger"))
 
 
-def best_epoch_number(epochs: list) -> int | None:
-    """Numéro de la MEILLEURE epoch selon le score clinique (supervision)."""
+def best_epoch_number(epochs: list, meta: dict | None = None) -> int | None:
+    """Numéro de la MEILLEURE epoch.
+
+    Phase 2/3 : meilleur score clinique (sécurité). Phase 1 : plus faible val_loss.
+    """
+    pretrain = is_pretrain(meta, epochs[-1] if epochs else None)
     best_n, best_s = None, None
     for e in epochs:
-        s = epoch_clinical_score(e)
+        if pretrain:
+            vl = e.get("val_loss")
+            if not _finite(vl):
+                continue
+            s = -float(vl)  # perte plus basse = meilleure
+        else:
+            s = epoch_clinical_score(e)
         if best_s is None or s > best_s:
             best_s, best_n = s, e.get("epoch")
     return best_n
@@ -306,7 +464,8 @@ def list_epochs(file_path: Path, root: str | Path) -> dict:
     """
     meta, epochs = read_live(file_path)
     run_dir = Path(file_path).parent
-    best_n = best_epoch_number(epochs)
+    pretrain = is_pretrain(meta, epochs[-1] if epochs else None)
+    best_n = best_epoch_number(epochs, meta)
     rows = []
     for e in epochs:
         n = e.get("epoch")
@@ -322,19 +481,29 @@ def list_epochs(file_path: Path, root: str | Path) -> dict:
                 size = round(cand.stat().st_size / (1024 * 1024), 2)
             except OSError:
                 size = None
+        if pretrain:
+            vl = e.get("val_loss")
+            score = round(-float(vl), 4) if _finite(vl) else None
+            verdict = "DANGER" if (vl is not None and not _finite(vl)) else "OK"
+        else:
+            score = round(epoch_clinical_score(e), 4)
+            verdict = clinical_verdict(e)["level"]
         rows.append({
             "epoch": n,
             "val_auc": e.get("val_auc"),
             "macro_sensitivity": e.get("macro_sensitivity"),
             "macro_fnr": e.get("macro_fnr"),
             "n_danger": e.get("n_danger"),
-            "clinical_score": round(epoch_clinical_score(e), 4),
-            "verdict": clinical_verdict(e)["level"],
+            "val_loss": e.get("val_loss"),
+            "train_loss": e.get("train_loss"),
+            "clinical_score": score,
+            "verdict": verdict,
             "has_ckpt": has,
             "size_mb": size,
             "is_best": (n is not None and n == best_n),
         })
-    return {"id": run_id_for(file_path, root), "best_epoch": best_n, "epochs": rows}
+    return {"id": run_id_for(file_path, root), "best_epoch": best_n,
+            "is_pretrain": pretrain, "epochs": rows}
 
 
 def delete_epoch(run_id: str, epoch: int, root: str | Path) -> dict:
@@ -435,12 +604,15 @@ def compare_runs(root: str | Path = "checkpoints") -> list[dict]:
         out.append({
             "id": run_id_for(p, root),
             "phase": meta.get("phase", "?"),
+            "is_pretrain": is_pretrain(meta, last),
             "epochs": len(epochs),
             "val_auc": last.get("val_auc"),
             "macro_sensitivity": last.get("macro_sensitivity"),
             "macro_fnr": last.get("macro_fnr"),
             "n_danger": last.get("n_danger"),
-            "verdict": clinical_verdict(last)["level"],
+            "val_loss": last.get("val_loss"),
+            "best_loss": last.get("best_loss"),
+            "verdict": run_verdict(meta, epochs, last)["level"],
         })
     out.sort(key=lambda r: (r["val_auc"] is None, -(r["val_auc"] or 0)))
     return out
@@ -494,6 +666,10 @@ def metric_observations(run: dict) -> list[dict]:
     if not latest:
         return [{"level": "INFO", "metric": "—",
                  "text": "Aucune métrique encore reçue. Lance un entraînement."}]
+
+    # Phase 1 : observations basées sur la perte (pas de toxicité)
+    if is_pretrain(run.get("meta"), latest):
+        return pretrain_observations(run.get("epochs") or [], latest)
 
     exp = run.get("expected", EXPECTED)
     thr = run.get("thresholds", THRESHOLDS)

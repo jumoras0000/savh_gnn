@@ -702,11 +702,12 @@ async def sse_events(run_id, root, poll=2.0, is_disconnected=None, max_idle_tick
                         yield _sse("epoch", e)
                     sent = len(epochs)
                     # Pousser aussi le verdict/statut agrégés à jour
+                    # (phase-aware : convergence pour Phase 1, sécurité pour Phase 2/3)
                     latest = epochs[-1]
                     yield _sse("status", {
                         "status": service._run_status(path, epochs, meta),
-                        "verdict": service.clinical_verdict(latest),
-                        "compare": service.compare_to_expected(latest),
+                        "verdict": service.run_verdict(meta, epochs, latest),
+                        "compare": service.run_compare(meta, epochs, latest),
                         "n_points": sent,
                         "epochs_total": meta.get("epochs_total"),
                     })

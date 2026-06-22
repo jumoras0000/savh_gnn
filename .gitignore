@@ -28,6 +28,11 @@ Projet_Panacee/data/processed/
 venv/
 env/
 
+# Secrets : variables d'environnement locales (clés API, tokens) — NE JAMAIS committer
+.env
+.env.*
+!.env.example
+
 # Python
 __pycache__/
 *.py[cod]

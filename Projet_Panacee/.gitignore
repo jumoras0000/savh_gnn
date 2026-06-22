@@ -26,6 +26,11 @@ env/
 ENV/
 .venv
 
+# Secrets : variables d'environnement locales (clés API, tokens) — NE JAMAIS committer
+.env
+.env.*
+!.env.example
+
 # IDE
 .vscode/
 .idea/

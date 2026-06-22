@@ -231,6 +231,34 @@ function ecgLoop() {
 function series(key) { return state.epochs.map(e => ({ x: e.epoch, y: e[key] ?? null })); }
 function col(key) { return state.epochs.map(e => e[key] ?? null); }
 
+/* ---------- détection de phase ---------- */
+// Phase 1 = pré-entraînement auto-supervisé : métriques basées sur la PERTE,
+// sans classification (pas d'AUC / FNR / endpoints). L'UI s'adapte en conséquence.
+function isPretrain() {
+  const m = state.meta || {}, L = state.latest || {};
+  const phase = String(m.phase || "").toLowerCase();
+  if (["phase1", "1", "pretrain", "pretraining"].includes(phase)) return true;
+  if (m.is_pretrain === true) return true;
+  const hasClf = ["val_auc", "macro_sensitivity", "macro_fnr", "n_danger"].some(k => L[k] != null);
+  return !hasClf && L.val_loss != null;
+}
+function bestLoss() {
+  const arr = col("val_loss").filter(v => v != null && !Number.isNaN(v));
+  if (arr.length) return Math.min(...arr);
+  return state.latest.best_loss ?? null;
+}
+function lossRising() {
+  const arr = col("val_loss").filter(v => v != null && !Number.isNaN(v));
+  return arr.length >= 4 && arr[arr.length - 1] > arr[arr.length - 4] * 1.05;
+}
+function setText(id, t) { const el = document.getElementById(id); if (el) el.textContent = t; }
+function setHTML(id, h) { const el = document.getElementById(id); if (el) el.innerHTML = h; }
+function setKpiLabel(id, text) {
+  const el = document.getElementById(id);
+  const lab = el && el.querySelector(".label");
+  if (lab) lab.textContent = text;
+}
+
 function renderKPIs() {
   const L = state.latest;
   // Epoch + progression (on garde le <span class="unit"> en réécrivant le contenu)
@@ -241,20 +269,40 @@ function renderKPIs() {
   const frac = (total && L.epoch) ? Math.min(1, L.epoch / total) : 0;
   document.getElementById("epochBar").style.width = (frac * 100) + "%";
 
-  // AUC
-  setKpi("kpiAuc", L.val_auc, nf(L.val_auc), col("val_auc"), COL.vital,
-    flag(L.val_auc, state.expected.val_auc, "min"));
-  // Sensibilité
-  setKpi("kpiSens", L.macro_sensitivity, pct(L.macro_sensitivity), col("macro_sensitivity"), COL.ok,
-    flag(L.macro_sensitivity, state.expected.macro_sensitivity, "min"));
-  // FNR
-  setKpi("kpiFnr", L.macro_fnr, pct(L.macro_fnr), col("macro_fnr"), COL.danger,
-    flag(L.macro_fnr, state.expected.macro_fnr_max, "max"));
-  // Danger
-  const nd = L.n_danger;
   const dEl = document.getElementById("kpiDanger");
-  dEl.querySelector(".value").textContent = nd != null ? String(nd) : "—";
-  dEl.dataset.flag = (nd > 0) ? "bad" : (nd === 0 ? "good" : "");
+  const dTag = document.getElementById("dangerTag");
+
+  if (isPretrain()) {
+    // Phase 1 : pas de toxicité → cartes ré-affectées aux métriques de perte.
+    setKpiLabel("kpiAuc", "Perte validation");
+    setKpi("kpiAuc", L.val_loss, nf(L.val_loss, 4), col("val_loss"), COL.vital,
+      lossRising() ? "warn" : (L.val_loss != null ? "good" : ""));
+    setKpiLabel("kpiSens", "Perte entraînement");
+    setKpi("kpiSens", L.train_loss, nf(L.train_loss, 4), col("train_loss"), COL.blue, "");
+    setKpiLabel("kpiFnr", "Meilleure perte");
+    const best = bestLoss();
+    setKpi("kpiFnr", best, nf(best, 4), col("val_loss"), COL.ok, "");
+    setKpiLabel("kpiDanger", "Learning rate");
+    dEl.querySelector(".value").textContent = L.lr != null ? Number(L.lr).toExponential(1) : "—";
+    dEl.dataset.flag = "";
+    if (dTag) dTag.textContent = "taux d'apprentissage";
+  } else {
+    // Phase 2/3 : métriques cliniques de toxicité.
+    setKpiLabel("kpiAuc", "ROC-AUC (val)");
+    setKpi("kpiAuc", L.val_auc, nf(L.val_auc), col("val_auc"), COL.vital,
+      flag(L.val_auc, state.expected.val_auc, "min"));
+    setKpiLabel("kpiSens", "Sensibilité");
+    setKpi("kpiSens", L.macro_sensitivity, pct(L.macro_sensitivity), col("macro_sensitivity"), COL.ok,
+      flag(L.macro_sensitivity, state.expected.macro_sensitivity, "min"));
+    setKpiLabel("kpiFnr", "FNR · faux négatifs");
+    setKpi("kpiFnr", L.macro_fnr, pct(L.macro_fnr), col("macro_fnr"), COL.danger,
+      flag(L.macro_fnr, state.expected.macro_fnr_max, "max"));
+    setKpiLabel("kpiDanger", "Endpoints en DANGER");
+    const nd = L.n_danger;
+    dEl.querySelector(".value").textContent = nd != null ? String(nd) : "—";
+    dEl.dataset.flag = (nd > 0) ? "bad" : (nd === 0 ? "good" : "");
+    if (dTag) dTag.textContent = "toxiques manqués";
+  }
 
   // ETA
   const eta = estimateEta();
@@ -308,16 +356,53 @@ function renderEvolution() {
   // Marqueur vertical = epoch analysée (si l'utilisateur en a épinglé une)
   const vline = state.pinnedEpoch != null ? state.pinnedEpoch : undefined;
 
+  // Courbe de perte : commune à toutes les phases
   lineChart(document.getElementById("chartLoss"),
     [{ name: "train", color: COL.blue, data: series("train_loss") },
      { name: "val", color: COL.vital, data: series("val_loss") }],
     { yMin: 0, vline });
 
+  if (isPretrain()) {
+    // Phase 1 : pas d'AUC ni de toxicité → on réaffecte les deux graphiques.
+    // Graphique 2 → planning du learning rate (warmup + cosine)
+    setText("cardAucTitle", "Learning rate (planning)");
+    setText("cardAucHint", "Taux d'apprentissage par epoch : montée (warmup) puis décroissance cosine.");
+    setHTML("cardAucLegend", `<span style="color:var(--vital)"><i style="background:var(--vital)"></i>lr</span>`);
+    lineChart(document.getElementById("chartAuc"),
+      [{ name: "lr", color: COL.vital, data: series("lr") }], { vline });
+
+    // Graphique 3 → écart de généralisation (val − train)
+    setText("cardSafetyTitle", "🫀 Écart de généralisation (val − train)");
+    setText("cardSafetyHint", "Différence entre perte de validation et d'entraînement. Un écart qui se creuse = sur-apprentissage de l'encodeur.");
+    setHTML("cardSafetyLegend", `<span style="color:var(--warn)"><i style="background:var(--warn)"></i>val − train</span>`);
+    const gap = state.epochs.map(e => ({
+      x: e.epoch,
+      y: (e.val_loss != null && e.train_loss != null) ? e.val_loss - e.train_loss : null,
+    }));
+    lineChart(document.getElementById("chartSafety"),
+      [{ name: "gap", color: COL.warn, data: gap }],
+      { vline, refs: [{ y: 0, color: COL.faint }] });
+    return;
+  }
+
+  // Phase 2/3 : graphiques cliniques (restaure titres + légendes au cas où on revient d'une Phase 1)
+  setText("cardAucTitle", "ROC-AUC (train / val)");
+  setText("cardAucHint", "Pouvoir discriminant. Cible val ≥ 0.85 (ligne pointillée).");
+  setHTML("cardAucLegend",
+    `<span style="color:var(--blue)"><i style="background:var(--blue)"></i>train_auc</span>` +
+    `<span style="color:var(--vital)"><i style="background:var(--vital)"></i>val_auc</span>` +
+    `<span style="color:var(--warn)"><i class="dash" style="color:var(--warn)"></i>cible</span>`);
   lineChart(document.getElementById("chartAuc"),
     [{ name: "train", color: COL.blue, data: series("train_auc") },
      { name: "val", color: COL.vital, data: series("val_auc") }],
     { yMin: 0.4, yMax: 1.0, vline, refs: [{ y: state.expected.val_auc || 0.85, color: COL.warn }] });
 
+  setText("cardSafetyTitle", "🫀 Signes vitaux de sécurité — Sensibilité & FNR");
+  setText("cardSafetyHint", "Le FNR (faux négatifs = molécules toxiques déclarées « sûres ») est l'indicateur le plus critique. Zone rouge = danger.");
+  setHTML("cardSafetyLegend",
+    `<span style="color:var(--ok)"><i style="background:var(--ok)"></i>sensibilité (↑ mieux)</span>` +
+    `<span style="color:var(--danger)"><i style="background:var(--danger)"></i>FNR (↓ mieux)</span>` +
+    `<span style="color:var(--warn)"><i class="dash" style="color:var(--warn)"></i>seuils danger/cible</span>`);
   const fnrDanger = state.thresholds.fnr_danger || 0.5;
   lineChart(document.getElementById("chartSafety"),
     [{ name: "sens", color: COL.ok, data: series("macro_sensitivity") },
@@ -333,6 +418,28 @@ function computeObservations() {
   const L = state.latest, e = state.expected, t = state.thresholds, out = [];
   if (!L || L.epoch == null) {
     return [{ level: "INFO", metric: "—", text: "Aucune métrique reçue. Lance un entraînement." }];
+  }
+  // Phase 1 : lecture basée sur la perte (pas de toxicité)
+  if (isPretrain()) {
+    const vl = L.val_loss, tl = L.train_loss, lr = L.lr, best = bestLoss();
+    if (vl != null) {
+      if (best != null && vl <= best + 1e-12)
+        out.push({ level: "OK", metric: "Perte val", text: `val_loss = ${nf(vl, 4)} : meilleure valeur atteinte jusqu'ici.` });
+      else
+        out.push({ level: "INFO", metric: "Perte val", text: `val_loss = ${nf(vl, 4)} (meilleure = ${nf(best, 4)}).` });
+    }
+    if (vl != null && tl != null) {
+      const gap = vl - tl;
+      if (tl > 0 && gap / Math.abs(tl) > 0.5)
+        out.push({ level: "WARN", metric: "Sur-apprentissage", text: `Écart val−train = ${nf(gap, 4)} : l'encodeur mémorise (réduis les epochs / +données).` });
+      else
+        out.push({ level: "OK", metric: "Généralisation", text: `Écart val−train = ${nf(gap, 4)} : généralisation correcte.` });
+    }
+    if (lossRising())
+      out.push({ level: "WARN", metric: "Tendance", text: "val_loss remonte sur les dernières epochs : learning rate trop élevé ?" });
+    if (lr != null)
+      out.push({ level: "INFO", metric: "Learning rate", text: `LR courant = ${Number(lr).toExponential(1)}.` });
+    return out.length ? out : [{ level: "INFO", metric: "—", text: "Pré-entraînement en cours." }];
   }
   const auc = L.val_auc;
   if (auc != null) {
@@ -435,6 +542,11 @@ function renderAlerts(alerts) {
     }).join("");
     return;
   }
+  // Phase 1 : pas d'analyse de toxicité → ne pas afficher un faux « tout va bien ».
+  if (isPretrain()) {
+    box.innerHTML = `<div class="alert WARN"><div class="a-ico">ℹ️</div><div><div class="a-title">Sécurité non évaluée en Phase 1</div><div class="a-msg">Le pré-entraînement (auto-supervisé) n'a pas de cible toxicologique. Les alertes de sécurité apparaissent en Phase 2 (toxicité) et Phase 3.</div></div></div>`;
+    return;
+  }
   // fallback temps réel
   const L = state.latest, nd = L.n_danger || 0, nw = L.n_warn || 0;
   if (nd) box.innerHTML = `<div class="alert DANGER"><div class="a-ico">🔴</div><div><div class="a-title">${nd} endpoint(s) en DANGER (live)</div><div class="a-msg">Lance une évaluation de checkpoint pour le détail par endpoint.</div></div></div>`;
@@ -461,8 +573,10 @@ function renderCompare() {
   thead.innerHTML = "<tr><th>Métrique</th><th>Obtenu</th><th>Attendu</th><th>Statut</th></tr>";
   tbody.innerHTML = cmp.map(r => {
     const op = r.sens === "max" ? "≤" : "≥";
-    const got = (r.key === "val_auc") ? nf(r.obtenu) : pct(r.obtenu);
-    const exp = (r.key === "val_auc") ? nf(r.attendu, 2) : pct(r.attendu);
+    const isLoss = (r.key === "val_loss" || r.key === "loss_gap");
+    const fmt = (v) => isLoss ? nf(v, 4) : (r.key === "val_auc" ? nf(v) : pct(v));
+    const got = fmt(r.obtenu);
+    const exp = (r.key === "val_auc") ? nf(r.attendu, 2) : fmt(r.attendu);
     return `<tr><td>${esc(r.metric)}</td><td>${got}</td><td>${op} ${exp}</td>
       <td><span class="badge ${r.ok ? "OK" : "DANGER"}">${r.ok ? "OK" : "RATÉ"}</span></td></tr>`;
   }).join("") || `<tr><td colspan="4" style="color:var(--faint)">Pas encore de métriques.</td></tr>`;
@@ -477,13 +591,22 @@ async function renderRunsTable() {
   const data = await fetchJSON("/api/compare");
   const thead = document.querySelector("#runsTable thead");
   const tbody = document.querySelector("#runsTable tbody");
-  thead.innerHTML = "<tr><th>Run</th><th>Phase</th><th>Epochs</th><th>ROC-AUC</th><th>Sensib.</th><th>FNR</th><th>Danger</th><th>Verdict</th></tr>";
-  tbody.innerHTML = (data.runs || []).map(r => `
+  thead.innerHTML = "<tr><th>Run</th><th>Phase</th><th>Epochs</th><th>AUC / Perte</th><th>Sensib.</th><th>FNR</th><th>Danger</th><th>Verdict</th></tr>";
+  tbody.innerHTML = (data.runs || []).map(r => {
+    // Phase 1 : pas de toxicité → colonne clé = perte val, le reste sans objet.
+    const keyMetric = r.is_pretrain
+      ? `<span title="perte de validation">loss ${nf(r.val_loss, 3)}</span>`
+      : nf(r.val_auc);
+    const sens = r.is_pretrain ? "—" : pct(r.macro_sensitivity);
+    const fnr = r.is_pretrain ? "—" : pct(r.macro_fnr);
+    const danger = r.is_pretrain ? "—" : (r.n_danger ?? "—");
+    return `
     <tr data-level="${r.verdict}">
       <td>${esc(r.id)}</td><td>${esc(r.phase)}</td><td>${r.epochs}</td>
-      <td>${nf(r.val_auc)}</td><td>${pct(r.macro_sensitivity)}</td><td>${pct(r.macro_fnr)}</td>
-      <td>${r.n_danger ?? "—"}</td><td><span class="badge ${r.verdict}">${r.verdict}</span></td>
-    </tr>`).join("") || `<tr><td colspan="8" style="color:var(--faint)">Aucun run détecté.</td></tr>`;
+      <td>${keyMetric}</td><td>${sens}</td><td>${fnr}</td>
+      <td>${danger}</td><td><span class="badge ${r.verdict}">${r.verdict}</span></td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="8" style="color:var(--faint)">Aucun run détecté.</td></tr>`;
 }
 
 /* ---------- statut header ---------- */
@@ -568,13 +691,16 @@ function updateKaggleBanner() {
   const remote = (state.runs || []).filter(r => r.source === "remote" && r.status === "running");
   if (!remote.length) { banner.style.display = "none"; return; }
   const r = remote[0];
-  const auc = (r.val_auc != null) ? nf(r.val_auc) : "—";
+  // Métrique clé adaptée à la phase : perte (Phase 1) ou AUC (Phase 2/3).
+  const metric = r.is_pretrain
+    ? `val_loss ${r.val_loss != null ? nf(r.val_loss, 4) : "—"}`
+    : `AUC ${r.val_auc != null ? nf(r.val_auc) : "—"}`;
   const ep = r.epochs_total ? `${r.last_epoch || 0}/${r.epochs_total}` : `${r.last_epoch || 0}`;
   banner.style.display = "flex";
   banner.innerHTML =
     `<span class="kb-pulse"></span>` +
     `<div><b>🛰️ Entraînement Kaggle en cours</b> — run <code>${esc(r.id)}</code> · ` +
-    `epoch ${ep} · AUC ${auc} · ${r.points} points` +
+    `epoch ${ep} · ${metric} · ${r.points} points` +
     `<div class="kb-meta">Les courbes et le verdict clinique se mettent à jour en temps réel. ` +
     `<a href="#" id="kbGoEvo">Voir l'évolution →</a></div></div>`;
   const go = document.getElementById("kbGoEvo");
@@ -621,7 +747,10 @@ function connectStream(runId) {
     }
     renderEvolution();
     updateEpochSlider();
-    flashToast(`Epoch ${e.epoch} · AUC ${nf(e.val_auc)} · FNR ${pct(e.macro_fnr)}`);
+    const toastMsg = isPretrain()
+      ? `Epoch ${e.epoch} · val_loss ${nf(e.val_loss, 4)}`
+      : `Epoch ${e.epoch} · AUC ${nf(e.val_auc)} · FNR ${pct(e.macro_fnr)}`;
+    flashToast(toastMsg);
   });
   es.addEventListener("status", (ev) => {
     const s = JSON.parse(ev.data);
@@ -973,11 +1102,26 @@ function renderEpochTable() {
   const thead = document.querySelector("#epochTable thead");
   const tbody = document.querySelector("#epochTable tbody");
   if (!tbody) return;
-  thead.innerHTML = "<tr><th>Epoch</th><th>Score clinique</th><th>ROC-AUC</th><th>Sensib.</th><th>FNR</th><th>Danger</th><th>Verdict</th><th>Checkpoint</th><th></th></tr>";
+  const pre = isPretrain();
+  thead.innerHTML = pre
+    ? "<tr><th>Epoch</th><th>Perte val</th><th>Perte train</th><th>Écart</th><th>Verdict</th><th>Checkpoint</th><th></th></tr>"
+    : "<tr><th>Epoch</th><th>Score clinique</th><th>ROC-AUC</th><th>Sensib.</th><th>FNR</th><th>Danger</th><th>Verdict</th><th>Checkpoint</th><th></th></tr>";
   const rows = (state.epochList || []).map(r => {
     const star = r.is_best ? ' <span class="best-star" title="Meilleure epoch">⭐</span>' : "";
     const ckpt = r.has_ckpt ? `${r.size_mb != null ? r.size_mb + " Mo" : "✓"}` : "—";
     const pinned = (r.epoch === state.pinnedEpoch) ? ' class="ep-pinned"' : "";
+    if (pre) {
+      const gap = (r.val_loss != null && r.train_loss != null) ? nf(r.val_loss - r.train_loss, 4) : "—";
+      return `<tr data-level="${r.verdict}" data-ep="${r.epoch}"${pinned}>
+        <td><b>${r.epoch}</b>${star}</td>
+        <td>${nf(r.val_loss, 4)}</td>
+        <td>${nf(r.train_loss, 4)}</td>
+        <td>${gap}</td>
+        <td><span class="badge ${r.verdict}">${r.verdict}</span></td>
+        <td>${ckpt}</td>
+        <td><button class="ep-del" data-ep="${r.epoch}" title="Supprimer cette epoch (checkpoint + point)">🗑</button></td>
+      </tr>`;
+    }
     return `<tr data-level="${r.verdict}" data-ep="${r.epoch}"${pinned}>
       <td><b>${r.epoch}</b>${star}</td>
       <td>${nf(r.clinical_score)}</td>
