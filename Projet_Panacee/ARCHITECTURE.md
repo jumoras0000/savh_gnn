@@ -68,8 +68,9 @@ L'entraînement écrit un point JSON par epoch dans `checkpoints/<run>/live_metr
 les mises à jour par **SSE**. Pour un entraînement **distant** (Kaggle), définir
 `PANACEE_PUSH_URL` (+ `PANACEE_PUSH_TOKEN`) côté Kaggle : chaque point est aussi
 envoyé en POST à `/api/ingest` du dashboard (exposé via un tunnel type ngrok).
-Le push est *best-effort* (n'interrompt jamais l'entraînement). Voir
-[KAGGLE_GUIDE.md](../KAGGLE_GUIDE.md) et [.env.example](.env.example).
+Le push est *best-effort* (n'interrompt jamais l'entraînement). Voir le guide complet :
+[KAGGLE_TRAINING_GUIDE.md](KAGGLE_TRAINING_GUIDE.md) (setup, tunnel, run, dépannage)
+et [.env.example](.env.example) pour les variables d'environnement.
 
 ## Flux de données (résumé)
 
