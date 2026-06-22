@@ -6,11 +6,17 @@ Corrections :
   - Détection robuste de la colonne SMILES et des colonnes de tâches.
   - graph_builder.smiles_to_graph retourne None → filtré automatiquement.
 """
-import io
 import sys
 
+# Console Windows en UTF-8, SANS remplacer sys.stdout (ce qui casserait la
+# capture de pytest et toute redirection). reconfigure() n'existe que sur le
+# vrai TextIOWrapper d'une console : sous capture/pipe, l'AttributeError est
+# ignorée (l'encodage est de toute façon géré via PYTHONIOENCODING).
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 from pathlib import Path
 from typing import List, Optional

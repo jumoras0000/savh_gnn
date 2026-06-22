@@ -124,9 +124,11 @@ def compute_phase3_metrics(predictions, targets):
                     continue
                 y = tgt[mask, t]
                 p = probs[mask, t]
+                # AUC et F1 seulement si les DEUX classes sont présentes :
+                # un 0 fictif (tâche mono-classe) fausserait la macro-moyenne.
                 if len(np.unique(y)) > 1:
                     aucs.append(roc_auc_score(y, p))
-                f1s.append(f1_score(y, (p > 0.5).astype(int), zero_division=0))
+                    f1s.append(f1_score(y, (p > 0.5).astype(int), zero_division=0))
 
             prop_metrics["roc_auc"] = float(np.mean(aucs)) if aucs else 0.0
             prop_metrics["f1"] = float(np.mean(f1s)) if f1s else 0.0
@@ -149,9 +151,11 @@ def compute_phase3_metrics(predictions, targets):
             pred_valid = pred_np[valid]
             tgt_valid = tgt[valid]
             rmse = float(np.sqrt(np.mean((pred_valid - tgt_valid) ** 2)))
-            ss_res = np.sum((tgt_valid - pred_valid) ** 2)
-            ss_tot = np.sum((tgt_valid - tgt_valid.mean()) ** 2)
-            r2 = float(1 - ss_res / max(ss_tot, 1e-8))
+            ss_res = float(np.sum((tgt_valid - pred_valid) ** 2))
+            ss_tot = float(np.sum((tgt_valid - tgt_valid.mean()) ** 2))
+            # R² indéfini si la cible est ~constante (ss_tot≈0) : on renvoie 0.0
+            # (neutre) plutôt que ss_res/1e-8 qui produit un R² délirant (-1e8…).
+            r2 = float(1 - ss_res / ss_tot) if ss_tot > 1e-8 else 0.0
             prop_metrics["rmse"] = rmse
             prop_metrics["r2"] = r2
 

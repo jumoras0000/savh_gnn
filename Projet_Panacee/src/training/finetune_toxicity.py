@@ -103,11 +103,14 @@ def compute_metrics(logits, targets):
         p = probs[mask, t]
         pred = (p > 0.5).astype(int)
 
+        # F1/précision/rappel ne sont définis que si les DEUX classes sont
+        # présentes : sinon on ne les compte PAS (un 0 fictif fausserait la
+        # macro-moyenne, cf. même correction côté clinical_metrics).
         if len(np.unique(y)) > 1:
             aucs.append(roc_auc_score(y, p))
-        f1s.append(f1_score(y, pred, zero_division=0))
-        precs.append(precision_score(y, pred, zero_division=0))
-        recs.append(recall_score(y, pred, zero_division=0))
+            f1s.append(f1_score(y, pred, zero_division=0))
+            precs.append(precision_score(y, pred, zero_division=0))
+            recs.append(recall_score(y, pred, zero_division=0))
 
     return {
         "roc_auc": float(np.mean(aucs)) if aucs else 0.0,
