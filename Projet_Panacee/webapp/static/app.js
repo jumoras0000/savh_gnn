@@ -48,6 +48,16 @@ function fitCanvas(canvas) {
 const nf = (v, d = 3) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : Number(v).toFixed(d);
 const pct = (v) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : (v * 100).toFixed(0) + "%";
 
+// Format adaptatif pour les graduations d'axe : lisible pour les petites valeurs
+// (perte ≈ 0.0006, learning rate ≈ 5e-4) comme pour les grandes (AUC, perte CE).
+function fmtTick(v, range) {
+  const a = Math.abs(v);
+  if (a !== 0 && a < 0.01) return v.toExponential(1);  // très petit → notation scientifique
+  if (range < 0.1) return v.toFixed(4);
+  if (range < 2) return v.toFixed(2);
+  return v.toFixed(1);
+}
+
 /* ====================================================================
    Graphique en courbes (multi-séries + lignes de référence + zones)
    series: [{name, color, data:[{x,y}], dashed?}]
@@ -81,10 +91,11 @@ function lineChart(canvas, series, opts = {}) {
   ctx.strokeStyle = COL.line; ctx.fillStyle = COL.faint;
   ctx.font = MONO; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.lineWidth = 1;
   const ticks = 4;
+  const yRange = yMax - yMin;
   for (let i = 0; i <= ticks; i++) {
-    const val = yMin + (yMax - yMin) * i / ticks, yy = Y(val);
+    const val = yMin + yRange * i / ticks, yy = Y(val);
     ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(w - padR, yy); ctx.stroke();
-    ctx.globalAlpha = 1; ctx.fillText(val.toFixed(2), padL - 6, yy);
+    ctx.globalAlpha = 1; ctx.fillText(fmtTick(val, yRange), padL - 6, yy);
   }
 
   // axe X (epochs)
@@ -1047,6 +1058,22 @@ function lastEpochNum() {
   return ep.length ? (ep[ep.length - 1].epoch || ep.length) : 1;
 }
 
+// Meilleure epoch — robuste. Pour le pré-entraînement, on la RECALCULE côté
+// client (perte de validation minimale) : ça reste correct même si le backend
+// ou le flux SSE ne l'a pas (encore) rafraîchie. Sinon on garde la valeur
+// serveur (score clinique, non recalculable côté client).
+function computeBestEpoch() {
+  if (isPretrain()) {
+    let bn = null, bv = Infinity;
+    for (const e of state.epochs) {
+      const v = e.val_loss;
+      if (v != null && !Number.isNaN(v) && v < bv) { bv = v; bn = e.epoch; }
+    }
+    if (bn != null) return bn;
+  }
+  return state.bestEpoch;
+}
+
 function updateEpochSlider() {
   const slider = document.getElementById("epochSlider");
   const label = document.getElementById("epochLabel");
@@ -1057,7 +1084,8 @@ function updateEpochSlider() {
   slider.min = lo; slider.max = Math.max(lo, hi);
   const cur = state.pinnedEpoch != null ? state.pinnedEpoch : hi;
   slider.value = cur;
-  const best = state.bestEpoch != null ? ` · ⭐ meilleure : epoch ${state.bestEpoch}` : "";
+  const bestEp = computeBestEpoch();
+  const best = bestEp != null ? ` · ⭐ meilleure : epoch ${bestEp}` : "";
   if (label) label.textContent = `epoch ${cur} / ${hi}${best}`;
   if (mode) {
     const live = state.pinnedEpoch == null;
@@ -1113,11 +1141,15 @@ function renderEpochTable() {
   const tbody = document.querySelector("#epochTable tbody");
   if (!tbody) return;
   const pre = isPretrain();
+  // Pour le pré-entraînement, l'étoile est recalculée côté client (perte min)
+  // pour rester correcte même si le backend renvoie un is_best périmé.
+  const clientBest = computeBestEpoch();
   thead.innerHTML = pre
     ? "<tr><th>Epoch</th><th>Perte val</th><th>Perte train</th><th>Écart</th><th>Verdict</th><th>Checkpoint</th><th></th></tr>"
     : "<tr><th>Epoch</th><th>Score clinique</th><th>ROC-AUC</th><th>Sensib.</th><th>FNR</th><th>Danger</th><th>Verdict</th><th>Checkpoint</th><th></th></tr>";
   const rows = (state.epochList || []).map(r => {
-    const star = r.is_best ? ' <span class="best-star" title="Meilleure epoch">⭐</span>' : "";
+    const isBest = pre ? (r.epoch === clientBest) : r.is_best;
+    const star = isBest ? ' <span class="best-star" title="Meilleure epoch">⭐</span>' : "";
     const ckpt = r.has_ckpt ? `${r.size_mb != null ? r.size_mb + " Mo" : "✓"}` : "—";
     const pinned = (r.epoch === state.pinnedEpoch) ? ' class="ep-pinned"' : "";
     if (pre) {
@@ -1213,7 +1245,8 @@ function setupEpochTools() {
     slider.addEventListener("change", () => selectEpoch(parseInt(slider.value, 10)));
   }
   document.getElementById("epochBestBtn")?.addEventListener("click", () => {
-    if (state.bestEpoch != null) selectEpoch(state.bestEpoch);
+    const best = computeBestEpoch();
+    if (best != null) selectEpoch(best);
     else flashToast("Pas encore de meilleure epoch.", true);
   });
   document.getElementById("epochLiveBtn")?.addEventListener("click", unpinEpoch);

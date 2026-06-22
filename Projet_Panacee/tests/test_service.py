@@ -167,6 +167,18 @@ def test_phase1_compare_uses_loss(runs_root: Path):
     assert "val_auc" not in keys
 
 
+def test_compare_runs_orders_tox_first_then_pretrain(runs_root: Path):
+    """Toxicité (classée par AUC) avant pré-entraînement (classé par perte)."""
+    write_run(runs_root, "tox_a", {"phase": "phase2"}, [make_epoch(1, 0.70)])
+    write_run(runs_root, "tox_b", {"phase": "phase2"}, [make_epoch(1, 0.90)])
+    write_run(runs_root, "pre_a", {"phase": "phase1"}, [_pre(1, 0.50)])
+    rows = service.compare_runs(runs_root)
+    ids = [r["id"] for r in rows]
+    # tox_b (AUC 0.90) avant tox_a (0.70), pré-entraînement en dernier
+    assert ids.index("tox_b") < ids.index("tox_a") < ids.index("pre_a")
+    assert rows[-1]["is_pretrain"] is True and rows[-1]["val_loss"] == 0.50
+
+
 # ── helpers ────────────────────────────────────────────────────────────
 def _read(path):
     from src.utils.live_logger import read_live

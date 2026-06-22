@@ -628,7 +628,15 @@ def compare_runs(root: str | Path = "checkpoints") -> list[dict]:
             "best_loss": last.get("best_loss"),
             "verdict": run_verdict(meta, epochs, last)["level"],
         })
-    out.sort(key=lambda r: (r["val_auc"] is None, -(r["val_auc"] or 0)))
+    # Tri : toxicité (Phase 2/3) en tête, classée par AUC décroissante ;
+    # pré-entraînement (Phase 1) ensuite, classé par perte de validation croissante.
+    def _key(r):
+        if r["val_auc"] is not None:
+            return (0, -r["val_auc"])
+        vl = r.get("val_loss")
+        return (1, vl if isinstance(vl, (int, float)) else float("inf"))
+
+    out.sort(key=_key)
     return out
 
 
