@@ -552,6 +552,9 @@ def main():
         layer_lr = lr_enc * llrd_factor ** (n_enc_layers - 1 - i)
         param_groups.extend(_split_params(model.encoder.convs[i], layer_lr))
         param_groups.extend(_split_params(model.encoder.norms[i], layer_lr))
+    # Virtual Node (si actif) → LR encodeur plein
+    if hasattr(model.encoder, "virtual_node"):
+        param_groups.extend(_split_params(model.encoder.virtual_node, lr_enc))
     # Pooling + projection → LR encodeur plein
     param_groups.extend(_split_params(model.encoder.pool_gate, lr_enc))
     param_groups.extend(_split_params(model.encoder.projection, lr_enc))

@@ -121,6 +121,9 @@ class MultiPropertyPredictor(nn.Module):
                     p.requires_grad = True
                 for p in self.encoder.pool_gate.parameters():
                     p.requires_grad = True
+                if hasattr(self.encoder, "virtual_node"):
+                    for p in self.encoder.virtual_node.parameters():
+                        p.requires_grad = True
 
     def encode(self, batch):
         """Retourne l'embedding moléculaire."""

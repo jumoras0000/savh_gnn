@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Lanceur Phase 2 - Fine-tuning toxicite.
 

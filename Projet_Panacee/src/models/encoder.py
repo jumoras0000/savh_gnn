@@ -137,7 +137,6 @@ class VirtualNode(nn.Module):
 
     def pool_and_broadcast(self, x, batch, vn_feat):
         """Agrège nœuds → VN, met à jour VN, broadcast retour."""
-        from torch_geometric.nn import global_mean_pool
         pooled = global_mean_pool(x, batch)  # [B, D]
         vn_feat = vn_feat + self.mlp_update(pooled + vn_feat)  # residual
         x = x + vn_feat[batch]
@@ -217,9 +216,8 @@ class MolecularEncoder(nn.Module):
         if self.use_virtual_node:
             if batch is None:
                 batch = torch.zeros(h.size(0), dtype=torch.long, device=h.device)
-            vn_feat = self.virtual_node.vn_embedding.weight.expand(
-                batch.max().item() + 1, -1
-            )
+            n_graphs = int(batch.max().item()) + 1 if h.size(0) > 0 else 1
+            vn_feat = self.virtual_node.vn_embedding.weight.expand(n_graphs, -1).clone()
 
         for conv, norm, drop in zip(self.convs, self.norms, self.drops, strict=False):
             h_res = h
