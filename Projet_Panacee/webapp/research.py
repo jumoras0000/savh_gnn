@@ -233,10 +233,10 @@ def assess_risk(result: dict) -> dict:
         elif safety < 70:
             bump("WARN"); obs.append({"level": "WARN", "text": f"Score de sécurité moyen ({safety}%)."})
 
-    # Biodisponibilité
-    bio = result.get("bioavailability", {}).get("probabilite")
+    # Perméabilité BBB
+    bio = result.get("bbb_penetration", result.get("bioavailability", {})).get("probabilite")
     if bio is not None and bio < 40:
-        bump("WARN"); obs.append({"level": "WARN", "text": f"Biodisponibilité orale faible ({bio}%)."})
+        bump("WARN"); obs.append({"level": "WARN", "text": f"Faible perméabilité BBB ({bio}%)."})
 
     # Lipophilicité (Ro5 : LogP élevé = accumulation)
     logp = result.get("lipophilicity", {}).get("log_p")

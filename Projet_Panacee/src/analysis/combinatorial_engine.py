@@ -91,6 +91,8 @@ class PanaceeAnalyzer:
                 f"Lancez d'abord : python run_phase3.py --download"
             )
 
+        self.ensemble = None  # initialisé via load_ensemble()
+
         print("🔬 Chargement du modèle Panacée Phase 3...")
         print(f"   Checkpoint : {checkpoint_path}")
         print(f"   Device : {self.device}")
@@ -143,8 +145,13 @@ class PanaceeAnalyzer:
 
         self.dose_levels = r_config.get("dose_levels", PHASE3["dose_levels"])
         self.max_molecules = r_config.get("max_molecules", PHASE3["max_molecules_combo"])
+        self.regression_stats = self.ckpt.get("regression_stats", {})
+        self.optimal_thresholds = self.ckpt.get("optimal_thresholds", {})
+        self.temperatures = self.ckpt.get("temperatures", {})
 
         print("   ✓ Modèle chargé avec succès")
+        if self.optimal_thresholds:
+            print(f"   ✓ Seuils optimaux chargés ({len(self.optimal_thresholds)} tâches)")
         print("   ✓ Raisonneur IA prêt")
 
     # ──────────────────────────────────────────────────────────────────
@@ -152,12 +159,14 @@ class PanaceeAnalyzer:
     # ──────────────────────────────────────────────────────────────────
 
     @torch.no_grad()
-    def predict_properties(self, smiles: str) -> Optional[Dict]:
+    def predict_properties(self, smiles: str, mc_samples: int = 0) -> Optional[Dict]:
         """
         Prédit toutes les propriétés d'une molécule.
 
         Args:
             smiles: chaîne SMILES de la molécule
+            mc_samples: si > 0, active MC Dropout (N forward passes)
+                        et ajoute des intervalles d'incertitude
 
         Returns:
             dict avec :
@@ -170,6 +179,7 @@ class PanaceeAnalyzer:
               - metabolic_stability: float (probabilité)
               - safety_score: float [0,1]
               - drug_likeness: float [0,1]
+              - uncertainty: dict (si mc_samples > 0)
         """
         graph = smiles_to_graph(smiles)
         if graph is None:
@@ -177,7 +187,20 @@ class PanaceeAnalyzer:
             return None
 
         batch = Batch.from_data_list([graph]).to(self.device)
-        predictions = self.model(batch)
+
+        if self.ensemble is not None:
+            predictions, ens_std = self.ensemble.predict(batch)
+            self._mc_uncertainties = ens_std
+            mc_samples = len(self.ensemble.models)  # active le bloc uncertainty
+        elif mc_samples > 0:
+            predictions = self._mc_dropout_predict(batch, mc_samples)
+        else:
+            predictions = self.model(batch)
+
+        # Temperature scaling (calibration post-hoc)
+        for task_name, temp in self.temperatures.items():
+            if task_name in predictions and temp > 0:
+                predictions[task_name] = predictions[task_name] / temp
 
         result = {"smiles": smiles}
 
@@ -188,13 +211,15 @@ class PanaceeAnalyzer:
             "NR-ER", "NR-ER-LBD", "NR-PPAR-gamma",
             "SR-ARE", "SR-ATAD5", "SR-HSE", "SR-MMP", "SR-p53",
         ]
+        tox_thresh = self.optimal_thresholds.get("toxicity", [0.5] * 12)
         result["toxicity"] = {}
         for i, task_name in enumerate(tox21_tasks):
             if i < len(tox_probs):
                 prob = float(tox_probs[i])
+                th = tox_thresh[i] if i < len(tox_thresh) else 0.5
                 result["toxicity"][task_name] = {
                     "probabilite": round(prob * 100, 1),
-                    "toxique": prob > 0.5,
+                    "toxique": prob > th,
                 }
 
         # Score de sécurité moyen (inverse de la toxicité moyenne)
@@ -203,43 +228,129 @@ class PanaceeAnalyzer:
 
         # ── Efficacité ──
         eff_prob = torch.sigmoid(predictions["efficacy"]).cpu().item()
+        eff_thresh = self.optimal_thresholds.get("efficacy", [0.5])
+        eff_th = eff_thresh[0] if eff_thresh else 0.5
         result["efficacy"] = {
             "probabilite_activite": round(eff_prob * 100, 1),
-            "actif": eff_prob > 0.5,
+            "actif": eff_prob > eff_th,
         }
 
-        # ── Solubilité ──
+        # ── Solubilité (dénormalisation z-score → LogS original) ──
         sol_val = predictions["solubility"].cpu().item()
+        if "solubility" in self.regression_stats:
+            s = self.regression_stats["solubility"]
+            sol_val = sol_val * s["std"] + s["mean"]
         result["solubility"] = {
             "log_s": round(sol_val, 3),
             "interpretation": self._interpret_solubility(sol_val),
         }
 
-        # ── Lipophilicité ──
+        # ── Lipophilicité (dénormalisation z-score → LogP original) ──
         lipo_val = predictions["lipophilicity"].cpu().item()
+        if "lipophilicity" in self.regression_stats:
+            s = self.regression_stats["lipophilicity"]
+            lipo_val = lipo_val * s["std"] + s["mean"]
         result["lipophilicity"] = {
             "log_p": round(lipo_val, 3),
             "interpretation": self._interpret_lipophilicity(lipo_val),
         }
 
-        # ── Biodisponibilité ──
-        bio_prob = torch.sigmoid(predictions["bioavailability"]).cpu().item()
-        result["bioavailability"] = {
+        # ── Perméabilité BBB ──
+        bbb_key = "bbb_penetration" if "bbb_penetration" in predictions else "bioavailability"
+        bio_prob = torch.sigmoid(predictions[bbb_key]).cpu().item()
+        bbb_thresh = self.optimal_thresholds.get("bbb_penetration", [0.5])
+        bbb_th = bbb_thresh[0] if bbb_thresh else 0.5
+        result["bbb_penetration"] = {
             "probabilite": round(bio_prob * 100, 1),
-            "biodisponible": bio_prob > 0.5,
+            "permeable": bio_prob > bbb_th,
         }
+        result["bioavailability"] = result["bbb_penetration"]
 
-        # ── Stabilité métabolique ──
-        stab_prob = torch.sigmoid(predictions["metabolic_stability"]).cpu().item()
-        result["metabolic_stability"] = {
+        # ── Toxicité clinique ──
+        ct_key = "clinical_toxicity" if "clinical_toxicity" in predictions else "metabolic_stability"
+        stab_prob = torch.sigmoid(predictions[ct_key]).cpu().item()
+        ct_thresh = self.optimal_thresholds.get("clinical_toxicity", [0.5])
+        ct_th = ct_thresh[0] if ct_thresh else 0.5
+        result["clinical_toxicity"] = {
             "probabilite": round(stab_prob * 100, 1),
-            "stable": stab_prob > 0.5,
+            "clinically_toxic": stab_prob > ct_th,
         }
+        result["metabolic_stability"] = result["clinical_toxicity"]
 
         # ── Score Drug-Likeness composite ──
         drug_score = self._compute_drug_likeness(result)
         result["drug_likeness"] = drug_score
 
+        # ── Incertitude MC Dropout ──
+        if mc_samples > 0 and hasattr(self, "_mc_uncertainties"):
+            unc = self._mc_uncertainties
+            method = (f"Deep Ensemble ({mc_samples} models)"
+                      if self.ensemble is not None
+                      else f"MC Dropout ({mc_samples} samples)")
+            result["uncertainty"] = {
+                "method": method,
+                "toxicity_std": float(unc.get("toxicity", torch.tensor(0)).mean()),
+                "efficacy_std": float(unc.get("efficacy", torch.tensor(0)).mean()),
+                "solubility_std": float(unc.get("solubility", torch.tensor(0)).mean()),
+                "lipophilicity_std": float(unc.get("lipophilicity", torch.tensor(0)).mean()),
+                "bbb_std": float(unc.get("bbb_penetration", torch.tensor(0)).mean()),
+                "clinical_tox_std": float(unc.get("clinical_toxicity", torch.tensor(0)).mean()),
+            }
+            avg_std = np.mean(list(result["uncertainty"].values())[2:])
+            result["uncertainty"]["confidence_level"] = (
+                "high" if avg_std < 0.1 else "medium" if avg_std < 0.3 else "low"
+            )
+            del self._mc_uncertainties
+
+        return result
+
+    def load_ensemble(self, checkpoint_paths: List[str]):
+        """Charge un Deep Ensemble depuis N checkpoints (seeds différentes)."""
+        from src.models.ensemble import DeepEnsemble
+
+        config = self.ckpt.get("config", {})
+
+        def factory():
+            enc = MolecularEncoder(
+                atom_dim=config.get("atom_feature_dim", ATOM_FEATURE_DIM),
+                hidden_dim=config.get("hidden_dim", HIDDEN_DIM),
+                num_layers=config.get("num_gnn_layers", NUM_GNN_LAYERS),
+                edge_dim=config.get("bond_feature_dim", BOND_FEATURE_DIM),
+                output_dim=config.get("output_dim", OUTPUT_DIM),
+                dropout=config.get("dropout", DROPOUT),
+                conv_type=config.get("conv_type", CONV_TYPE),
+                attention_heads=config.get("attention_heads", ATTENTION_HEADS),
+            )
+            return MultiPropertyPredictor(
+                encoder=enc,
+                hidden_dim=config.get("hidden_dim", HIDDEN_DIM),
+                dropout=config.get("dropout", DROPOUT),
+            )
+
+        self.ensemble = DeepEnsemble.from_checkpoints(
+            paths=checkpoint_paths,
+            model_factory=factory,
+            device=str(self.device),
+        )
+        print(f"   ✓ Deep Ensemble chargé ({len(checkpoint_paths)} modèles)")
+
+    def _mc_dropout_predict(self, batch, n_samples: int = 30) -> dict:
+        """MC Dropout : N forward passes avec dropout activé → mean + std."""
+        self.model.train()  # active dropout
+        all_preds = {}
+        for _ in range(n_samples):
+            with torch.no_grad():
+                preds = self.model(batch)
+            for k, v in preds.items():
+                all_preds.setdefault(k, []).append(v.float())
+        self.model.eval()
+
+        result = {}
+        self._mc_uncertainties = {}
+        for k, tensors in all_preds.items():
+            stacked = torch.stack(tensors, dim=0)  # [N, B, D]
+            result[k] = stacked.mean(dim=0)
+            self._mc_uncertainties[k] = stacked.std(dim=0)
         return result
 
     @torch.no_grad()
@@ -319,7 +430,7 @@ class PanaceeAnalyzer:
 
         # Extraire les résultats
         synergy_matrix = reasoner_output["synergy_matrix"][0, :N, :N].cpu().numpy()
-        dose_dists = reasoner_output["dose_distributions"][0, :N].cpu().numpy()
+        dose_dists = np.exp(reasoner_output["dose_distributions"][0, :N].cpu().numpy())
         confidence = reasoner_output["confidence"][0].cpu().item()
         success_score = reasoner_output["success_score"][0].cpu().item()
 

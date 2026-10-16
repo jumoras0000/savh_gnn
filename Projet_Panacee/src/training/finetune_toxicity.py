@@ -30,8 +30,11 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset, Subset
 from tqdm import tqdm
 
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.reproducibility import set_seed
 
 from src.config import (
     ATOM_FEATURE_DIM,
@@ -163,7 +166,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
 
         optimizer.zero_grad()
         if use_amp:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 logits = model(batch_data)
                 loss = criterion(logits, labels)
             scaler.scale(loss).backward()
@@ -349,7 +352,7 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
     )
 
     use_amp = (device.type == "cuda")
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     ema = ModelEMA(model, decay=0.999) if use_ema else None
     print(f"{label}AMP={use_amp} | EMA={use_ema} | {args.epochs} epochs | patience={args.patience}")
 
@@ -529,6 +532,7 @@ def main():
     p.add_argument("--device", type=str, default=str(DEVICE))
     args = p.parse_args()
 
+    set_seed(42)
     device = torch.device(args.device)
     os.makedirs(args.save_dir, exist_ok=True)
     log_dir = LOG_DIR / "phase2"

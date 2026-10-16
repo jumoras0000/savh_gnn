@@ -103,6 +103,7 @@ DROPOUT = 0.2                # augmenté de 0.1 à 0.2 pour meilleure régularis
 # Type de convolution : "attention" (GATv2 edge-aware, recommandé) ou "mpnn" (Gilmer)
 CONV_TYPE = "attention"
 ATTENTION_HEADS = 4         # nombre de têtes d'attention (doit diviser HIDDEN_DIM)
+USE_VIRTUAL_NODE = True     # Virtual Node : +1-3% sur OGB-mol, O(n) global message passing
 
 # ══════════════════════════════════════════════════════════════════════
 # PHASE 1 — PRÉ-ENTRAÎNEMENT MGM
@@ -157,12 +158,12 @@ PHASE2 = {
 PHASE3 = {
     # Propriétés prédites (multi-tâches étendues)
     "property_heads": {
-        "toxicity": 12,       # 12 tâches Tox21
-        "efficacy": 1,        # Score d'efficacité prédit
-        "solubility": 1,      # Solubilité aqueuse
-        "lipophilicity": 1,   # LogP
-        "bioavailability": 1, # Biodisponibilité orale
-        "metabolic_stability": 1,  # Stabilité métabolique
+        "toxicity": 12,           # 12 tâches Tox21
+        "efficacy": 1,            # HIV active (classification)
+        "solubility": 1,          # LogS (régression, ESOL)
+        "lipophilicity": 1,       # LogP (régression)
+        "bbb_penetration": 1,     # Blood-Brain Barrier (classification, BBBP)
+        "clinical_toxicity": 1,   # Toxicité clinique (classification, ClinTox)
     },
     "total_tasks": 17,
 
@@ -178,6 +179,9 @@ PHASE3 = {
     "patience": 25,
     "grad_clip": 1.0,
     "freeze_encoder_epochs": 5,
+    "gradient_accumulation_steps": 2,
+    "ema_decay": 0.999,
+    "llrd_factor": 0.8,
 
     # Module IA Raisonnement
     "reasoner_hidden_dim": 512,

@@ -117,12 +117,39 @@ def _make_conv(conv_type: str, hidden_dim: int, edge_dim: int, heads: int, dropo
     raise ValueError(f"conv_type inconnu: {conv_type} (attendu: 'mpnn' ou 'attention')")
 
 
+class VirtualNode(nn.Module):
+    """Virtual Node : broadcast global → tous les nœuds à chaque couche.
+
+    Ajoute +1-3% sur OGB-mol benchmarks en permettant un message passing
+    global en O(n) sans full connectivity.
+    """
+
+    def __init__(self, hidden_dim: int, dropout: float = 0.2):
+        super().__init__()
+        self.vn_embedding = nn.Embedding(1, hidden_dim)
+        self.mlp_update = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+        )
+        nn.init.zeros_(self.vn_embedding.weight)
+
+    def pool_and_broadcast(self, x, batch, vn_feat):
+        """Agrège nœuds → VN, met à jour VN, broadcast retour."""
+        from torch_geometric.nn import global_mean_pool
+        pooled = global_mean_pool(x, batch)  # [B, D]
+        vn_feat = vn_feat + self.mlp_update(pooled + vn_feat)  # residual
+        x = x + vn_feat[batch]
+        return x, vn_feat
+
+
 class MolecularEncoder(nn.Module):
     """
     Encodeur GNN pour molécules.
 
     Architecture :
-        Embedding → N × (Conv + Norm + SiLU + Dropout + Residual) → TriplePool → Projection
+        Embedding → N × (Conv + VN + Norm + SiLU + Dropout + Residual) → TriplePool → Projection
     """
 
     def __init__(
@@ -135,12 +162,14 @@ class MolecularEncoder(nn.Module):
         dropout: float = 0.2,
         conv_type: str = "attention",
         attention_heads: int = 4,
+        use_virtual_node: bool = True,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.output_dim = output_dim
         self.conv_type = conv_type
+        self.use_virtual_node = use_virtual_node
 
         # ── Embedding initial ─────────────────────────────────────────
         self.atom_embedding = nn.Sequential(
@@ -149,6 +178,10 @@ class MolecularEncoder(nn.Module):
             nn.SiLU(),
             nn.Dropout(dropout),
         )
+
+        # ── Virtual Node ──────────────────────────────────────────────
+        if use_virtual_node:
+            self.virtual_node = VirtualNode(hidden_dim, dropout)
 
         # ── Couches de convolution ────────────────────────────────────
         self.convs = nn.ModuleList()
@@ -176,11 +209,22 @@ class MolecularEncoder(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def encode_nodes(self, x, edge_index, edge_attr):
+    def encode_nodes(self, x, edge_index, edge_attr, batch=None):
         """Embeddings par nœud (avant pooling) — réutilisé par la tête MGM (Phase 1)."""
         h = self.atom_embedding(x)
+
+        vn_feat = None
+        if self.use_virtual_node:
+            if batch is None:
+                batch = torch.zeros(h.size(0), dtype=torch.long, device=h.device)
+            vn_feat = self.virtual_node.vn_embedding.weight.expand(
+                batch.max().item() + 1, -1
+            )
+
         for conv, norm, drop in zip(self.convs, self.norms, self.drops, strict=False):
             h_res = h
+            if self.use_virtual_node:
+                h, vn_feat = self.virtual_node.pool_and_broadcast(h, batch, vn_feat)
             h = conv(h, edge_index, edge_attr)
             h = norm(h)
             h = F.silu(h)
@@ -198,8 +242,8 @@ class MolecularEncoder(nn.Module):
         Returns:
             [B, output_dim]
         """
-        # 1-2. Embedding + message-passing avec skip connections
-        h = self.encode_nodes(x, edge_index, edge_attr)
+        # 1-2. Embedding + message-passing avec skip connections (+ Virtual Node)
+        h = self.encode_nodes(x, edge_index, edge_attr, batch)
 
         # 3. Pooling global
         if batch is None:

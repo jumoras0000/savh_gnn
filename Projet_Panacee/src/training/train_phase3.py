@@ -10,6 +10,7 @@ Pipeline complet :
 """
 import contextlib
 import json
+import logging
 import os
 import shutil
 import sys
@@ -24,8 +25,13 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+logger = logging.getLogger("panacee.phase3")
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.reproducibility import set_seed
 
 from src.config import (
     ATOM_FEATURE_DIM,
@@ -49,6 +55,7 @@ from src.models.multi_property_head import MultiPropertyLoss, MultiPropertyPredi
 from src.models.reasoner import MolecularReasoner, ReasonerLoss
 from src.preprocessing.multi_property_loader import (
     MultiPropertyDataset,
+    TaskBalancedSampler,
     collate_multi_property,
     download_all_phase3_data,
     merge_datasets,
@@ -92,6 +99,38 @@ class WarmupCosineScheduler:
 # Métriques
 # ======================================================================
 
+def find_optimal_thresholds_multi(preds_dict, targets_dict):
+    """Cherche seuils optimaux (max F1) pour chaque tache classification."""
+    classification_tasks = ("toxicity", "efficacy", "bbb_penetration", "clinical_toxicity")
+    thresholds = {}
+    for name in classification_tasks:
+        if name not in preds_dict or name not in targets_dict:
+            continue
+        probs = torch.sigmoid(preds_dict[name]).cpu().numpy()
+        tgt = targets_dict[name].cpu().numpy()
+        valid = ~np.isnan(tgt)
+        task_thresh = []
+        for t in range(tgt.shape[1]):
+            mask = valid[:, t]
+            if mask.sum() < 2:
+                task_thresh.append(0.5)
+                continue
+            y = tgt[mask, t]
+            p = probs[mask, t]
+            if len(np.unique(y)) < 2:
+                task_thresh.append(0.5)
+                continue
+            best_t, best_f1 = 0.5, 0.0
+            for th in np.arange(0.2, 0.8, 0.05):
+                f = f1_score(y, (p > th).astype(int), zero_division=0)
+                if f > best_f1:
+                    best_f1 = f
+                    best_t = float(th)
+            task_thresh.append(best_t)
+        thresholds[name] = task_thresh
+    return thresholds
+
+
 def compute_phase3_metrics(predictions, targets):
     """
     Calcule les métriques pour toutes les propriétés.
@@ -114,7 +153,7 @@ def compute_phase3_metrics(predictions, targets):
 
         prop_metrics = {}
 
-        if prop_name in ("toxicity", "bioavailability", "metabolic_stability"):
+        if prop_name in ("toxicity", "bbb_penetration", "clinical_toxicity"):
             # Classification : AUC + F1
             probs = torch.sigmoid(pred).numpy()
             aucs = []
@@ -169,42 +208,71 @@ def compute_phase3_metrics(predictions, targets):
 # Boucles train / eval
 # ======================================================================
 
-def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoch):
+def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoch,
+                    scaler=None, accum_steps=1):
     model.train()
     total_loss = 0.0
     n = 0
     all_preds = {k: [] for k in ["toxicity", "efficacy", "solubility",
-                                   "lipophilicity", "bioavailability", "metabolic_stability"]}
+                                   "lipophilicity", "bbb_penetration", "clinical_toxicity"]}
     all_targets = {k: [] for k in all_preds}
+    use_amp = scaler is not None
 
+    optimizer.zero_grad()
     pbar = tqdm(loader, desc=f"[Train] Epoch {epoch}")
-    for batch_data, labels in pbar:
+    for step, (batch_data, labels) in enumerate(pbar):
         batch_data = batch_data.to(device)
         labels_device = {k: v.to(device) for k, v in labels.items()}
 
-        optimizer.zero_grad()
-        predictions = model(batch_data)
-
-        loss, _ = criterion(predictions, labels_device)
+        with torch.amp.autocast("cuda", enabled=use_amp):
+            predictions = model(batch_data)
+            loss, _ = criterion(predictions, labels_device)
 
         if torch.isnan(loss):
+            logger.warning("NaN loss detecte, batch ignore")
             continue
 
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        optimizer.step()
+        loss_scaled = loss / accum_steps
+        if use_amp:
+            scaler.scale(loss_scaled).backward()
+        else:
+            loss_scaled.backward()
+
+        if (step + 1) % accum_steps == 0:
+            if use_amp:
+                scaler.unscale_(optimizer)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            if use_amp:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+            optimizer.zero_grad()
+            if step < 5 or step % 100 == 0:
+                logger.debug(f"step={step} grad_norm={grad_norm:.4f}")
 
         total_loss += loss.item() * batch_data.num_graphs
         n += batch_data.num_graphs
 
         for k in predictions:
             if k in labels_device:
-                all_preds[k].append(predictions[k].detach())
+                all_preds[k].append(predictions[k].detach().float())
                 all_targets[k].append(labels_device[k].detach())
 
         pbar.set_postfix(loss=f"{loss.item():.4f}")
 
-    # Agréger les prédictions
+    # Flush residual accumulated gradients (last incomplete group)
+    if (step + 1) % accum_steps != 0:
+        if use_amp:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            optimizer.step()
+        optimizer.zero_grad()
+
     merged_preds = {}
     merged_targets = {}
     for k in all_preds:
@@ -218,20 +286,21 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
 
 
 @torch.no_grad()
-def evaluate(model, loader, criterion, device):
+def evaluate(model, loader, criterion, device, use_amp=False):
     model.eval()
     total_loss = 0.0
     n = 0
     all_preds = {k: [] for k in ["toxicity", "efficacy", "solubility",
-                                   "lipophilicity", "bioavailability", "metabolic_stability"]}
+                                   "lipophilicity", "bbb_penetration", "clinical_toxicity"]}
     all_targets = {k: [] for k in all_preds}
 
     for batch_data, labels in loader:
         batch_data = batch_data.to(device)
         labels_device = {k: v.to(device) for k, v in labels.items()}
 
-        predictions = model(batch_data)
-        loss, _ = criterion(predictions, labels_device)
+        with torch.amp.autocast("cuda", enabled=use_amp):
+            predictions = model(batch_data)
+            loss, _ = criterion(predictions, labels_device)
 
         if not torch.isnan(loss):
             total_loss += loss.item() * batch_data.num_graphs
@@ -239,7 +308,7 @@ def evaluate(model, loader, criterion, device):
 
         for k in predictions:
             if k in labels_device:
-                all_preds[k].append(predictions[k].detach())
+                all_preds[k].append(predictions[k].detach().float())
                 all_targets[k].append(labels_device[k].detach())
 
     merged_preds = {}
@@ -275,7 +344,12 @@ def main():
     p.add_argument("--save_epochs", type=int, default=1,
                    help="1=sauvegarde un checkpoint par epoch (gerable depuis le dashboard)")
     p.add_argument("--device", type=str, default=str(DEVICE))
+    p.add_argument("--seed", type=int, default=42,
+                   help="Random seed (varier pour Deep Ensemble : --seed 42, 123, 456, ...)")
     args = p.parse_args()
+
+    # Reproductibilité
+    set_seed(args.seed)
 
     # Initialisation GPU et logging
     gpu = get_gpu_manager(force_cpu=(args.device == "cpu"))
@@ -341,7 +415,7 @@ def main():
     print("\n📊 Construction des datasets...")
     try:
         train_ds = MultiPropertyDataset(train_df)
-        val_ds = MultiPropertyDataset(val_df)
+        val_ds = MultiPropertyDataset(val_df, regression_stats=train_ds.regression_stats)
     except Exception as e:
         print(f"❌ Erreur dataset : {e}")
         import traceback
@@ -355,9 +429,10 @@ def main():
     batch_size = gpu.optimize_batch_size(args.batch_size, model_size_mb=50)
     print(f"  Batch size : {batch_size} (demandé: {args.batch_size})")
 
-    torch.backends.cudnn.benchmark = True  # kernels cuDNN les plus rapides
+    torch.backends.cudnn.benchmark = not torch.backends.cudnn.deterministic
+    train_sampler = TaskBalancedSampler(train_ds, batch_size=batch_size, shuffle=True)
     train_loader = DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True,
+        train_ds, batch_size=batch_size, sampler=train_sampler,
         collate_fn=collate_multi_property, drop_last=True, **loader_kwargs(),
     )
     val_loader = DataLoader(
@@ -426,10 +501,16 @@ def main():
     print(f"  Total                  : {n_params_model + n_params_reasoner:,} params")
 
     # ── Étape 5 : Loss et Optimiseur ─────────────────────────────────
-    tox_pos_weight = train_ds.get_pos_weight("toxicity")
-    if tox_pos_weight is not None:
-        tox_pos_weight = tox_pos_weight.to(device)
-    criterion = MultiPropertyLoss(tox_pos_weight=tox_pos_weight).to(device)
+    def _pw(group):
+        pw = train_ds.get_pos_weight(group)
+        return pw.to(device) if pw is not None else None
+
+    criterion = MultiPropertyLoss(
+        tox_pos_weight=_pw("toxicity"),
+        efficacy_pos_weight=_pw("efficacy"),
+        bbb_pos_weight=_pw("bbb_penetration"),
+        clintox_pos_weight=_pw("clinical_toxicity"),
+    ).to(device)
 
     # LR mis à l'échelle pour le batch EFFECTIF (après optimize_batch_size) via
     # la règle racine carrée : compense les mises à jour/epoch réduites quand le
@@ -442,20 +523,66 @@ def main():
         print(f"  LR x{lr_scale:.2f} pour batch {batch_size} (ref {PHASE3['batch_size']}) : "
               f"encodeur {PHASE3['lr_encoder']:.2e}->{lr_enc:.2e}, "
               f"tetes {PHASE3['lr_heads']:.2e}->{lr_hd:.2e}")
-    optimizer = AdamW([
-        {"params": model.encoder.parameters(), "lr": lr_enc},
-        {"params": model.shared_layer.parameters(), "lr": lr_hd},
-        {"params": model.toxicity_head.parameters(), "lr": lr_hd},
-        {"params": model.efficacy_head.parameters(), "lr": lr_hd},
-        {"params": model.solubility_head.parameters(), "lr": lr_hd},
-        {"params": model.lipophilicity_head.parameters(), "lr": lr_hd},
-        {"params": model.bioavailability_head.parameters(), "lr": lr_hd},
-        {"params": model.metabolic_stability_head.parameters(), "lr": lr_hd},
-    ], weight_decay=PHASE3["weight_decay"])
+    # Separer params : weight_decay exclus des biais et LayerNorm
+    wd = PHASE3["weight_decay"]
+    def _split_params(module, lr):
+        decay, no_decay = [], []
+        for name, p in module.named_parameters():
+            if not p.requires_grad:
+                continue
+            if p.dim() <= 1 or "bias" in name or "norm" in name.lower():
+                no_decay.append(p)
+            else:
+                decay.append(p)
+        groups = []
+        if decay:
+            groups.append({"params": decay, "lr": lr, "weight_decay": wd})
+        if no_decay:
+            groups.append({"params": no_decay, "lr": lr, "weight_decay": 0.0})
+        return groups
+
+    # Layer-wise LR decay (LLRD) : couches profondes = LR plus bas
+    llrd_factor = PHASE3.get("llrd_factor", 0.8)
+    n_enc_layers = model.encoder.num_layers
+    param_groups = []
+    # Embedding (couche la plus basse) → LR minimal
+    param_groups.extend(_split_params(model.encoder.atom_embedding, lr_enc * llrd_factor ** n_enc_layers))
+    # Couches GNN : decay progressif (couche 0 = plus bas, couche N-1 = lr_enc)
+    for i in range(n_enc_layers):
+        layer_lr = lr_enc * llrd_factor ** (n_enc_layers - 1 - i)
+        param_groups.extend(_split_params(model.encoder.convs[i], layer_lr))
+        param_groups.extend(_split_params(model.encoder.norms[i], layer_lr))
+    # Pooling + projection → LR encodeur plein
+    param_groups.extend(_split_params(model.encoder.pool_gate, lr_enc))
+    param_groups.extend(_split_params(model.encoder.projection, lr_enc))
+    # Têtes : LR plus élevé
+    for head_name in ["shared_layer", "toxicity_head", "efficacy_head",
+                      "solubility_head", "lipophilicity_head",
+                      "bbb_penetration_head", "clinical_toxicity_head"]:
+        param_groups.extend(_split_params(getattr(model, head_name), lr_hd))
+    # Uncertainty weighting params (Kendall et al.) — appris conjointement
+    if hasattr(criterion, "log_vars"):
+        param_groups.append({"params": list(criterion.log_vars.parameters()),
+                             "lr": lr_hd, "weight_decay": 0.0})
+    optimizer = AdamW(param_groups)
 
     scheduler = WarmupCosineScheduler(
         optimizer, PHASE3["warmup_epochs"], args.epochs, PHASE3["lr_min"],
     )
+
+    # AMP (mixed precision) — 2x throughput, moitié VRAM
+    use_amp = device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp) if use_amp else None
+    accum_steps = PHASE3.get("gradient_accumulation_steps", 2)
+
+    # EMA pour stabiliser les poids (decay=0.999)
+    ema_decay = PHASE3.get("ema_decay", 0.999)
+    ema_model = None
+    if ema_decay > 0:
+        ema_model = torch.optim.swa_utils.AveragedModel(
+            model,
+            multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(ema_decay),
+        )
 
     # ── Étape 6 : Boucle d'entraînement ──────────────────────────────
     best_score = 0.0
@@ -500,10 +627,16 @@ def main():
         train_m = train_one_epoch(
             model, train_loader, optimizer, criterion, device,
             PHASE3["grad_clip"], epoch,
+            scaler=scaler, accum_steps=accum_steps,
         )
 
-        # Validation
-        val_m, val_preds, val_targets = evaluate(model, val_loader, criterion, device)
+        # EMA update
+        if ema_model is not None:
+            ema_model.update_parameters(model)
+
+        # Validation (EMA si disponible, sinon modele brut)
+        eval_model = ema_model if ema_model is not None else model
+        val_m, val_preds, val_targets = evaluate(eval_model, val_loader, criterion, device, use_amp)
 
         # Score composite (moyenne pondérée des métriques)
         score = 0.0
@@ -529,7 +662,7 @@ def main():
 
         prop_summary = []
         for prop in ["toxicity", "efficacy", "solubility", "lipophilicity",
-                      "bioavailability", "metabolic_stability"]:
+                      "bbb_penetration", "clinical_toxicity"]:
             if prop in val_m and isinstance(val_m[prop], dict):
                 m = val_m[prop]
                 if "roc_auc" in m:
@@ -567,8 +700,8 @@ def main():
         with contextlib.suppress(Exception):
             scalar_map = {"toxicity": ("tox_auc", "roc_auc"),
                           "efficacy": ("eff_auc", "roc_auc"),
-                          "bioavailability": ("bio_auc", "roc_auc"),
-                          "metabolic_stability": ("metab_auc", "roc_auc"),
+                          "bbb_penetration": ("bbb_auc", "roc_auc"),
+                          "clinical_toxicity": ("clintox_auc", "roc_auc"),
                           "solubility": ("sol_r2", "r2"),
                           "lipophilicity": ("lipo_r2", "r2")}
             for prop, (out_key, m_key) in scalar_map.items():
@@ -597,7 +730,7 @@ def main():
         # Checkpoint
         ckpt_data = {
             "epoch": epoch,
-            "model_state_dict": model.state_dict(),
+            "model_state_dict": ema_model.module.state_dict() if ema_model is not None else model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "val_metrics": {k: v for k, v in val_m.items() if not k.startswith("_")},
             "composite_score": composite_score,
@@ -605,6 +738,7 @@ def main():
             "best_score": best_score,
             "history": history,
             "property_dims": train_ds.get_property_dims(),
+            "regression_stats": train_ds.regression_stats,
             "config": {
                 "hidden_dim": HIDDEN_DIM,
                 "num_gnn_layers": NUM_GNN_LAYERS,
@@ -627,9 +761,11 @@ def main():
             torch.save(slim, ep_path)
             ckpt_rel = f"epochs/epoch_{epoch:03d}.pth"
 
-        is_best = composite_score > best_score
+        # Securite d'abord : 60% clinical_score + 40% composite_score
+        selection_score = 0.6 * rec["clinical_score"] + 0.4 * composite_score
+        is_best = selection_score > best_score
         if is_best:
-            best_score = composite_score
+            best_score = selection_score
             no_improve = 0
             torch.save(ckpt_data, best_path)
             print(f"  → Nouvelle meilleure epoch (score={best_score:.4f}) sauvegardée !")
@@ -657,6 +793,76 @@ def main():
 
         gpu.clear_memory()
 
+    # ── Étape 6b : Seuils optimaux + Évaluation TEST SET ───────────────
+    print(f"\n{'='*80}")
+    print("📋 SEUILS OPTIMAUX + ÉVALUATION TEST SET")
+    print(f"{'='*80}")
+
+    # Charger meilleur modele
+    best_ckpt_eval = torch.load(best_path, map_location=device, weights_only=False)
+    model.load_state_dict(best_ckpt_eval["model_state_dict"], strict=False)
+
+    # Seuils optimaux sur VAL set (max F1 par tache)
+    print("\n  Recherche seuils optimaux sur val set...")
+    val_m_final, val_preds_final, val_targets_final = evaluate(
+        model, val_loader, criterion, device, use_amp)
+    optimal_thresholds = find_optimal_thresholds_multi(val_preds_final, val_targets_final)
+    for task_name, thresh_list in optimal_thresholds.items():
+        mean_t = np.mean(thresh_list)
+        print(f"    {task_name}: mean_thresh={mean_t:.3f} ({len(thresh_list)} sub-tasks)")
+    best_ckpt_eval["optimal_thresholds"] = optimal_thresholds
+
+    # Temperature scaling (calibration post-hoc sur val set)
+    print("\n  Temperature scaling (calibration)...")
+    temperatures = {}
+    for task_name in ("toxicity", "efficacy", "bbb_penetration", "clinical_toxicity"):
+        if task_name not in val_preds_final or task_name not in val_targets_final:
+            continue
+        logits = val_preds_final[task_name].to(device)
+        tgt = val_targets_final[task_name].to(device)
+        valid = ~torch.isnan(tgt)
+        if valid.sum() < 10:
+            continue
+        temp = torch.nn.Parameter(torch.ones(1, device=device) * 1.5)
+        temp_opt = torch.optim.LBFGS([temp], lr=0.01, max_iter=50)
+        def _closure():
+            temp_opt.zero_grad()
+            scaled = logits / temp.clamp(min=0.1)
+            tgt_safe = torch.where(valid, tgt, torch.zeros_like(tgt))
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                scaled, tgt_safe, reduction="none")
+            loss = (loss * valid.float()).sum() / valid.sum().clamp(min=1)
+            loss.backward()
+            return loss
+        temp_opt.step(_closure)
+        temperatures[task_name] = float(temp.item())
+        print(f"    {task_name}: T={temp.item():.3f}")
+    best_ckpt_eval["temperatures"] = temperatures
+
+    # Évaluation TEST SET (hold-out)
+    try:
+        test_df = merge_datasets(data_paths, "test")
+        test_ds = MultiPropertyDataset(test_df, regression_stats=train_ds.regression_stats)
+        test_loader = DataLoader(
+            test_ds, batch_size=batch_size, shuffle=False,
+            collate_fn=collate_multi_property, **loader_kwargs(),
+        )
+        test_m, _, _ = evaluate(model, test_loader, criterion, device, use_amp)
+        print(f"\n  Test loss: {test_m.get('_loss', 0):.4f}")
+        for prop in ["toxicity", "efficacy", "solubility", "lipophilicity",
+                      "bbb_penetration", "clinical_toxicity"]:
+            if prop in test_m and isinstance(test_m[prop], dict):
+                m = test_m[prop]
+                if "roc_auc" in m:
+                    print(f"    {prop}: AUC={m['roc_auc']:.4f} F1={m.get('f1', 0):.4f}")
+                elif "r2" in m:
+                    print(f"    {prop}: R²={m['r2']:.4f} RMSE={m.get('rmse', 0):.4f}")
+        best_ckpt_eval["test_metrics"] = {k: v for k, v in test_m.items() if not k.startswith("_")}
+    except Exception as e:
+        print(f"  ⚠ Test set non disponible ({e}) — lancez avec --download")
+
+    torch.save(best_ckpt_eval, best_path)
+
     # ── Étape 7 : Entraîner le Raisonneur IA ─────────────────────────
     print(f"\n{'='*80}")
     print("🧠 ENTRAÎNEMENT DU MODULE IA DE RAISONNEMENT")
@@ -667,40 +873,51 @@ def main():
     model.load_state_dict(best_ckpt["model_state_dict"])
     model.eval()
 
-    # Pré-calculer les embeddings + une "qualité pharmacologique" par molécule.
-    # qualité = (1 - toxicité moyenne prédite) pondérée par l'efficacité prédite.
-    # → sert de signal d'auto-supervision plus pertinent que la pure diversité.
-    print("  Calcul des embeddings + qualité prédite...")
+    # Pré-calculer embeddings + profil pharmacologique par molécule.
+    # Chaque molécule reçoit un vecteur de propriétés prédites pour le scoring
+    # combinatoire via le modèle Bliss independence (pharmacologiquement fondé).
+    print("  Calcul des embeddings + profils pharmacologiques...")
     all_embeddings = []
-    all_quality = []
+    all_safety = []      # 1 - mean(tox_probs)
+    all_efficacy = []    # P(actif)
+    all_bbb = []         # P(BBB permeable)
+    all_druglike = []    # score drug-likeness composite [0,1]
     with torch.no_grad():
         for batch_data, _ in tqdm(train_loader, desc="  Embeddings"):
             batch_data = batch_data.to(device)
             emb = model.encode(batch_data)
             preds = model(batch_data)
 
-            tox = torch.sigmoid(preds["toxicity"]).mean(dim=1)        # [B] tox moyenne
-            quality = 1.0 - tox                                        # moins toxique = mieux
-            if "efficacy" in preds:
-                eff = torch.sigmoid(preds["efficacy"]).view(-1)        # [B]
-                quality = quality * (0.5 + 0.5 * eff)                  # pondère par l'efficacité
+            tox = torch.sigmoid(preds["toxicity"]).mean(dim=1)
+            safety = (1.0 - tox).cpu()
+            eff = torch.sigmoid(preds["efficacy"]).view(-1).cpu() if "efficacy" in preds else torch.full((emb.shape[0],), 0.5)
+            bbb = torch.sigmoid(preds["bbb_penetration"]).view(-1).cpu() if "bbb_penetration" in preds else torch.full((emb.shape[0],), 0.5)
+            druglike = (0.4 * safety + 0.3 * eff + 0.2 * bbb + 0.1 * torch.ones_like(safety)).clamp(0, 1)
 
             all_embeddings.append(emb.cpu())
-            all_quality.append(quality.cpu())
+            all_safety.append(safety)
+            all_efficacy.append(eff)
+            all_bbb.append(bbb)
+            all_druglike.append(druglike)
     all_embeddings = torch.cat(all_embeddings)
-    all_quality = torch.cat(all_quality).clamp(0.0, 1.0)
+    all_safety = torch.cat(all_safety).clamp(0.0, 1.0)
+    all_efficacy = torch.cat(all_efficacy).clamp(0.0, 1.0)
+    all_bbb = torch.cat(all_bbb).clamp(0.0, 1.0)
+    all_druglike = torch.cat(all_druglike).clamp(0.0, 1.0)
     print(f"  {all_embeddings.shape[0]} embeddings calculés, dim={all_embeddings.shape[1]}")
 
     # Entraîner le raisonneur sur des combinaisons aléatoires
     reasoner_optimizer = AdamW(reasoner.parameters(), lr=PHASE3["lr_reasoner"])
     reasoner_criterion = ReasonerLoss()
+    reasoner_epochs = 30
+    reasoner_scheduler = WarmupCosineScheduler(
+        reasoner_optimizer, warmup_epochs=3, total_epochs=reasoner_epochs, lr_min=1e-6,
+    )
 
     max_combo = PHASE3["max_molecules_combo"]
     n_combos_per_epoch = min(len(all_embeddings) // max_combo, 500)
 
     print(f"  {n_combos_per_epoch} combinaisons par epoch, max {max_combo} molécules")
-
-    reasoner_epochs = 30
     for r_epoch in range(1, reasoner_epochs + 1):
         reasoner.train()
         total_r_loss = 0.0
@@ -723,13 +940,17 @@ def main():
             reasoner_optimizer.zero_grad()
             output = reasoner(combo_emb, mask)
 
-            # Auto-supervision (proxy de synergie, en attendant des données
-            # réelles type DrugComb) : combine la QUALITÉ pharmacologique prédite
-            # des molécules (faible toxicité / bonne efficacité) et leur DIVERSITÉ
-            # structurelle. Une bonne combinaison = molécules de qualité + complémentaires.
-            quality = all_quality[indices].mean().item()
+            # Proxy pharmacologique (Bliss independence + multi-critères).
+            # Bliss : P(combo_safe) = Π P(mol_i safe)  — indépendance des toxicités
+            # Eff Bliss : P(combo_eff) = 1 - Π(1 - P(mol_i eff)) — au moins 1 actif
+            # + diversité structurelle (molécules complémentaires = meilleure couverture)
+            combo_safety = all_safety[indices].prod().item()          # Bliss safety
+            combo_eff = 1.0 - (1.0 - all_efficacy[indices]).prod().item()  # Bliss efficacy
+            combo_bbb = all_bbb[indices].mean().item()
             diversity = torch.pdist(combo_emb[0, :n_mols]).mean().item()
-            success = 0.7 * quality + 0.3 * min(diversity / 5.0, 1.0)
+            div_norm = min(diversity / 5.0, 1.0)
+            success = (0.35 * combo_safety + 0.30 * combo_eff
+                       + 0.15 * combo_bbb + 0.20 * div_norm)
             success_target = torch.tensor([[success]], device=device)
 
             targets = {"success_labels": success_target}
@@ -741,8 +962,10 @@ def main():
                 reasoner_optimizer.step()
                 total_r_loss += loss.item()
 
+        reasoner_scheduler.step(r_epoch - 1)
         avg_loss = total_r_loss / max(n_combos_per_epoch, 1)
-        print(f"  Reasoner Epoch {r_epoch:2d}/{reasoner_epochs} | loss={avg_loss:.4f}")
+        print(f"  Reasoner Epoch {r_epoch:2d}/{reasoner_epochs} | loss={avg_loss:.4f}"
+              f" | lr={reasoner_scheduler.get_last_lr()[0]:.1e}")
 
     # ── Étape 8 : Sauvegarder le modèle complet ──────────────────────
     print(f"\n{'='*80}")

@@ -3,11 +3,11 @@ Phase 3 - Tête multi-propriétés étendue.
 
 Prédit simultanément :
   - Toxicité (12 tâches Tox21)
-  - Efficacité (score prédit)
-  - Solubilité (LogS)
-  - Lipophilicité (LogP)
-  - Biodisponibilité orale
-  - Stabilité métabolique
+  - Efficacité anti-VIH (HIV active, classification)
+  - Solubilité aqueuse (LogS, régression)
+  - Lipophilicité (LogP, régression)
+  - Perméabilité BBB (Blood-Brain Barrier, classification)
+  - Toxicité clinique (ClinTox CT_TOX, classification)
 """
 import torch
 import torch.nn as nn
@@ -45,12 +45,12 @@ class MultiPropertyPredictor(nn.Module):
     Modèle multi-propriétés : encodeur GNN + N têtes spécialisées.
 
     Chaque tête prédit un groupe de propriétés :
-      - toxicity_head  → 12 tâches (classification, sigmoid)
-      - efficacy_head  → 1 score (régression ou classification)
-      - solubility_head → 1 (régression)
-      - lipophilicity_head → 1 (régression)
-      - bioavailability_head → 1 (classification)
-      - metabolic_stability_head → 1 (classification)
+      - toxicity_head  → 12 tâches Tox21 (classification)
+      - efficacy_head  → 1 HIV active (classification)
+      - solubility_head → 1 LogS (régression)
+      - lipophilicity_head → 1 LogP (régression)
+      - bbb_penetration_head → 1 BBB perméabilité (classification)
+      - clinical_toxicity_head → 1 ClinTox CT_TOX (classification)
     """
 
     def __init__(
@@ -80,12 +80,16 @@ class MultiPropertyPredictor(nn.Module):
         self.efficacy_head = PropertyHead(hidden_dim, 1, dropout)
         self.solubility_head = PropertyHead(hidden_dim, 1, dropout)
         self.lipophilicity_head = PropertyHead(hidden_dim, 1, dropout)
-        self.bioavailability_head = PropertyHead(hidden_dim, 1, dropout)
-        self.metabolic_stability_head = PropertyHead(hidden_dim, 1, dropout)
+        self.bbb_penetration_head = PropertyHead(hidden_dim, 1, dropout)
+        self.clinical_toxicity_head = PropertyHead(hidden_dim, 1, dropout)
+
+        # Backward compat : anciens checkpoints ont bioavailability_head / metabolic_stability_head
+        self.bioavailability_head = self.bbb_penetration_head
+        self.metabolic_stability_head = self.clinical_toxicity_head
 
         self.head_names = [
             "toxicity", "efficacy", "solubility",
-            "lipophilicity", "bioavailability", "metabolic_stability",
+            "lipophilicity", "bbb_penetration", "clinical_toxicity",
         ]
 
     def _freeze_encoder(self):
@@ -133,8 +137,8 @@ class MultiPropertyPredictor(nn.Module):
             "efficacy": self.efficacy_head(emb),          # [B, 1]
             "solubility": self.solubility_head(emb),      # [B, 1]
             "lipophilicity": self.lipophilicity_head(emb),# [B, 1]
-            "bioavailability": self.bioavailability_head(emb),    # [B, 1]
-            "metabolic_stability": self.metabolic_stability_head(emb),  # [B, 1]
+            "bbb_penetration": self.bbb_penetration_head(emb),        # [B, 1]
+            "clinical_toxicity": self.clinical_toxicity_head(emb),     # [B, 1]
         }
 
 
@@ -142,25 +146,36 @@ class MultiPropertyLoss(nn.Module):
     """
     Loss combinée multi-propriétés.
 
-    - Classification (toxicité, biodisponibilité, stabilité) : BCE
-    - Régression (efficacité, solubilité, lipophilicité) : MSE/Huber
+    - Classification (toxicité, efficacité, BBB, toxicité clinique) : BCE
+    - Régression (solubilité, lipophilicité) : Huber
     - Masquage NaN pour labels manquants
     """
 
-    def __init__(self, tox_pos_weight=None, task_weights=None):
+    def __init__(self, tox_pos_weight=None, task_weights=None,
+                 efficacy_pos_weight=None, bbb_pos_weight=None, clintox_pos_weight=None,
+                 uncertainty_weighting=True):
         super().__init__()
         self.register_buffer("tox_pos_weight", tox_pos_weight)
+        self.register_buffer("efficacy_pos_weight", efficacy_pos_weight)
+        self.register_buffer("bbb_pos_weight", bbb_pos_weight)
+        self.register_buffer("clintox_pos_weight", clintox_pos_weight)
 
-        # Poids relatif de chaque groupe de propriétés
         default_weights = {
             "toxicity": 1.0,
-            "efficacy": 2.0,       # Plus important
+            "efficacy": 2.0,
             "solubility": 0.5,
             "lipophilicity": 0.5,
-            "bioavailability": 0.8,
-            "metabolic_stability": 0.8,
+            "bbb_penetration": 0.8,
+            "clinical_toxicity": 0.8,
         }
         self.task_weights = task_weights or default_weights
+        self.uncertainty_weighting = uncertainty_weighting
+        if uncertainty_weighting:
+            # Kendall et al. 2018: log(sigma^2) per task, learned jointly
+            self.log_vars = nn.ParameterDict({
+                name: nn.Parameter(torch.zeros(1))
+                for name in self.task_weights
+            })
 
     def forward(self, predictions, targets):
         """
@@ -192,11 +207,17 @@ class MultiPropertyLoss(nn.Module):
             # efficacy = hiv_HIV_active : label BINAIRE (0/1) → classification (BCE),
             # cohérent avec l'évaluation (sigmoid + ROC-AUC). Auparavant en Huber
             # (régression) par erreur → loss incohérente avec la métrique.
-            if name in ("toxicity", "efficacy", "bioavailability", "metabolic_stability"):
-                # Classification : BCE par element (reduction='none' -> masque ensuite)
-                if name == "toxicity" and self.tox_pos_weight is not None:
+            if name in ("toxicity", "efficacy", "bbb_penetration", "clinical_toxicity"):
+                pw_map = {
+                    "toxicity": self.tox_pos_weight,
+                    "efficacy": self.efficacy_pos_weight,
+                    "bbb_penetration": self.bbb_pos_weight,
+                    "clinical_toxicity": self.clintox_pos_weight,
+                }
+                pw = pw_map.get(name)
+                if pw is not None:
                     per = F.binary_cross_entropy_with_logits(
-                        pred, target_safe, pos_weight=self.tox_pos_weight, reduction="none",
+                        pred, target_safe, pos_weight=pw, reduction="none",
                     )
                 else:
                     per = F.binary_cross_entropy_with_logits(
@@ -209,7 +230,11 @@ class MultiPropertyLoss(nn.Module):
             loss = (per * valid_mask.float()).sum() / valid_mask.sum().clamp(min=1)
 
             loss_details[name] = loss.item()
-            total_loss = total_loss + weight * loss
+            if self.uncertainty_weighting and name in self.log_vars:
+                precision = torch.exp(-self.log_vars[name])
+                total_loss = total_loss + precision * loss + 0.5 * self.log_vars[name]
+            else:
+                total_loss = total_loss + weight * loss
 
         loss_details["total"] = total_loss.item()
         return total_loss, loss_details

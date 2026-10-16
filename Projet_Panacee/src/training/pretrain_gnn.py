@@ -1,4 +1,4 @@
-﻿"""
+"""
 Phase 1 - Pre-entrainement MGM (Masked Graph Modeling) - v2.
 
 Corrections :
@@ -23,9 +23,12 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
+
 # -- Path setup --
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.reproducibility import set_seed
 
 from src.config import (
     ATOM_FEATURE_DIM,
@@ -159,7 +162,7 @@ class MGMParallelWrapper(nn.Module):
 
     def forward(self, data):
         # data est un Batch collationné PAR CE GPU (sous-ensemble du batch global).
-        node_emb = self.encoder.encode_nodes(data.x, data.edge_index, data.edge_attr)
+        node_emb = self.encoder.encode_nodes(data.x, data.edge_index, data.edge_attr, data.batch)
         selected = node_emb[data.masked_node_index]   # indices déjà GLOBAUX (décalés)
         logits = self.mgm_head.predictor(selected)    # [M, num_classes]
         return logits, data.masked_types
@@ -323,6 +326,7 @@ def main():
     p.add_argument("--device", type=str, default=str(DEVICE))
     args = p.parse_args()
 
+    set_seed(42)
     device = torch.device(args.device)
     os.makedirs(args.save_dir, exist_ok=True)
     log_dir = LOG_DIR / "phase1"
@@ -344,10 +348,14 @@ def main():
 
     multi_gpu = _multi_gpu_active(device)
 
-    split = int(len(smiles_list) * (1 - PHASE1["val_split"]))
-    train_ds = PretrainDataset(smiles_list[:split], args.mask_prob,
+    # Shuffle avant split pour eviter biais si donnees ordonnees
+    rng = np.random.RandomState(42)
+    indices = rng.permutation(len(smiles_list))
+    smiles_shuffled = [smiles_list[i] for i in indices]
+    split = int(len(smiles_shuffled) * (1 - PHASE1["val_split"]))
+    train_ds = PretrainDataset(smiles_shuffled[:split], args.mask_prob,
                                desc="graphes (train)", for_parallel=multi_gpu)
-    val_ds = PretrainDataset(smiles_list[split:], args.mask_prob,
+    val_ds = PretrainDataset(smiles_shuffled[split:], args.mask_prob,
                              desc="graphes (val)", for_parallel=multi_gpu)
 
     # cuDNN benchmark : laisse cuDNN choisir les kernels les plus rapides.

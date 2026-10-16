@@ -190,6 +190,7 @@ class MultiPropertyDataset(Dataset):
       - labels : dict {property_group: tensor}
 
     Les labels manquants sont NaN et seront ignorés par la loss.
+    Les targets de régression sont normalisés (z-score sur le train set).
     """
 
     # Mapping des colonnes vers les groupes de propriétés
@@ -200,19 +201,29 @@ class MultiPropertyDataset(Dataset):
             "SR-ARE", "SR-ATAD5", "SR-HSE", "SR-MMP", "SR-p53",
         ],
         "efficacy": ["hiv_HIV_active"],
-        "solubility": ["esol_measured log solubility in mols per litre",
-                       "esol_ESOL predicted log solubility in mols per litre"],
+        # Solubilité : uniquement la mesure expérimentale (Delaney 2004).
+        # La colonne "ESOL predicted" est un baseline calculé, pas un label.
+        "solubility": ["esol_measured log solubility in mols per litre"],
         "lipophilicity": ["lipo_exp"],
-        "bioavailability": ["bbbp_p_np"],
-        # 1 seule colonne pour matcher la tete (1-dim) : CT_TOX = toxicite clinique
-        "metabolic_stability": ["clintox_CT_TOX"],
+        # BBBP = perméabilité barrière hémato-encéphalique (Blood-Brain Barrier
+        # Penetration), PAS biodisponibilité orale. Nom corrigé.
+        "bbb_penetration": ["bbbp_p_np"],
+        # ClinTox CT_TOX = toxicité clinique (échec en essai clinique pour
+        # toxicité). PAS stabilité métabolique. Nom corrigé.
+        "clinical_toxicity": ["clintox_CT_TOX"],
     }
 
-    def __init__(self, dataframe: pd.DataFrame, smiles_column: str = "smiles"):
+    REGRESSION_GROUPS = {"solubility", "lipophilicity"}
+
+    def __init__(self, dataframe: pd.DataFrame, smiles_column: str = "smiles",
+                 regression_stats: dict | None = None):
         """
         Args:
             dataframe: DataFrame avec colonne SMILES et propriétés
             smiles_column: nom de la colonne SMILES
+            regression_stats: stats de normalisation {group: {"mean": float, "std": float}}
+                              None = calcule sur ce dataset (mode train).
+                              Fournir les stats du train set pour val/test.
         """
         self.smiles_column = smiles_column
         self.df = dataframe.reset_index(drop=True)
@@ -227,6 +238,16 @@ class MultiPropertyDataset(Dataset):
         print("  Propriétés disponibles :")
         for group, cols in self.available_props.items():
             print(f"    {group}: {len(cols)} colonnes")
+
+        # Normalisation z-score des targets de régression
+        if regression_stats is not None:
+            self.regression_stats = regression_stats
+        else:
+            self.regression_stats = self._compute_regression_stats()
+        if self.regression_stats:
+            print("  Normalisation régression :")
+            for g, s in self.regression_stats.items():
+                print(f"    {g}: mean={s['mean']:.4f}, std={s['std']:.4f}")
 
         # Construire les graphes une seule fois
         self.graphs = []
@@ -252,13 +273,36 @@ class MultiPropertyDataset(Dataset):
                         values.append(float(val))
                     except (ValueError, TypeError):
                         values.append(float("nan"))
-                labels[group_name] = torch.tensor(values, dtype=torch.float32)
+                t = torch.tensor(values, dtype=torch.float32)
+                if group_name in self.regression_stats:
+                    stats = self.regression_stats[group_name]
+                    mask = ~torch.isnan(t)
+                    t[mask] = (t[mask] - stats["mean"]) / stats["std"]
+                labels[group_name] = t
 
             self.graphs.append(graph)
             self.labels_list.append(labels)
             self.valid_indices.append(idx)
 
         print(f"  {len(self.graphs)} graphes valides, {n_fail} échecs")
+
+    def _compute_regression_stats(self) -> dict:
+        """Calcule mean/std sur les colonnes de régression (train set)."""
+        stats = {}
+        for group_name in self.REGRESSION_GROUPS:
+            if group_name not in self.available_props:
+                continue
+            cols = self.available_props[group_name]
+            vals = self.df[cols].values.astype(float).flatten()
+            valid = vals[~np.isnan(vals)]
+            if len(valid) < 2:
+                continue
+            mean = float(np.mean(valid))
+            std = float(np.std(valid))
+            if std < 1e-8:
+                std = 1.0
+            stats[group_name] = {"mean": mean, "std": std}
+        return stats
 
     def __len__(self):
         return len(self.graphs)
@@ -289,6 +333,53 @@ class MultiPropertyDataset(Dataset):
             pw = negatives / max(positives, 1)
             pos_weights.append(min(pw, 10.0))  # Plafonner à 10
         return torch.tensor(pos_weights, dtype=torch.float32)
+
+
+class TaskBalancedSampler(torch.utils.data.Sampler):
+    """Sampler qui équilibre les tâches dans chaque batch.
+
+    Problème : avec un outer join, chaque molécule n'a de labels que pour 1 dataset.
+    Un batch aléatoire peut n'avoir que des molécules Tox21 → gradient nul pour
+    les autres tâches. Ce sampler intercale les sources pour diversifier chaque batch.
+    """
+
+    def __init__(self, dataset, batch_size=32, shuffle=True):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self._build_task_indices()
+
+    def _build_task_indices(self):
+        self.task_indices = {}
+        for idx, labels in enumerate(self.dataset.labels_list):
+            for group_name, t in labels.items():
+                if (~torch.isnan(t)).any():
+                    self.task_indices.setdefault(group_name, []).append(idx)
+
+    def __iter__(self):
+        task_names = list(self.task_indices.keys())
+        pools = {}
+        for t in task_names:
+            arr = np.array(self.task_indices[t])
+            if self.shuffle:
+                np.random.shuffle(arr)
+            pools[t] = list(arr)
+
+        indices = []
+        per_task = max(1, self.batch_size // len(task_names))
+        while any(pools.values()):
+            batch = []
+            for t in task_names:
+                take = min(per_task, len(pools[t]))
+                batch.extend(pools[t][:take])
+                pools[t] = pools[t][take:]
+            if self.shuffle:
+                np.random.shuffle(batch)
+            indices.extend(batch)
+        return iter(indices)
+
+    def __len__(self):
+        return len(self.dataset)
 
 
 def collate_multi_property(batch):

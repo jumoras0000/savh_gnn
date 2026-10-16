@@ -129,7 +129,7 @@ class DosePredictor(nn.Module):
         Retourne : distribution de probabilité sur les niveaux de dose
         """
         logits = self.dose_mlp(mol_embedding)
-        return F.softmax(logits, dim=-1)
+        return F.log_softmax(logits, dim=-1)
 
 
 class ConfidenceEstimator(nn.Module):
@@ -324,13 +324,13 @@ class ReasonerLoss(nn.Module):
                 total_loss = total_loss + 2.0 * suc_loss
                 details["success"] = suc_loss.item()
 
-        # Régularisation : confiance doit être calibrée
-        # Si le modèle a tort, la confiance doit être basse
+        # Regularisation : penaliser la sur-confiance (maximiser l'entropie)
         conf = predictions["confidence"]
-        conf_reg = -torch.mean(conf * torch.log(conf + 1e-8) +
-                               (1 - conf) * torch.log(1 - conf + 1e-8))
+        entropy = -(conf * torch.log(conf + 1e-8) +
+                    (1 - conf) * torch.log(1 - conf + 1e-8))
+        conf_reg = -torch.mean(entropy)
         total_loss = total_loss + 0.1 * conf_reg
-        details["confidence_entropy"] = conf_reg.item()
+        details["confidence_entropy"] = -conf_reg.item()
 
         details["total"] = total_loss.item()
         return total_loss, details

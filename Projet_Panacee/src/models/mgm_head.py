@@ -80,7 +80,7 @@ class MaskedGraphModel(nn.Module):
         Embeddings par nœud (AVANT pooling global), via l'encodeur.
         Délègue à MolecularEncoder.encode_nodes (logique unique, conv-agnostique).
         """
-        return self.encoder.encode_nodes(x, edge_index, edge_attr)  # [N_total, hidden_dim]
+        return self.encoder.encode_nodes(x, edge_index, edge_attr, batch)  # [N_total, hidden_dim]
 
     def forward(self, x, edge_index, edge_attr, batch, masked_atom_indices):
         # 1. Embeddings par nœud (avant pooling)
