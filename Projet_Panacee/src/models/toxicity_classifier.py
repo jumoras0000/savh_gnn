@@ -10,7 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .encoder import MolecularEncoder
+try:
+    from .encoder import MolecularEncoder
+except ModuleNotFoundError as exc:  # la loss reste testable sans PyG
+    if exc.name != "torch_geometric":
+        raise
+    MolecularEncoder = None
 
 
 class ToxicityClassifier(nn.Module):
@@ -142,16 +147,17 @@ class MultiTaskBCELoss(nn.Module):
 
         targets_safe = targets.clone()
         targets_safe[~valid] = 0.0
+        logits_safe = torch.where(valid, logits, torch.zeros_like(logits))
 
         # BCE par élément
         if self._pos_weight is not None:
             pw = self._pos_weight.to(logits.device)
             loss_all = F.binary_cross_entropy_with_logits(
-                logits, targets_safe, pos_weight=pw, reduction="none"
+                logits_safe, targets_safe, pos_weight=pw, reduction="none"
             )
         else:
             loss_all = F.binary_cross_entropy_with_logits(
-                logits, targets_safe, reduction="none"
+                logits_safe, targets_safe, reduction="none"
             )
 
         # Masquer et moyenner

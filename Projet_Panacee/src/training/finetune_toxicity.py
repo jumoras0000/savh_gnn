@@ -110,7 +110,7 @@ def compute_metrics(logits, targets):
     """ROC-AUC, F1, precision, recall (macro) en ignorant les NaN."""
     probs = torch.sigmoid(logits).cpu().numpy()
     targets_np = targets.cpu().numpy()
-    valid = ~np.isnan(targets_np)
+    valid = np.isfinite(targets_np) & np.isfinite(probs)
 
     aucs, f1s, precs, recs = [], [], [], []
     num_tasks = targets_np.shape[1]
@@ -144,7 +144,7 @@ def find_optimal_thresholds(logits, targets, num_tasks):
     """Cherche le seuil optimal par tache (max F1)."""
     probs = torch.sigmoid(logits).cpu().numpy()
     targets_np = targets.cpu().numpy()
-    valid = ~np.isnan(targets_np)
+    valid = np.isfinite(targets_np) & np.isfinite(probs)
     thresholds = []
 
     for t in range(num_tasks):
@@ -179,12 +179,16 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
     for batch_data, labels in pbar:
         batch_data = batch_data.to(device)
         labels = labels.to(device)
+        if not torch.isfinite(labels).any():
+            continue
 
         optimizer.zero_grad()
         if use_amp:
             with torch.amp.autocast("cuda"):
                 logits = model(batch_data)
-                loss = criterion(logits, labels)
+            loss = criterion(logits.float(), labels)
+            if not torch.isfinite(loss).all():
+                continue
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -193,6 +197,8 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
         else:
             logits = model(batch_data)
             loss = criterion(logits, labels)
+            if not torch.isfinite(loss).all():
+                continue
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
@@ -206,6 +212,8 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
         all_targets.append(labels.detach())
         pbar.set_postfix(loss=f"{loss.item():.4f}")
 
+    if not all_logits:
+        raise RuntimeError("Phase 2 : aucun batch valide pendant l'epoch")
     all_logits = torch.cat(all_logits)
     all_targets = torch.cat(all_targets)
     metrics = compute_metrics(all_logits, all_targets)
@@ -224,11 +232,14 @@ def evaluate(model, loader, criterion, device):
         labels = labels.to(device)
         logits = model(batch_data)
         loss = criterion(logits, labels)
-        total_loss += loss.item() * labels.size(0)
-        n += labels.size(0)
+        if torch.isfinite(loss).all():
+            total_loss += loss.item() * labels.size(0)
+            n += labels.size(0)
         all_logits.append(logits.float())
         all_targets.append(labels)
 
+    if not all_logits:
+        raise RuntimeError("Phase 2 : aucun batch de validation")
     all_logits = torch.cat(all_logits)
     all_targets = torch.cat(all_targets)
     metrics = compute_metrics(all_logits, all_targets)

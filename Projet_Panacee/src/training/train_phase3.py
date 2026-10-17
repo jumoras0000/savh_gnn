@@ -121,7 +121,7 @@ def find_optimal_thresholds_multi(preds_dict, targets_dict):
             continue
         probs = torch.sigmoid(preds_dict[name]).cpu().numpy()
         tgt = targets_dict[name].cpu().numpy()
-        valid = ~np.isnan(tgt)
+        valid = np.isfinite(tgt) & np.isfinite(probs)
         task_thresh = []
         for t in range(tgt.shape[1]):
             mask = valid[:, t]
@@ -159,7 +159,11 @@ def compute_phase3_metrics(predictions, targets):
 
         pred = predictions[prop_name].detach().cpu()
         tgt = targets[prop_name].detach().cpu().numpy()
-        valid = ~np.isnan(tgt)
+        pred_np = pred.numpy()
+        valid = np.isfinite(tgt) & np.isfinite(pred_np)
+        skipped = int((np.isfinite(tgt) & ~np.isfinite(pred_np)).sum())
+        if skipped:
+            logger.warning("%s: %d prédictions non finies exclues des métriques", prop_name, skipped)
 
         if valid.sum() == 0:
             continue
@@ -200,7 +204,6 @@ def compute_phase3_metrics(predictions, targets):
 
         else:
             # Régression : RMSE + R²
-            pred_np = pred.numpy()
             pred_valid = pred_np[valid]
             tgt_valid = tgt[valid]
             rmse = float(np.sqrt(np.mean((pred_valid - tgt_valid) ** 2)))
@@ -257,7 +260,9 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
 
         with torch.amp.autocast("cuda", enabled=use_amp):
             predictions = model(batch_data)
-            loss, _ = criterion(predictions, labels_device)
+        # BCE/Huber en FP32 : la réduction en FP16 peut déborder sur les
+        # batches clairsemés des différentes tâches.
+        loss, _ = criterion({k: v.float() for k, v in predictions.items()}, labels_device)
 
         if not torch.isfinite(loss).all() or not loss.requires_grad:
             logger.warning("Loss non finie ou sans gradient, batch ignore (step=%s)", step)
@@ -315,9 +320,9 @@ def evaluate(model, loader, criterion, device, use_amp=False):
 
         with torch.amp.autocast("cuda", enabled=use_amp):
             predictions = model(batch_data)
-            loss, _ = criterion(predictions, labels_device)
+        loss, _ = criterion({k: v.float() for k, v in predictions.items()}, labels_device)
 
-        if not torch.isnan(loss):
+        if torch.isfinite(loss).all():
             total_loss += loss.item() * batch_data.num_graphs
             n += batch_data.num_graphs
 
@@ -493,8 +498,12 @@ def main():
         try:
             prev = torch.load(prev_best, map_location="cpu", weights_only=False)
             if isinstance(prev, dict) and "model_state_dict" in prev:
-                model.load_state_dict(prev["model_state_dict"], strict=False)
-                print("  ✓ Warm-start : meilleur modèle Phase 3 précédent rechargé")
+                state = prev["model_state_dict"]
+                if all(torch.isfinite(v).all() for v in state.values() if torch.is_tensor(v)):
+                    model.load_state_dict(state, strict=False)
+                    print("  ✓ Warm-start : meilleur modèle Phase 3 précédent rechargé")
+                else:
+                    print("  ⚠ Checkpoint Phase 3 non fini : reprise depuis la Phase 2")
         except Exception as e:
             print(f"  ⚠ Warm-start Phase 3 ignoré ({e})")
 
@@ -648,6 +657,10 @@ def main():
             PHASE3["grad_clip"], epoch,
             scaler=scaler, accum_steps=accum_steps,
         )
+        if not all(torch.isfinite(p).all() for p in model.parameters()):
+            raise RuntimeError(
+                "Poids Phase 3 non finis après entraînement ; aucun checkpoint corrompu sauvegardé"
+            )
 
         # EMA update
         if ema_model is not None:
@@ -975,7 +988,7 @@ def main():
             targets = {"success_labels": success_target}
             loss, _ = reasoner_criterion(output, targets)
 
-            if not torch.isnan(loss):
+            if torch.isfinite(loss).all():
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(reasoner.parameters(), 1.0)
                 reasoner_optimizer.step()

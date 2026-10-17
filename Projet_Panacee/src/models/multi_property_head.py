@@ -211,6 +211,9 @@ class MultiPropertyLoss(nn.Module):
             if valid_mask.sum() == 0:
                 continue
             target_safe = torch.where(valid_mask, target, torch.zeros_like(target))
+            # Les têtes non supervisées sur ce batch peuvent produire NaN/Inf.
+            # Les masquer AVANT BCE/Huber évite 0 * NaN dans la réduction.
+            pred_safe = torch.where(valid_mask, pred, torch.zeros_like(pred))
 
             # efficacy = hiv_HIV_active : label BINAIRE (0/1) → classification (BCE),
             # cohérent avec l'évaluation (sigmoid + ROC-AUC). Auparavant en Huber
@@ -225,15 +228,15 @@ class MultiPropertyLoss(nn.Module):
                 pw = pw_map.get(name)
                 if pw is not None:
                     per = F.binary_cross_entropy_with_logits(
-                        pred, target_safe, pos_weight=pw, reduction="none",
+                        pred_safe, target_safe, pos_weight=pw, reduction="none",
                     )
                 else:
                     per = F.binary_cross_entropy_with_logits(
-                        pred, target_safe, reduction="none",
+                        pred_safe, target_safe, reduction="none",
                     )
             else:
                 # Régression : Huber loss (robuste aux outliers)
-                per = F.huber_loss(pred, target_safe, delta=1.0, reduction="none")
+                per = F.huber_loss(pred_safe, target_safe, delta=1.0, reduction="none")
 
             loss = (per * valid_mask.float()).sum() / valid_mask.sum().clamp(min=1)
 

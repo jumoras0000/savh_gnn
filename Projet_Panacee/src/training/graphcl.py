@@ -182,6 +182,8 @@ def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
                     z1 = model(v1)
                     z2 = model(v2)
                     loss = nt_xent_loss(z1.float(), z2.float())
+                if not torch.isfinite(loss).all():
+                    continue
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -191,6 +193,8 @@ def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
                 z1 = model(v1)
                 z2 = model(v2)
                 loss = nt_xent_loss(z1, z2)
+                if not torch.isfinite(loss).all():
+                    continue
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
@@ -199,7 +203,9 @@ def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
             n += 1
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
-        avg = total / max(n, 1)
+        if n == 0:
+            raise RuntimeError("GraphCL : aucun batch valide pendant l'epoch")
+        avg = total / n
         elapsed = time.time() - t0
         eta = timedelta(seconds=int((elapsed / epoch) * (args.epochs - epoch)))
         print(f"Epoch {epoch:3d}/{args.epochs} | nt_xent={avg:.4f} | ETA {eta}")

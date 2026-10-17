@@ -27,6 +27,47 @@ def test_phase2_compute_metrics_skips_single_class_tasks():
     assert m["precision"] == 1.0
 
 
+def test_phase3_metrics_ignore_nonfinite_predictions():
+    from src.training.train_phase3 import compute_phase3_metrics
+
+    logits = torch.tensor([[2.0], [-2.0], [float("nan")], [float("inf")]])
+    labels = torch.tensor([[1.0], [0.0], [1.0], [0.0]])
+    metrics = compute_phase3_metrics({"efficacy": logits}, {"efficacy": labels})
+    assert metrics["efficacy"]["roc_auc"] == 1.0
+
+
+def test_phase3_loss_masks_nonfinite_unlabelled_prediction():
+    from src.models.multi_property_head import MultiPropertyLoss
+
+    criterion = MultiPropertyLoss(uncertainty_weighting=False)
+    logits = torch.tensor([[2.0], [float("nan")]], requires_grad=True)
+    labels = torch.tensor([[1.0], [float("nan")]])
+    loss, _ = criterion({"efficacy": logits}, {"efficacy": labels})
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert torch.isfinite(logits.grad).all()
+
+
+def test_phase2_loss_masks_nonfinite_unlabelled_prediction():
+    from src.models.toxicity_classifier import MultiTaskBCELoss
+
+    criterion = MultiTaskBCELoss()
+    logits = torch.tensor([[2.0], [float("nan")]], requires_grad=True)
+    labels = torch.tensor([[1.0], [float("nan")]])
+    loss = criterion(logits, labels)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert torch.isfinite(logits.grad).all()
+
+
+def test_phase2_metrics_ignore_nonfinite_prediction():
+    from src.training.finetune_toxicity import compute_metrics
+
+    logits = torch.tensor([[2.0], [-2.0], [float("nan")]])
+    labels = torch.tensor([[1.0], [0.0], [1.0]])
+    assert compute_metrics(logits, labels)["roc_auc"] == 1.0
+
+
 def test_phase3_r2_constant_target_is_zero_not_huge():
     """R² sur cible quasi-constante → 0.0 (neutre), jamais un nombre délirant."""
     from src.training.train_phase3 import compute_phase3_metrics

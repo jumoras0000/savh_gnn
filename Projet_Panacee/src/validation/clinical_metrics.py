@@ -132,7 +132,7 @@ def per_task_metrics(probs, targets, task_names=None, thresholds=None):
     out = []
     for t in range(n_tasks):
         col_t = targets[:, t]
-        valid = ~np.isnan(col_t)
+        valid = np.isfinite(col_t) & np.isfinite(probs[:, t])
         y = col_t[valid].astype(int)
         p = probs[valid, t]
         thr = thresholds[t] if t < len(thresholds) else 0.5

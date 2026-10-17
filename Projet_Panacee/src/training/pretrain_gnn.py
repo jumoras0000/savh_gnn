@@ -256,6 +256,8 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
                     batch_graph.batch, masked_indices,
                 )
                 loss = criterion(logits.float(), masked_types)
+            if not torch.isfinite(loss).all():
+                continue
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -267,6 +269,8 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
                 batch_graph.batch, masked_indices,
             )
             loss = criterion(logits, masked_types)
+            if not torch.isfinite(loss).all():
+                continue
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
@@ -277,7 +281,9 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
         n_correct += (logits.argmax(dim=1) == masked_types).sum().item()
         pbar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{n_correct / max(n_atoms, 1):.3f}")
 
-    return total_loss / max(n_atoms, 1), n_correct / max(n_atoms, 1)
+    if n_atoms == 0:
+        raise RuntimeError("Phase 1 : aucun batch valide pendant l'epoch")
+    return total_loss / n_atoms, n_correct / n_atoms
 
 
 @torch.no_grad()
