@@ -70,6 +70,22 @@ def test_phase4_requires_model_predictions_to_be_available(monkeypatch):
     assert dossier["candidates"][0]["model_activity"] is None
 
 
+def test_combo_api_hides_unvalidated_dose(monkeypatch):
+    from webapp import research
+
+    class FakeAnalyzer:
+        def analyze_combination(self, smiles):
+            return {"molecules": [], "dose_recommendations": [
+                {"dose_optimale_mg_kg": 10, "smiles": smiles[0]}],
+                "interpretation": "dose optimale 10 mg/kg", "synergy_pairs": []}
+
+    monkeypatch.setattr(research, "get_analyzer", lambda checkpoint=None: FakeAnalyzer())
+    result = research.combo(["CCO", "CCN"])
+    assert "dose_recommendations" not in result
+    assert "mg/kg" not in result["interpretation"]
+    assert result["validation_status"] == "exploratory_model_proxy_only"
+
+
 @pytest.mark.parametrize("bad", [[], [{}], [{"smiles": ""}], [3]])
 def test_phase4_invalid_inputs(bad):
     with pytest.raises(ValueError):

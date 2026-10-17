@@ -1498,8 +1498,8 @@ function moleculeCard(r) {
     ["Efficacité (anti-VIH)", r.efficacy?.probabilite_activite != null ? r.efficacy.probabilite_activite + "%" : "—"],
     ["Solubilité (LogS)", r.solubility ? `${r.solubility.log_s} · ${r.solubility.interpretation}` : "—"],
     ["Lipophilie (LogP préd.)", r.lipophilicity ? `${r.lipophilicity.log_p} · ${r.lipophilicity.interpretation}` : "—"],
-    ["Biodisponibilité", r.bioavailability?.probabilite != null ? r.bioavailability.probabilite + "%" : "—"],
-    ["Stabilité métab.", r.metabolic_stability?.probabilite != null ? r.metabolic_stability.probabilite + "%" : "—"],
+    ["Passage BBB", r.bbb_penetration?.probabilite != null ? r.bbb_penetration.probabilite + "%" : "—"],
+    ["Toxicité ClinTox", r.clinical_toxicity?.probabilite != null ? r.clinical_toxicity.probabilite + "%" : "—"],
     ["Drug-likeness (modèle)", r.drug_likeness?.score_global ?? "—"],
   ];
   const descRows = [
@@ -1588,18 +1588,13 @@ function renderCombo(res) {
   const pairs = (res.synergy_pairs || []).map(p =>
     `<tr><td>${esc(p.molecule_1.slice(0, 28))}</td><td>${esc(p.molecule_2.slice(0, 28))}</td>
       <td>${p.synergie}%</td><td><span class="badge ${p.type === "Synergique" ? "OK" : p.type === "Antagoniste" ? "DANGER" : "WARN"}">${p.type}</span></td></tr>`).join("");
-  const doses = (res.dose_recommendations || []).map(d =>
-    `<tr><td>${esc(d.smiles.slice(0, 36))}</td><td>${d.dose_optimale_mg_kg} mg/kg</td></tr>`).join("");
   box.innerHTML = `<div class="card">
-    <h3>🔗 Combinaison — score de réussite ${res.success_score}% · confiance ${res.confidence}% · sécurité ${res.combined_safety}%</h3>
+    <h3>🔗 Combinaison — scores exploratoires non validés</h3>
+    <p class="hint">${esc(res.warning || "Aucune dose ou synergie clinique ne peut être déduite du modèle.")}</p>
     <div class="grid-2">
       <div>
         <div class="o-head">Synergie par paire</div>
         <table><thead><tr><th>Molécule 1</th><th>Molécule 2</th><th>Synergie</th><th>Type</th></tr></thead><tbody>${pairs}</tbody></table>
-      </div>
-      <div>
-        <div class="o-head">Doses optimales</div>
-        <table><thead><tr><th>Molécule</th><th>Dose</th></tr></thead><tbody>${doses}</tbody></table>
       </div>
     </div>
     <div class="o-head" style="margin-top:12px">Interprétation IA</div>

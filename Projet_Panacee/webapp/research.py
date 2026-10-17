@@ -284,6 +284,10 @@ def predict(smiles_list: list[str], checkpoint: str | None = None) -> dict:
                 r = pr
         r["descriptors"] = desc
         r["risk"] = assess_risk(r)
+        # Anciennes clés trompeuses : les cibles apprises sont BBBP/ClinTox,
+        # pas la biodisponibilité orale ni la stabilité métabolique.
+        r.pop("bioavailability", None)
+        r.pop("metabolic_stability", None)
         results.append(r)
 
     notes = {
@@ -297,13 +301,25 @@ def predict(smiles_list: list[str], checkpoint: str | None = None) -> dict:
 
 
 def combo(smiles_list: list[str], checkpoint: str | None = None) -> dict:
-    """Analyse de combinaison (synergie/doses) — nécessite un modèle Phase 3."""
+    """Analyse exploratoire ; aucune dose ni synergie clinique n'est validée."""
     analyzer = get_analyzer(checkpoint)
     res = analyzer.analyze_combination(smiles_list)
     if res is None:
         return {"error": "combinaison invalide (≥ 2 molécules valides requises)"}
+    # Le raisonneur n'a pas été supervisé par des courbes dose-réponse ni des
+    # mesures de synergie. Ne jamais exposer ses classes mg/kg comme prescription.
+    res.pop("dose_recommendations", None)
+    res["dose_recommendations_available"] = False
+    res["validation_status"] = "exploratory_model_proxy_only"
+    res["warning"] = (
+        "Synergie et score de réussite non validés expérimentalement ; "
+        "aucune dose clinique ne peut être recommandée."
+    )
+    res["interpretation"] = res["warning"]
     for mol in res.get("molecules", []):
         mol["risk"] = assess_risk(mol)
+        mol.pop("bioavailability", None)
+        mol.pop("metabolic_stability", None)
     return res
 
 

@@ -53,7 +53,7 @@ CAPABILITIES = [
     {
         "group": "🔗 Combinaisons & raisonnement",
         "items": [
-            "Analyser une combinaison de molécules : synergie par paire, doses optimales, score de réussite, confiance.",
+            "Explorer des scores de combinaison non validés ; aucune dose clinique n'est calculée.",
             "Interprétation IA (MolecularReasoner).",
         ],
     },
@@ -105,7 +105,7 @@ LAB_EQUIVALENCE = [
      "in_silico": "Matrice de synergie prédite",
      "labo": "Damier (checkerboard), modèles Bliss / Loewe, indice de combinaison"},
     {"analyse": "Dose optimale",
-     "in_silico": "Distribution de dose recommandée",
+     "in_silico": "Ancienne sortie de classes de dose non validée, masquée dans l'application",
      "labo": "Courbe dose-réponse, étude d'escalade de dose"},
     {"analyse": "Criblage virtuel",
      "in_silico": "Classement d'une bibliothèque par le modèle",

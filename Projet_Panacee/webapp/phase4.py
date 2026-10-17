@@ -7,11 +7,13 @@ mesures ni transformer une hypothèse en preuve.
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import re
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
 MAX_CANDIDATES = 5
 PUBMED_ROOT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
@@ -74,7 +76,8 @@ def _review_with_claude(dossiers: list[dict]) -> dict:
         return {"status": "unavailable", "text": None}
     compact = [
         {"name": d["name"], "smiles": d["smiles"], "model_mode": d["model_mode"],
-         "model_activity": d["model_activity"], "risk": d["risk"],
+        "model_activity": d["model_activity"],
+        "risk_flags_unvalidated": d["risk"],
          "pubmed": [{"pmid": p["pmid"], "title": p["title"]} for p in d["pubmed"]]}
         for d in dossiers
     ]
@@ -109,6 +112,7 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
     from webapp import research
 
     dossiers = []
+    fingerprints = {}
     for item in items:
         prediction = research.predict([item["smiles"]])
         result = (prediction.get("results") or [None])[0]
@@ -117,6 +121,19 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
                              "model_activity": None, "risk": None, "pubmed": []})
             continue
         mode = prediction.get("mode", "descriptors")
+        checkpoint_path = (prediction.get("checkpoint") or
+                           (research._phase3_default() if mode == "phase3" else
+                            research._phase2_default() if mode == "phase2" else ""))
+        if checkpoint_path and checkpoint_path not in fingerprints:
+            path = Path(checkpoint_path)
+            if path.is_file():
+                digest = hashlib.sha256()
+                with path.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                fingerprints[checkpoint_path] = digest.hexdigest()
+            else:
+                fingerprints[checkpoint_path] = None
         activity = (result.get("efficacy") or {}).get("probabilite_activite")
         activity = float(activity) if isinstance(activity, (int, float)) and math.isfinite(activity) else None
         papers, literature_status = [], "not_requested"
@@ -130,8 +147,9 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
             literature_status = "name_required"
         dossiers.append({
             **item, "status": "research_only", "model_mode": mode,
+            "checkpoint_sha256": fingerprints.get(checkpoint_path),
             "model_activity": activity if mode == "phase3" else None,
-            "risk": result.get("risk"),
+            "risk_flags_unvalidated": result.get("risk"),
             "risk_interpretation": "heuristic_or_model_output_not_clinically_validated",
             "descriptors": result.get("descriptors"),
             "pubmed": papers, "literature_status": literature_status,
@@ -177,6 +195,7 @@ def markdown_report(dossier: dict) -> str:
                       f"SMILES : `{item['smiles']}`",
                       f"Mode : {item['model_mode']} ; activité VIH prédite : "
                       f"{item['model_activity'] if item['model_activity'] is not None else 'non disponible'}",
+                      f"Empreinte SHA-256 checkpoint : {item.get('checkpoint_sha256') or 'non disponible'}",
                       "Statut : recherche uniquement."])
         for paper in item["pubmed"]:
             lines.append(f"- PMID {paper['pmid']} : {paper['title']} — {paper['url']}")

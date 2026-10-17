@@ -707,10 +707,11 @@ class PanaceeAnalyzer:
     ) -> str:
         """Génère une interprétation textuelle des résultats."""
         lines = []
-        lines.append("=== ANALYSE IA PANACÉE ===")
-        lines.append(f"Confiance du modèle : {round(confidence * 100, 1)}%")
-        lines.append(f"Score de réussite prédit : {round(success * 100, 1)}%")
-        lines.append(f"Sécurité combinée : {round(safety, 1)}%")
+        lines.append("=== EXPLORATION IA PANACÉE, NON VALIDÉE ===")
+        lines.append("Les scores ci-dessous sont des proxys du modèle, pas des probabilités cliniques.")
+        lines.append(f"Score proxy de confiance : {round(confidence * 100, 1)}%")
+        lines.append(f"Score proxy de combinaison : {round(success * 100, 1)}%")
+        lines.append(f"Score proxy de sécurité : {round(safety, 1)}%")
         lines.append("")
 
         # Analyse de chaque paire
@@ -724,14 +725,12 @@ class PanaceeAnalyzer:
 
         # Recommandations
         if success * 100 > 70:
-            lines.append("✅ RECOMMANDATION : Combinaison PROMETTEUSE")
-            lines.append("   Score de réussite élevé. À valider en laboratoire.")
+            lines.append("Hypothèse à tester : score proxy relativement élevé.")
         elif success * 100 > 40:
-            lines.append("⚠ RECOMMANDATION : Combinaison MODÉRÉE")
-            lines.append("   Résultats mitigés. Optimisation nécessaire.")
+            lines.append("Hypothèse à tester : score proxy intermédiaire.")
         else:
-            lines.append("❌ RECOMMANDATION : Combinaison FAIBLE")
-            lines.append("   Score de réussite bas. Explorer d'autres candidats.")
+            lines.append("Hypothèse à tester : score proxy faible.")
+        lines.append("Aucune dose, efficacité ou innocuité humaine démontrée.")
 
         # Alertes
         if safety < 50:
@@ -750,8 +749,8 @@ class PanaceeAnalyzer:
               f" (LogS={result['solubility']['log_s']})")
         print(f"     LogP : {result['lipophilicity']['log_p']}"
               f" ({result['lipophilicity']['interpretation']})")
-        print(f"     Biodisponibilité : {result['bioavailability']['probabilite']}%")
-        print(f"     Stabilité métab. : {result['metabolic_stability']['probabilite']}%")
+        print(f"     Passage BBBP prédit : {result['bbb_penetration']['probabilite']}%")
+        print(f"     Cible ClinTox prédite : {result['clinical_toxicity']['probabilite']}%")
         dl = result["drug_likeness"]
         print(f"     Drug-Likeness : {dl['score_global']}")
 

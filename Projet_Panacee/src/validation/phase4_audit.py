@@ -38,6 +38,14 @@ def audit_rows(rows: list[dict], *, threshold: float, endpoint: str) -> dict:
 
     seen = set()
     splits = {}
+    canonical_splits = {}
+    scaffold_splits = {}
+    try:
+        from rdkit import Chem
+        from rdkit.Chem.Scaffolds import MurckoScaffold
+        chemistry_available = True
+    except ImportError:
+        chemistry_available = False
     test = []
     for row in rows:
         smiles = row["smiles"].strip()
@@ -50,6 +58,18 @@ def audit_rows(rows: list[dict], *, threshold: float, endpoint: str) -> dict:
         if smiles in splits and splits[smiles] != split:
             raise ValueError("Fuite : même SMILES présent dans plusieurs splits")
         splits[smiles] = split
+        if chemistry_available:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                raise ValueError("SMILES invalide dans le CSV d'audit")
+            canonical = Chem.MolToSmiles(mol, isomericSmiles=True)
+            scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False)
+            if canonical in canonical_splits and canonical_splits[canonical] != split:
+                raise ValueError("Fuite : même composé canonique dans plusieurs splits")
+            if scaffold in scaffold_splits and scaffold_splits[scaffold] != split:
+                raise ValueError("Fuite : même scaffold dans plusieurs splits")
+            canonical_splits[canonical] = split
+            scaffold_splits[scaffold] = split
         if split != "test":
             continue
         try:
@@ -81,8 +101,9 @@ def audit_rows(rows: list[dict], *, threshold: float, endpoint: str) -> dict:
         "fpr": fp / neg if neg else None,
         "fpr_ci95": wilson_interval(fp, neg),
         "exact_smiles_overlap_checked": True,
+        "canonical_smiles_overlap_checked": chemistry_available,
         "cross_split_comparison_possible": any(s != "test" for s in splits.values()),
-        "scaffold_overlap_checked": False,
+        "scaffold_overlap_checked": chemistry_available,
         "external_provenance_verified": False,
         "clinical_validation": False,
         "conclusion": "Performance observée sur ce CSV uniquement ; aucune absence de risque démontrée.",

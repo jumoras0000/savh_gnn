@@ -84,8 +84,8 @@ TOOLS = [
     },
     {
         "name": "analyze_combination",
-        "description": "Analyse une combinaison de molécules (≥2) : synergie par paire, "
-                       "doses optimales, score de réussite. Nécessite un modèle Phase 3.",
+        "description": "Analyse exploratoire de combinaison (≥2) ; scores proxy non "
+                       "validés. Aucune dose ou synergie clinique recommandée.",
         "input_schema": {
             "type": "object",
             "properties": {"smiles": {"type": "array", "items": {"type": "string"}}},
@@ -369,8 +369,9 @@ def _chat_local(history: list[dict]) -> dict:
         if res.get("error"):
             return done("Combinaison : " + res["error"] +
                         " (la synergie nécessite un modèle Phase 3).")
-        return done(f"Combinaison — score de réussite {res['success_score']}%, "
-                    f"confiance {res['confidence']}%, sécurité {res['combined_safety']}%.")
+        return done("Combinaison analysée à titre exploratoire. Les scores de "
+                    "synergie ne sont pas validés expérimentalement ; aucune "
+                    "dose ou sécurité clinique ne peut être déduite.")
 
     if smiles and any(k in low for k in ("toxic", "effica", "vih", "hiv", "sûr", "sur",
                                           "sécur", "secur", "risque", "médicament", "predict", "prédi")):

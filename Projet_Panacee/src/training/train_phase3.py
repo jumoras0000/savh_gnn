@@ -421,6 +421,12 @@ def main():
             data_paths = json.load(f)
         print(f"✓ Données chargées depuis {paths_file}")
 
+    # Les six jeux doivent partager UN découpage global : aucun composé ni
+    # scaffold ne peut contaminer validation/test via un autre jeu.
+    from src.preprocessing.multi_property_loader import verify_global_split_integrity
+    split_audit = verify_global_split_integrity(data_paths)
+    print(f"✓ Partitions Phase 3 sans fuite de scaffold : {split_audit['counts']}")
+
     # ── Étape 2 : Fusionner les datasets ─────────────────────────────
     print("\n🔀 Fusion des datasets...")
     try:

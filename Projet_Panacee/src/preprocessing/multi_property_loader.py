@@ -16,6 +16,8 @@ Les propriétés manquantes sont marquées NaN et ignorées dans la loss.
 import os
 import sys
 import urllib.request
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -148,7 +150,116 @@ def download_all_phase3_data(base_dir: str | None = None) -> dict:
 
     if failures:
         raise RuntimeError(f"Datasets Phase 3 incomplets : {', '.join(failures)}")
+    repartition_global_scaffolds(all_paths, base_dir)
     return all_paths
+
+
+def _chemical_key(smiles: str) -> tuple[str, str]:
+    """Identité canonique et scaffold utilisés pour tous les jeux Phase 3."""
+    from rdkit import Chem
+    from rdkit.Chem.Scaffolds import MurckoScaffold
+
+    mol = Chem.MolFromSmiles(str(smiles))
+    if mol is None:
+        raise ValueError(f"SMILES invalide dans les partitions Phase 3 : {str(smiles)[:80]}")
+    return (Chem.MolToSmiles(mol, isomericSmiles=True),
+            MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False))
+
+
+def verify_global_split_integrity(data_paths: dict) -> dict:
+    """Bloque toute fuite d'identité ou de scaffold entre jeux/splits."""
+    owner: dict[str, str] = {}
+    scaffold_owner: dict[str, str] = {}
+    counts = {"train": 0, "val": 0, "test": 0}
+    for paths in data_paths.values():
+        if not paths:
+            raise ValueError("Dataset Phase 3 manquant")
+        for split in counts:
+            if split not in paths:
+                raise ValueError(f"Partition {split} manquante")
+            frame = pd.read_csv(paths[split], usecols=["smiles"])
+            for smiles in frame["smiles"]:
+                canonical, scaffold = _chemical_key(smiles)
+                if canonical in owner and owner[canonical] != split:
+                    raise ValueError("Fuite de molécule canonique entre splits Phase 3")
+                if scaffold in scaffold_owner and scaffold_owner[scaffold] != split:
+                    raise ValueError("Fuite de scaffold entre splits Phase 3")
+                owner[canonical] = split
+                scaffold_owner[scaffold] = split
+                counts[split] += 1
+    if any(n == 0 for n in counts.values()):
+        raise ValueError("Partition Phase 3 vide")
+    return {"counts": counts, "unique_molecules": len(owner),
+            "unique_scaffolds": len(scaffold_owner), "global_scaffold_disjoint": True}
+
+
+def _assign_global_scaffolds(groups: dict[str, set[str]]) -> dict[str, str]:
+    """Attribue chaque scaffold une seule fois, de façon déterministe."""
+    total = len(set().union(*groups.values()))
+    if not total:
+        raise ValueError("Aucune molécule valide pour le découpage global")
+    sizes = {"train": 0, "val": 0, "test": 0}
+    assignment = {}
+    for scaffold, molecules in sorted(groups.items(), key=lambda pair: (-len(pair[1]), pair[0])):
+        if sizes["train"] + len(molecules) <= int(0.8 * total):
+            split = "train"
+        elif sizes["val"] + len(molecules) <= int(0.1 * total):
+            split = "val"
+        else:
+            split = "test"
+        sizes[split] += len(molecules)
+        for key in molecules:
+            if key in assignment:
+                raise ValueError("Même molécule associée à plusieurs scaffolds")
+            assignment[key] = split
+    if any(n == 0 for n in sizes.values()):
+        raise ValueError("Découpage global impossible : partition vide")
+    return assignment
+
+
+def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
+    """Recrée des partitions cohérentes entre les six jeux, puis les vérifie."""
+    datasets = {}
+    groups: dict[str, set[str]] = {}
+    for name, paths in data_paths.items():
+        frame = pd.concat([pd.read_csv(paths[split]) for split in ("train", "val", "test")],
+                          ignore_index=True)
+        canonical = []
+        for smiles in frame["smiles"]:
+            key, scaffold = _chemical_key(smiles)
+            canonical.append(key)
+            groups.setdefault(scaffold, set()).add(key)
+        frame["smiles"] = canonical
+        # Des mesures discordantes du même composé doivent être arbitrées,
+        # jamais éliminées silencieusement.
+        for _, records in frame.groupby("smiles", sort=False):
+            if len(records) > 1 and any(records[col].dropna().nunique() > 1
+                                        for col in frame.columns if col != "smiles"):
+                raise ValueError(f"{name}: étiquettes discordantes pour un composé canonique")
+        datasets[name] = frame.drop_duplicates("smiles").reset_index(drop=True)
+
+    assignment = _assign_global_scaffolds(groups)
+    prepared = {}
+    for name, frame in datasets.items():
+        target = frame["smiles"].map(assignment)
+        for split, path in data_paths[name].items():
+            output = frame.loc[target == split]
+            if output.empty:
+                raise ValueError(f"{name}: partition {split} vide après découpage global")
+            prepared[(name, split)] = (path, output)
+
+    hashes = {}
+    for (name, split), (path, output) in prepared.items():
+        output.to_csv(path, index=False)
+        hashes[f"{name}_{split}"] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    audit = verify_global_split_integrity(data_paths)
+    manifest = {"method": "global_canonical_murcko_v1", "audit": audit,
+                "sha256_generated_splits": hashes,
+                "warning": "Provenance externe et validité biologique non vérifiées"}
+    (Path(base_dir) / "split_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest
 
 
 # ══════════════════════════════════════════════════════════════════════

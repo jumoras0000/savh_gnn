@@ -102,13 +102,13 @@ def main():
     print()
     print("  Cette phase entraîne un modèle qui :")
     print("  1. Prédit la toxicité (12 tâches Tox21)")
-    print("  2. Prédit l'efficacité anti-VIH")
+    print("  2. Prédit une activité dans le jeu VIH (pas une guérison)")
     print("  3. Prédit la solubilité (LogS)")
     print("  4. Prédit la lipophilicité (LogP)")
-    print("  5. Prédit la biodisponibilité")
-    print("  6. Prédit la stabilité métabolique")
+    print("  5. Prédit le passage BBBP (barrière hémato-encéphalique)")
+    print("  6. Prédit la cible ClinTox")
     print("  7. Analyse les combinaisons de molécules (IA Raisonnement)")
-    print("  8. Calcule les doses optimales et scores de synergie")
+    print("  8. Explore des scores de combinaison non validés (aucune dose clinique)")
     print()
 
     # ── Vérifications ──
