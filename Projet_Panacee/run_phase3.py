@@ -11,7 +11,7 @@ Usage :
 Pré-requis :
     - Phase 1 terminée (sovereign_encoder_v1.pth)
     - Phase 2 terminée (best_toxicity_model.pth)
-    - DeepChem installé (pip install deepchem)
+    - RDKit et pandas installés (téléchargement CSV direct)
 """
 import os
 import sys
@@ -56,15 +56,10 @@ def check_dependencies():
 
     if _u.find_spec("torch_geometric") is None:
         errors.append("  ✗ torch-geometric non installé")
-    if _u.find_spec("deepchem") is None:
-        errors.append("  ✗ DeepChem non installé (pip install deepchem)")
-    else:
-        try:
-            import deepchem  # noqa: F401
-        except Exception as e:
-            errors.append(
-                f"  ✗ DeepChem installé mais import impossible : {type(e).__name__}: {e}"
-            )
+    if _u.find_spec("rdkit") is None:
+        errors.append("  ✗ RDKit non installé (pip install rdkit)")
+    if _u.find_spec("pandas") is None:
+        errors.append("  ✗ pandas non installé (pip install pandas)")
     if _u.find_spec("sklearn") is None:
         errors.append("  ✗ scikit-learn non installé")
 

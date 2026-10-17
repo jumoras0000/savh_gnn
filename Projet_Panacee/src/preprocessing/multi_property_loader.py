@@ -15,6 +15,7 @@ Les propriétés manquantes sont marquées NaN et ignorées dans la loss.
 """
 import os
 import sys
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -33,66 +34,88 @@ from src.preprocessing.graph_builder import smiles_to_graph
 # Téléchargement des datasets
 # ══════════════════════════════════════════════════════════════════════
 
+_DATASET_FILES = {
+    "tox21": ("tox21.csv.gz", [
+        "NR-AR", "NR-AR-LBD", "NR-AhR", "NR-Aromatase", "NR-ER", "NR-ER-LBD",
+        "NR-PPAR-gamma", "SR-ARE", "SR-ATAD5", "SR-HSE", "SR-MMP", "SR-p53",
+    ]),
+    "esol": ("delaney-processed.csv", ["measured log solubility in mols per litre"]),
+    "lipo": ("Lipophilicity.csv", ["exp"]),
+    "bbbp": ("BBBP.csv", ["p_np"]),
+    "clintox": ("clintox.csv.gz", ["FDA_APPROVED", "CT_TOX"]),
+    "hiv": ("HIV.csv", ["HIV_active"]),
+}
+_DATASET_BASE_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/"
+
+
 def download_dataset(name: str, save_dir: str) -> dict:
-    """
-    Télécharge un dataset via DeepChem et sauvegarde en CSV.
+    """Télécharge le CSV MoleculeNet et produit un split par scaffold RDKit."""
+    from rdkit import Chem
+    from rdkit.Chem.Scaffolds import MurckoScaffold
 
-    Args:
-        name: nom du dataset (tox21, esol, lipo, bbbp, clintox, hiv)
-        save_dir: dossier de destination
+    if name not in _DATASET_FILES:
+        raise ValueError(f"Dataset inconnu : {name}. Choix : {list(_DATASET_FILES)}")
 
-    Returns:
-        dict avec 'train', 'val', 'test' → chemins CSV
-    """
-    try:
-        import deepchem as dc
-    except ImportError as e:
-        raise ImportError(f"DeepChem ne peut pas être importé : {e}") from e
+    filename, task_columns = _DATASET_FILES[name]
+    save_path = Path(save_dir)
+    save_path.mkdir(parents=True, exist_ok=True)
+    raw_path = save_path / filename
+    if not raw_path.exists():
+        print(f"  Téléchargement de {name}...")
+        pending = save_path / (filename + ".part")
+        try:
+            urllib.request.urlretrieve(_DATASET_BASE_URL + filename, pending)
+            pending.replace(raw_path)
+        finally:
+            pending.unlink(missing_ok=True)
 
-    os.makedirs(save_dir, exist_ok=True)
-    loaders = {
-        "tox21": dc.molnet.load_tox21,
-        "esol": dc.molnet.load_delaney,
-        "lipo": dc.molnet.load_lipo,
-        "bbbp": dc.molnet.load_bbbp,
-        "clintox": dc.molnet.load_clintox,
-        "hiv": dc.molnet.load_hiv,
-    }
+    df = pd.read_csv(raw_path)
+    missing = set(["smiles", *task_columns]) - set(df.columns)
+    if missing:
+        raise ValueError(f"{name}: colonnes absentes du CSV : {sorted(missing)}")
+    df = df[["smiles", *task_columns]].dropna(subset=["smiles"]).drop_duplicates("smiles")
+    df = df.copy()
+    df["smiles"] = df["smiles"].astype(str).str.strip()
+    df = df[df["smiles"] != ""].reset_index(drop=True)
+    for task in task_columns:
+        df[task] = pd.to_numeric(df[task], errors="coerce")
 
-    if name not in loaders:
-        raise ValueError(f"Dataset inconnu : {name}. Choix : {list(loaders.keys())}")
+    # Les molécules qui partagent un scaffold restent dans le même split.
+    groups = {}
+    valid_rows = []
+    for idx, smiles in enumerate(df["smiles"]):
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            continue
+        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False)
+        groups.setdefault(scaffold, []).append(idx)
+        valid_rows.append(idx)
+    if not valid_rows:
+        raise ValueError(f"{name}: aucun SMILES valide")
 
-    print(f"  Téléchargement de {name}...")
-    tasks, datasets, _transformers = loaders[name](featurizer="Raw", splitter="scaffold")
-    train_ds, val_ds, test_ds = datasets
+    indices = {"train": [], "val": [], "test": []}
+    n = len(valid_rows)
+    for group in sorted(groups.values(), key=lambda g: (-len(g), g[0])):
+        if len(indices["train"]) + len(group) <= int(0.8 * n):
+            target = "train"
+        elif len(indices["val"]) + len(group) <= int(0.1 * n):
+            target = "val"
+        else:
+            target = "test"
+        indices[target].extend(group)
+
+    if not indices["train"] or not indices["val"] or not indices["test"]:
+        raise ValueError(f"{name}: split scaffold vide ; vérifier le CSV")
 
     paths = {}
-    for split_name, ds in [("train", train_ds), ("val", val_ds), ("test", test_ds)]:
-        # Extraire les SMILES et les labels
-        from rdkit import Chem
-        smiles_list = []
-        for x in ds.X:
-            if isinstance(x, Chem.rdchem.Mol):
-                smiles_list.append(Chem.MolToSmiles(x))
-            elif isinstance(x, str):
-                smiles_list.append(x)
-            else:
-                smiles_list.append(str(x))
-
-        df = pd.DataFrame({"smiles": smiles_list})
-        labels = ds.y
-        if labels.ndim == 1:
-            labels = labels.reshape(-1, 1)
-
-        for i, task_name in enumerate(tasks):
-            col_name = f"{name}_{task_name}" if name != "tox21" else task_name
-            df[col_name] = labels[:, i]
-
-        csv_path = os.path.join(save_dir, f"{name}_{split_name}.csv")
-        df.to_csv(csv_path, index=False)
-        paths[split_name] = csv_path
-        print(f"    {split_name}: {len(df)} molécules → {csv_path}")
-
+    for split_name, row_ids in indices.items():
+        csv_path = save_path / f"{name}_{split_name}.csv"
+        split_df = df.iloc[row_ids].rename(
+            columns={task: f"{name}_{task}" for task in task_columns} if name != "tox21" else {}
+        )
+        split_df.to_csv(csv_path, index=False)
+        paths[split_name] = str(csv_path)
+        print(f"    {split_name}: {len(split_df)} molécules → {csv_path}")
     return paths
 
 
@@ -106,20 +129,12 @@ def download_all_phase3_data(base_dir: str | None = None) -> dict:
     if base_dir is None:
         base_dir = str(EXTERNAL_DIR / "phase3")
 
-    # Vérifier l'import réel : find_spec('deepchem') ne garantit pas que ses
-    # dépendances sont utilisables dans cet environnement Python.
-    try:
-        import deepchem  # noqa: F401
-    except Exception as e:
-        raise RuntimeError(
-            f"DeepChem est installé mais inutilisable : {type(e).__name__}: {e}"
-        ) from e
-
     os.makedirs(base_dir, exist_ok=True)
 
     all_paths = {}
     datasets_to_download = ["tox21", "esol", "lipo", "bbbp", "clintox", "hiv"]
 
+    failures = []
     for name in datasets_to_download:
         try:
             save_dir = os.path.join(base_dir, name)
@@ -129,9 +144,10 @@ def download_all_phase3_data(base_dir: str | None = None) -> dict:
         except Exception as e:
             print(f"  ✗ Erreur {name}: {e}")
             all_paths[name] = None
+            failures.append(name)
 
-    if not any(all_paths.values()):
-        raise RuntimeError("Aucun dataset Phase 3 téléchargé ; voir les erreurs ci-dessus")
+    if failures:
+        raise RuntimeError(f"Datasets Phase 3 incomplets : {', '.join(failures)}")
     return all_paths
 
 
