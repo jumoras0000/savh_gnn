@@ -2012,13 +2012,77 @@ async function refreshChatMode() {
   if (state._loadConversations) state._loadConversations();
 }
 
+function setupPhase4() {
+  const run = document.getElementById("p4Run");
+  if (!run) return;
+  let lastReport = "";
+  run.addEventListener("click", async () => {
+    const status = document.getElementById("p4Status");
+    const results = document.getElementById("p4Results");
+    const chart = document.getElementById("p4Chart");
+    const exportBtn = document.getElementById("p4Export");
+    run.disabled = true;
+    status.textContent = "Recherche des notices PubMed et analyse des candidats…";
+    results.replaceChildren(); chart.replaceChildren(); exportBtn.style.display = "none";
+    try {
+      const dossier = await fetchJSON("/api/phase4", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ library: document.getElementById("p4Library").value,
+          with_claude: document.getElementById("p4Claude").checked }),
+      });
+      lastReport = dossier.report_markdown;
+      status.textContent = dossier.conclusion;
+      const heading = document.createElement("h3");
+      heading.textContent = "Scores du modèle (exploratoires, non cliniques)";
+      chart.append(heading);
+      dossier.candidates.forEach(item => {
+        const section = document.createElement("section");
+        const title = document.createElement("h3"); title.textContent = item.name || item.smiles;
+        section.append(title);
+        const meta = document.createElement("p"); meta.className = "p4-note";
+        meta.textContent = `Mode ${item.model_mode} · ${item.status} · littérature : ${item.literature_status || "absente"}`;
+        section.append(meta);
+        (item.pubmed || []).forEach(paper => {
+          const p = document.createElement("p"); p.className = "p4-paper";
+          const a = document.createElement("a"); a.href = paper.url;
+          a.target = "_blank"; a.rel = "noopener noreferrer";
+          a.textContent = `PMID ${paper.pmid} — ${paper.title}`;
+          p.append(a); section.append(p);
+        });
+        results.append(section);
+        const score = Number(item.model_activity);
+        if (item.model_activity !== null && Number.isFinite(score)) {
+          const row = document.createElement("div"); row.className = "p4-row";
+          const label = document.createElement("span"); label.textContent = item.name || item.smiles;
+          const track = document.createElement("div"); track.className = "p4-track";
+          const fill = document.createElement("div"); fill.className = "p4-fill";
+          fill.style.width = `${Math.max(0, Math.min(100, score))}%`; track.append(fill);
+          const value = document.createElement("span"); value.textContent = `${score.toFixed(1)} %`;
+          row.append(label, track, value); chart.append(row);
+        }
+      });
+      const review = document.createElement("p"); review.className = "p4-note";
+      review.textContent = dossier.claude_review.text || `Claude : ${dossier.claude_review.status}`;
+      results.append(review);
+      exportBtn.style.display = "inline-flex";
+    } catch (error) {
+      status.textContent = `Phase 4 indisponible : ${error.message}`;
+    } finally { run.disabled = false; }
+  });
+  document.getElementById("p4Export").addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([lastReport], { type: "text/markdown;charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = "panacee-phase4.md";
+    a.click(); URL.revokeObjectURL(url);
+  });
+}
+
 /* ====================================================================
    Démarrage
    ==================================================================== */
 async function main() {
   setupTheme();
   ecgInit(); setupTabs(); setupHelp(); setupRunSelect(); setupEpochTools(); setupEval();
-  setupFiles(); setupTraining(); setupResearch(); setupScreening(); setupChat();
+  setupFiles(); setupTraining(); setupResearch(); setupScreening(); setupChat(); setupPhase4();
   await loadConfig();
   renderBarème();
   await loadFiles();

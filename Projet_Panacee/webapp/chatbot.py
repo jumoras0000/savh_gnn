@@ -29,7 +29,10 @@ SYSTEM_PROMPT = (
     "combinaisons. Rappelle, quand c'est pertinent, que les prédictions sont "
     "in-silico et doivent être validées en laboratoire. Si aucun modèle n'est "
     "entraîné, appuie-toi sur les descripteurs RDKit (toujours disponibles) et "
-    "invite à entraîner la Phase 2/3."
+    "invite à entraîner la Phase 2/3. Pour toute recherche de remède VIH, utilise "
+    "phase4_research. Ne présente jamais une prédiction, un titre PubMed ou une "
+    "hypothèse comme une preuve d'efficacité, d'innocuité ou de guérison. "
+    "Aucune dose ni fabrication de médicament ne peut être déduite du modèle."
 )
 
 # ──────────────────────────────────────────────────────────────────────
@@ -95,6 +98,25 @@ TOOLS = [
                        "verdict de sécurité, et statut du process en cours.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "phase4_research",
+        "description": "Dossier de recherche anti-VIH traçable : modèle GNN, notices PubMed "
+                       "vérifiées par PMID, limites et étapes de validation. "
+                       "Choisir 1 à 5 molécules du catalogue ou fournir SMILES + nom. "
+                       "Ne donne aucun traitement ni garantie de sécurité.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "candidates": {"type": "array", "items": {"type": "object", "properties": {
+                    "name": {"type": "string"}, "smiles": {"type": "string"}},
+                    "required": ["smiles"]}},
+                "library": {"type": "string", "enum": [
+                    "hiv_reference", "hiv_nrti", "hiv_nnrti", "hiv_pi", "hiv_insti",
+                    "reference_drugs", "natural_products", "repurposing", "toxic_controls",
+                ]},
+            },
+        },
+    },
 ]
 
 
@@ -126,6 +148,13 @@ def _dispatch_tool(name: str, args: dict) -> dict:
             from webapp.trainer import MANAGER
             root = os.environ.get("PANACEE_CKPT_ROOT", "checkpoints")
             return {"runs": service.list_runs(root), "process": MANAGER.status()}
+        if name == "phase4_research":
+            from webapp.catalog import LIBRARIES
+            from webapp.phase4 import build_dossier
+            candidates = args.get("candidates")
+            if not candidates and args.get("library") in LIBRARIES:
+                candidates = LIBRARIES[args["library"]]["molecules"][:5]
+            return build_dossier(candidates or [], with_claude=False)
     except FileNotFoundError as e:
         return {"error": str(e)}
     except Exception as e:  # pragma: no cover

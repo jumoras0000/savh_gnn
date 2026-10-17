@@ -630,3 +630,12 @@ textarea { resize: vertical; line-height: 1.5; }
 .lex-term-name { font-weight: 700; color: var(--vital); }
 .lex-term-def { margin: 2px 0; line-height: 1.5; }
 .lex-term-ex { font-size: 13px; color: var(--faint); line-height: 1.45; }
+
+/* Phase 4 : scores du modèle uniquement, sans interprétation clinique. */
+.p4-chart { margin: 14px 0; }
+.p4-row { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 70px;
+  gap: 10px; align-items: center; margin: 8px 0; font-size: 13px; }
+.p4-track { height: 12px; background: var(--line); border-radius: 7px; overflow: hidden; }
+.p4-fill { height: 100%; background: var(--vital); }
+.p4-paper { margin: 8px 0; font-size: 13px; }
+.p4-note { color: var(--warn); font-size: 13px; line-height: 1.5; }

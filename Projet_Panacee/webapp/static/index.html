@@ -76,6 +76,7 @@
       <button class="tab" data-tab="train">🎛️ Entraînement</button>
       <button class="tab" data-tab="research">🧪 Recherche</button>
       <button class="tab" data-tab="screen">🧬 Criblage VIH</button>
+      <button class="tab" data-tab="phase4">🔎 Phase 4</button>
       <button class="tab" data-tab="chat">💬 Assistant</button>
       <button class="tab" data-tab="lexique">📖 Lexique</button>
       <button class="tab" data-tab="info">ℹ️ Guide</button>
@@ -326,6 +327,31 @@
         <h3>Classement des candidats</h3>
         <div class="hint" id="scHint"></div>
         <div style="overflow-x:auto"><table id="scTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ---------- Phase 4 : dossier de recherche ---------- -->
+    <section class="panel-view" id="view-phase4">
+      <div class="card">
+        <h2>Phase 4 · Recherche anti-VIH traçable</h2>
+        <p class="hint">Le modèle et Claude examinent des hypothèses ; ce dossier ne démontre
+          ni guérison, ni sécurité humaine. Les notices PubMed identifient des articles,
+          elles ne valident pas leurs conclusions.</p>
+        <label for="p4Library">Bibliothèque de candidats</label>
+        <select id="p4Library" class="picker">
+          <option value="hiv_reference">Antirétroviraux de référence</option>
+          <option value="hiv_nrti">NRTI</option>
+          <option value="hiv_nnrti">NNRTI</option>
+          <option value="hiv_pi">Inhibiteurs de protéase</option>
+          <option value="hiv_insti">Inhibiteurs d’intégrase</option>
+          <option value="natural_products">Produits naturels</option>
+        </select>
+        <label style="margin-left:12px"><input type="checkbox" id="p4Claude" checked /> Analyse Claude si disponible</label>
+        <button class="btn" id="p4Run">Créer le dossier</button>
+        <p id="p4Status" class="hint" role="status"></p>
+        <div id="p4Chart" class="p4-chart" aria-label="Scores exploratoires du modèle"></div>
+        <div id="p4Results"></div>
+        <button class="btn ghost" id="p4Export" style="display:none">Télécharger le rapport Markdown</button>
       </div>
     </section>
 

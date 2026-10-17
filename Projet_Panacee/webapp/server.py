@@ -656,6 +656,40 @@ async def api_screen(request):
     return JSONResponse(res, status_code=400 if res.get("error") else 200)
 
 
+async def api_phase4(request):
+    """Dossier de recherche traçable ; calculs et appels réseau hors de l'event loop."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "objet JSON attendu"}, status_code=400)
+    candidates = body.get("candidates")
+    if not candidates and body.get("library"):
+        from webapp.catalog import LIBRARIES
+        library = LIBRARIES.get(body["library"])
+        if library is None:
+            return JSONResponse({"error": "bibliothèque inconnue"}, status_code=400)
+        candidates = library["molecules"][:5]
+    if not isinstance(candidates, list) or not 1 <= len(candidates) <= 5:
+        return JSONResponse({"error": "fournir 1 à 5 candidats"}, status_code=400)
+
+    def _run():
+        from webapp.phase4 import build_dossier, markdown_report
+        dossier = build_dossier(candidates, with_claude=body.get("with_claude") is True,
+                               literature=body.get("literature") is not False)
+        dossier["report_markdown"] = markdown_report(dossier)
+        return dossier
+
+    try:
+        return JSONResponse(await asyncio.to_thread(_run))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"error": f"Phase 4 indisponible : {type(exc).__name__}: {exc}"},
+                            status_code=503)
+
+
 async def api_evaluate(request):
     """Évaluation approfondie : charge un checkpoint + un CSV et calcule les
     métriques cliniques par endpoint (sensibilité, FNR, ECE, alertes)."""
@@ -803,6 +837,7 @@ routes = [
     Route("/api/depict", api_depict),
     Route("/api/libraries", api_libraries),
     Route("/api/screen", api_screen, methods=["POST"]),
+    Route("/api/phase4", api_phase4, methods=["POST"]),
     Route("/api/capabilities", api_capabilities),
     Route("/api/glossary", api_glossary),
     Route("/api/chat", api_chat, methods=["POST"]),
