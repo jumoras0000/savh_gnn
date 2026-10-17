@@ -223,6 +223,8 @@ def compute_phase3_metrics(predictions, targets):
 
 def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoch,
                     scaler=None, accum_steps=1):
+    if accum_steps < 1:
+        raise ValueError("accum_steps doit être >= 1")
     model.train()
     total_loss = 0.0
     n = 0
@@ -230,6 +232,22 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
                                    "lipophilicity", "bbb_penetration", "clinical_toxicity"]}
     all_targets = {k: [] for k in all_preds}
     use_amp = scaler is not None
+    pending_backward = 0
+
+    def apply_gradients():
+        nonlocal pending_backward
+        if pending_backward == 0:
+            return
+        if use_amp:
+            scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        if use_amp:
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            optimizer.step()
+        optimizer.zero_grad()
+        pending_backward = 0
 
     optimizer.zero_grad()
     pbar = tqdm(loader, desc=f"[Train] Epoch {epoch}")
@@ -241,8 +259,8 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
             predictions = model(batch_data)
             loss, _ = criterion(predictions, labels_device)
 
-        if torch.isnan(loss):
-            logger.warning("NaN loss detecte, batch ignore")
+        if not torch.isfinite(loss).all() or not loss.requires_grad:
+            logger.warning("Loss non finie ou sans gradient, batch ignore (step=%s)", step)
             continue
 
         loss_scaled = loss / accum_steps
@@ -250,19 +268,10 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
             scaler.scale(loss_scaled).backward()
         else:
             loss_scaled.backward()
+        pending_backward += 1
 
-        if (step + 1) % accum_steps == 0:
-            if use_amp:
-                scaler.unscale_(optimizer)
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            if use_amp:
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                optimizer.step()
-            optimizer.zero_grad()
-            if step < 5 or step % 100 == 0:
-                logger.debug(f"step={step} grad_norm={grad_norm:.4f}")
+        if pending_backward == accum_steps:
+            apply_gradients()
 
         total_loss += loss.item() * batch_data.num_graphs
         n += batch_data.num_graphs
@@ -274,17 +283,10 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
 
         pbar.set_postfix(loss=f"{loss.item():.4f}")
 
-    # Flush residual accumulated gradients (last incomplete group)
-    if (step + 1) % accum_steps != 0:
-        if use_amp:
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            optimizer.step()
-        optimizer.zero_grad()
+    # Un batch ignoré ne crée aucun gradient et ne doit pas déclencher GradScaler.step.
+    apply_gradients()
+    if n == 0:
+        raise RuntimeError("Aucun batch valide pendant cette epoch ; vérifier les labels et la loss")
 
     merged_preds = {}
     merged_targets = {}
