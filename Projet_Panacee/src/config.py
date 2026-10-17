@@ -32,7 +32,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Nombre de workers du DataLoader. Sur Windows : 0 (le spawn re-sérialise tout).
 # Sinon : tous les cœurs CPU disponibles, pour nourrir le GPU sans famine.
 # Surchargé par la variable d'environnement PANACEE_NUM_WORKERS (utile sur Kaggle).
-_DEFAULT_WORKERS = 0 if sys.platform == "win32" else (os.cpu_count() or 4)
+_DEFAULT_WORKERS = 0 if sys.platform == "win32" else min(os.cpu_count() or 4, 4)
 NUM_WORKERS = int(os.environ.get("PANACEE_NUM_WORKERS", _DEFAULT_WORKERS))
 PIN_MEMORY = torch.cuda.is_available()
 

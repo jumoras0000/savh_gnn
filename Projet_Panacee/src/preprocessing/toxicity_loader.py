@@ -146,52 +146,132 @@ def collate_toxicity_batch(batch):
 
 
 # ══════════════════════════════════════════════════════════════════════
-# Téléchargement (DeepChem)
+# Téléchargement (direct CSV — bypass DeepChem/tensorflow)
 # ══════════════════════════════════════════════════════════════════════
 
-def _download_dataset(loader_fn, name, save_dir):
-    # deepchem est déjà importé par l'appelant (download_tox21_data/sider) qui
-    # fournit loader_fn=dc.molnet.* — pas de garde redondante ici.
-    save_path = Path(save_dir)
-    save_path.mkdir(parents=True, exist_ok=True)
+_TOX21_TASKS = [
+    "NR-AR", "NR-AR-LBD", "NR-AhR", "NR-Aromatase",
+    "NR-ER", "NR-ER-LBD", "NR-PPAR-gamma",
+    "SR-ARE", "SR-ATAD5", "SR-HSE", "SR-MMP", "SR-p53",
+]
 
-    # Use Raw featurizer to get SMILES directly (not fingerprints)
-    tasks, datasets, _ = loader_fn(featurizer="Raw", splitter="scaffold")
-    splits = {"train": datasets[0], "val": datasets[1], "test": datasets[2]}
+_TOX21_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/tox21.csv.gz"
 
-    paths = {}
-    for split_name, ds in splits.items():
-        # Extract SMILES from X (Raw featurizer may return Mol objects or strings)
+
+def _scaffold_split(df, frac_train=0.8, frac_val=0.1, seed=42):
+    """Scaffold split via RDKit — fallback random si RDKit échoue."""
+    try:
         from rdkit import Chem
-        smiles_list = []
-        for x in ds.X:
-            if isinstance(x, Chem.rdchem.Mol):
-                smiles_list.append(Chem.MolToSmiles(x))
-            elif isinstance(x, str):
-                smiles_list.append(x)
+        from rdkit.Chem.Scaffolds import MurckoScaffold
+
+        scaffolds: dict = {}
+        for i, smi in enumerate(df["smiles"]):
+            try:
+                mol = Chem.MolFromSmiles(smi)
+                scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False)
+            except Exception:
+                scaffold = smi
+            scaffolds.setdefault(scaffold, []).append(i)
+
+        scaffold_sets = sorted(scaffolds.values(), key=len, reverse=True)
+        n = len(df)
+        train_cutoff = int(frac_train * n)
+        val_cutoff = int((frac_train + frac_val) * n)
+
+        train_idx, val_idx, test_idx = [], [], []
+        for group in scaffold_sets:
+            if len(train_idx) < train_cutoff:
+                train_idx.extend(group)
+            elif len(train_idx) + len(val_idx) < val_cutoff:
+                val_idx.extend(group)
             else:
-                smiles_list.append(str(x))
+                test_idx.extend(group)
 
-        # Build DataFrame with only SMILES + target columns
-        df = pd.DataFrame({"smiles": smiles_list})
-        labels = ds.y
-        if labels.ndim == 1:
-            labels = labels.reshape(-1, 1)
-        for i, task_name in enumerate(tasks):
-            df[task_name] = labels[:, i]
+        return (df.iloc[train_idx].reset_index(drop=True),
+                df.iloc[val_idx].reset_index(drop=True),
+                df.iloc[test_idx].reset_index(drop=True))
 
-        p = save_path / f"{name}_{split_name}.csv"
-        df.to_csv(p, index=False)
-        paths[split_name] = str(p)
-        print(f"  {split_name}: {p} ({len(df)} mol, {len(tasks)} tasks)")
-    return paths
+    except Exception as e:
+        print(f"  Scaffold split échoué ({e}), fallback random split")
+        df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
+        n = len(df)
+        t, v = int(0.8 * n), int(0.9 * n)
+        return df.iloc[:t], df.iloc[t:v], df.iloc[v:]
 
 
 def download_tox21_data(save_dir="data/external/tox21"):
-    import deepchem as dc
-    return _download_dataset(dc.molnet.load_tox21, "tox21", save_dir)
+    """Télécharge Tox21 depuis S3 et fait un scaffold split — sans DeepChem."""
+    import urllib.request, gzip, shutil
+
+    save_path = Path(save_dir)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    raw_csv = save_path / "tox21_raw.csv"
+
+    # Cherche CSV déjà présent (téléchargé manuellement ou précédemment)
+    if not raw_csv.exists():
+        gz_path = save_path / "tox21.csv.gz"
+        print(f"  Téléchargement Tox21 depuis {_TOX21_URL} ...")
+        urllib.request.urlretrieve(_TOX21_URL, gz_path)
+        with gzip.open(gz_path, "rb") as f_in, open(raw_csv, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        gz_path.unlink(missing_ok=True)
+        print(f"  OK → {raw_csv}")
+
+    df = pd.read_csv(raw_csv)
+    # Normalise colonne SMILES (peut être dernière colonne)
+    if "smiles" not in df.columns:
+        df = df.rename(columns={df.columns[-1]: "smiles"})
+
+    # Garde uniquement SMILES + tâches connues
+    task_cols = [c for c in _TOX21_TASKS if c in df.columns]
+    df = df[["smiles"] + task_cols].dropna(subset=["smiles"])
+
+    train_df, val_df, test_df = _scaffold_split(df)
+
+    paths = {}
+    for split_name, split_df in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        p = save_path / f"tox21_{split_name}.csv"
+        split_df.to_csv(p, index=False)
+        paths[split_name] = str(p)
+        print(f"  {split_name}: {p} ({len(split_df)} mol, {len(task_cols)} tasks)")
+
+    return paths
 
 
 def download_sider_data(save_dir="data/external/sider"):
-    import deepchem as dc
-    return _download_dataset(dc.molnet.load_sider, "sider", save_dir)
+    """SIDER : téléchargement direct sans DeepChem."""
+    import urllib.request
+
+    _SIDER_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/sider.csv.gz"
+    import gzip, shutil
+
+    save_path = Path(save_dir)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    raw_csv = save_path / "sider_raw.csv"
+    if not raw_csv.exists():
+        gz_path = save_path / "sider.csv.gz"
+        print(f"  Téléchargement SIDER depuis {_SIDER_URL} ...")
+        urllib.request.urlretrieve(_SIDER_URL, gz_path)
+        with gzip.open(gz_path, "rb") as f_in, open(raw_csv, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        gz_path.unlink(missing_ok=True)
+
+    df = pd.read_csv(raw_csv)
+    if "smiles" not in df.columns:
+        df = df.rename(columns={df.columns[0]: "smiles"})
+
+    task_cols = [c for c in df.columns if c != "smiles"]
+    df = df[["smiles"] + task_cols].dropna(subset=["smiles"])
+
+    train_df, val_df, test_df = _scaffold_split(df)
+
+    paths = {}
+    for split_name, split_df in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        p = save_path / f"sider_{split_name}.csv"
+        split_df.to_csv(p, index=False)
+        paths[split_name] = str(p)
+        print(f"  {split_name}: {p} ({len(split_df)} mol, {len(task_cols)} tasks)")
+
+    return paths
