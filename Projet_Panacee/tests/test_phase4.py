@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 import sys
+import json
 from types import SimpleNamespace
 
 from webapp import phase4
@@ -97,6 +98,19 @@ def test_phase4_three_way_review_is_bounded_and_unverified(monkeypatch):
                                   hypotheses=["Tester l'activité sur variants résistants"])
     assert len(claude_calls) == 2
     assert len(openai_calls) == 2
+    claude_initial = json.loads(claude_calls[0]["messages"][0]["content"])
+    chatgpt_initial = json.loads(openai_calls[0]["input"])
+    assert "chatgpt_analysis_unverified" not in claude_initial
+    assert "claude_analysis_unverified" not in chatgpt_initial
+    assert claude_initial["candidates"] == chatgpt_initial["candidates"]
+    assert claude_initial["hypotheses"] == chatgpt_initial["hypotheses"]
+    claude_cross = json.loads(claude_calls[1]["messages"][0]["content"])
+    chatgpt_cross = json.loads(openai_calls[1]["input"])
+    assert claude_cross["chatgpt_analysis_unverified"] == dossier["chatgpt_review"]["text"]
+    assert claude_cross["claude_prior_analysis_unverified"] == dossier["claude_review"]["text"]
+    assert chatgpt_cross["claude_analysis_unverified"] == dossier["claude_review"]["text"]
+    assert chatgpt_cross["chatgpt_prior_analysis_unverified"] == dossier["chatgpt_review"]["text"]
+    assert chatgpt_cross["claude_followup_unverified"] == dossier["claude_followup"]["text"]
     assert dossier["chatgpt_review"]["unverified_pmids"] == ["99999999"]
     assert dossier["claude_followup"]["status"] == "generated_unverified"
     assert dossier["chatgpt_followup"]["status"] == "generated_unverified"
@@ -104,7 +118,7 @@ def test_phase4_three_way_review_is_bounded_and_unverified(monkeypatch):
     assert dossier["consensus_status"] == "not_established_without_independent_experiments"
     assert dossier["hypotheses"][0]["id"] == "H1"
     assert dossier["clinical_use"] is False
-    assert "ChatGPT — critique" in phase4.markdown_report(dossier)
+    assert "ChatGPT — analyse indépendante" in phase4.markdown_report(dossier)
 
 
 def test_phase4_openai_not_configured_is_explicit(monkeypatch):

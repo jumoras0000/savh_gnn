@@ -91,13 +91,15 @@ def _review_flags(text: str, dossiers: list[dict], hypotheses: list[dict]) -> di
 
 
 def _review_with_claude(dossiers: list[dict], hypotheses: list[dict],
-                        critique: str | None = None) -> dict:
+                        critique: str | None = None,
+                        own_analysis: str | None = None) -> dict:
     from webapp import chatbot
     if not chatbot._claude_available():
         return {"status": "unavailable", "text": None}
     compact = _evidence(dossiers, hypotheses)
     if critique:
-        compact["chatgpt_critique_unverified"] = critique[:7000]
+        compact["chatgpt_analysis_unverified"] = critique[:7000]
+        compact["claude_prior_analysis_unverified"] = (own_analysis or "")[:7000]
     system = (
         "Tu es un assistant de recherche biomédicale. Réponds en français. "
         "Propose des hypothèses et des tests de validation à haut niveau à partir "
@@ -124,7 +126,9 @@ def _review_with_claude(dossiers: list[dict], hypotheses: list[dict],
 
 
 def _review_with_chatgpt(dossiers: list[dict], hypotheses: list[dict],
-                         claude_review: dict) -> dict:
+                         claude_review: dict | None = None,
+                         own_analysis: dict | None = None,
+                         claude_followup: dict | None = None) -> dict:
     key, model = os.environ.get("OPENAI_API_KEY"), os.environ.get("OPENAI_MODEL")
     if not key or not model:
         return {"status": "not_configured", "text": None,
@@ -134,15 +138,18 @@ def _review_with_chatgpt(dossiers: list[dict], hypotheses: list[dict],
     except ImportError:
         return {"status": "sdk_missing", "text": None}
     evidence = _evidence(dossiers, hypotheses)
-    evidence["claude_analysis_unverified"] = (claude_review.get("text") or "")[:7000]
+    if claude_review is not None:
+        evidence["claude_analysis_unverified"] = (claude_review.get("text") or "")[:7000]
+        evidence["chatgpt_prior_analysis_unverified"] = ((own_analysis or {}).get("text") or "")[:7000]
+        evidence["claude_followup_unverified"] = ((claude_followup or {}).get("text") or "")[:7000]
     instructions = (
         "Tu es un contradicteur scientifique, pas un clinicien prescripteur. "
-        "Réponds en français. Examine chaque hypothèse H1..H10 présente, les "
-        "désaccords avec Claude et les données absentes. Les notices PubMed ne "
+        "Réponds en français. Examine chaque hypothèse H1..H10 présente et les "
+        "données absentes. Si une analyse Claude est fournie, examine les désaccords. Les notices PubMed ne "
         "prouvent pas les résultats des articles ; n'invente aucune source. "
         "Ne promets ni guérison ni innocuité et ne fournis aucune dose ou protocole "
         "de fabrication. Distingue mesures, scores du modèle, hypothèses et "
-        "affirmations non vérifiées de Claude. Abstention si preuves insuffisantes."
+        "affirmations non vérifiées des IA. Abstention si preuves insuffisantes."
     )
     try:
         client = OpenAI(api_key=key, timeout=30.0, max_retries=0)
@@ -247,16 +254,18 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
 
     claude_review = (_review_with_claude(dossiers, registry) if with_claude else
                      {"status": "not_requested", "text": None})
-    chatgpt_review = (_review_with_chatgpt(dossiers, registry, claude_review)
+    chatgpt_review = (_review_with_chatgpt(dossiers, registry)
                       if with_chatgpt else {"status": "not_requested", "text": None})
     claude_followup = (
-        _review_with_claude(dossiers, registry, chatgpt_review["text"])
-        if with_claude and chatgpt_review.get("status") == "generated_unverified"
+        _review_with_claude(dossiers, registry, chatgpt_review["text"], claude_review["text"])
+        if (with_claude and claude_review.get("status") == "generated_unverified"
+            and chatgpt_review.get("status") == "generated_unverified")
         else {"status": "not_requested", "text": None}
     )
     chatgpt_followup = (
-        _review_with_chatgpt(dossiers, registry, claude_followup)
-        if with_chatgpt and claude_followup.get("status") == "generated_unverified"
+        _review_with_chatgpt(dossiers, registry, claude_review, chatgpt_review, claude_followup)
+        if (with_chatgpt and chatgpt_review.get("status") == "generated_unverified"
+            and claude_followup.get("status") == "generated_unverified")
         else {"status": "not_requested", "text": None}
     )
     dossier = {
@@ -268,7 +277,7 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
         "chatgpt_review": chatgpt_review, "claude_followup": claude_followup,
         "chatgpt_followup": chatgpt_followup,
         "model_checks": _model_checks(dossiers, registry),
-        "review_protocol": "model_then_claude_then_chatgpt_then_claude_then_chatgpt_max_four_calls",
+        "review_protocol": "independent_claude_and_chatgpt_then_cross_review_max_four_calls",
         "consensus_status": "not_established_without_independent_experiments",
         "references": [
             {"title": "NIH HIV treatment guidelines", "url": GUIDELINES},
@@ -307,10 +316,10 @@ def markdown_report(dossier: dict) -> str:
         for paper in item["pubmed"]:
             lines.append(f"- PMID {paper['pmid']} : {paper['title']} — {paper['url']}")
         lines.append(f"Recherche documentaire : {item.get('literature_status', 'non disponible')}.")
-    for label, key in (("Claude — première analyse", "claude_review"),
-                       ("ChatGPT — critique", "chatgpt_review"),
-                       ("Claude — réponse à la critique", "claude_followup"),
-                       ("ChatGPT — réponse finale", "chatgpt_followup")):
+    for label, key in (("Claude — analyse indépendante", "claude_review"),
+                       ("ChatGPT — analyse indépendante", "chatgpt_review"),
+                       ("Claude — critique croisée", "claude_followup"),
+                       ("ChatGPT — critique croisée", "chatgpt_followup")):
         review = dossier.get(key, {})
         lines.extend(["", f"## {label} (non vérifiée)",
                       f"Statut : {review.get('status', 'indisponible')}."])

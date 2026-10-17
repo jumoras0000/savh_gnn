@@ -2083,10 +2083,10 @@ function setupPhase4() {
       const modelCheck = document.createElement("p"); modelCheck.className = "p4-note";
       modelCheck.textContent = dossier.model_checks.conclusion;
       results.append(modelCheck);
-      [["Claude · première analyse", dossier.claude_review],
-       ["ChatGPT · contre-analyse", dossier.chatgpt_review],
-       ["Claude · réponse à la critique", dossier.claude_followup],
-       ["ChatGPT · réponse finale", dossier.chatgpt_followup]].forEach(([label, review]) => {
+      [["Claude · analyse indépendante", dossier.claude_review],
+       ["ChatGPT · analyse indépendante", dossier.chatgpt_review],
+       ["Claude · critique croisée", dossier.claude_followup],
+       ["ChatGPT · critique croisée", dossier.chatgpt_followup]].forEach(([label, review]) => {
         const card = document.createElement("section"); card.className = "p4-review";
         const title = document.createElement("h3"); title.textContent = label; card.append(title);
         const state = document.createElement("p"); state.className = "p4-note";
