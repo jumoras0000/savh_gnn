@@ -11,6 +11,7 @@ Le pourcentage de fiabilité du modèle est **indéterminé** tant qu'un checkpo
    Le dossier inclut l'empreinte SHA-256 du checkpoint lorsqu'un fichier correspondant est accessible ; « non disponible » n'est pas une preuve de provenance.
 3. Pour chaque molécule nommée, NCBI ESearch/ESummary retourne au plus trois **notices** PubMed avec PMID, titre, date et URL. Un résultat de recherche n'est ni une lecture critique de l'article ni une preuve de lien causal avec la molécule.
 4. Claude peut rédiger une interprétation séparée, marquée `generated_unverified`. Les PMID explicitement cités mais absents des notices sont signalés. Le contenu de son interprétation reste à vérifier indépendamment.
+   Si les deux fournisseurs sont configurés, la chaîne bornée est : modèle → Claude → ChatGPT → Claude → ChatGPT (quatre appels IA maximum). Chaque texte reste non vérifié et ne peut modifier les scores du modèle. Le contrôle « modèle » signale automatiquement l'absence de checkpoint ou de validation ; le GNN ne comprend pas ni ne critique directement les affirmations en prose. Les hypothèses fournies par l'utilisateur reçoivent des identifiants H1…H10 ; l'absence de mention d'un identifiant est signalée, mais sa présence ne prouve pas une analyse complète.
 5. Le rapport affiche les données manquantes et le parcours de validation requis. Les fonctions de synergie et de dose de la Phase 3 reposent sur des cibles dérivées du modèle, pas sur des mesures expérimentales de combinaison ; elles ne servent pas à prescrire.
 
 L'API web de combinaison masque désormais les sorties de dose et remplace l'interprétation par un avertissement. Les scores de synergie restent des proxys non validés. Des scripts internes historiques peuvent encore contenir les anciens libellés : ils ne doivent pas être utilisés comme recommandations de traitement.
@@ -28,6 +29,18 @@ Lancer l'application comme indiqué dans `webapp/README.md`, puis ouvrir l'ongle
 ```
 
 `with_claude=true` requiert l'intégration Claude déjà configurée. Les requêtes NCBI requièrent une connexion réseau. Une erreur réseau est signalée ; aucune source n'est fabriquée.
+
+`with_chatgpt=true` nécessite le SDK `openai`, `OPENAI_API_KEY` et `OPENAI_MODEL` (un identifiant de modèle auquel **ton projet API** a accès). La connexion à ChatGPT dans le navigateur ne fournit pas automatiquement une clé API au serveur. L'API `GET /api/phase4/status` montre la configuration des composants sans afficher les secrets ; elle ne teste pas les crédits. Une requête peut inclure `"hypotheses":["question 1","question 2"]` (maximum 10). Le rapport conserve séparément les quatre revues et leurs statuts. En l'absence de clé, de crédit ou en cas d'erreur, la revue correspondante est explicitement indisponible ; aucun texte n'est simulé.
+
+### Mise en service
+
+1. Synchroniser le dépôt et installer les dépendances du projet. Pour la revue Claude : `python -m pip install anthropic`. Pour la revue ChatGPT facultative : `python -m pip install openai`.
+2. Configurer la clé Anthropic dans l'onglet Assistant ou via `ANTHROPIC_API_KEY` ; un **crédit API valide** est indispensable. Une clé présente mais sans crédit ne permet pas l'appel.
+3. Pour le contre-examen ChatGPT, configurer séparément `OPENAI_API_KEY` et `OPENAI_MODEL` dans l'environnement du processus web, puis redémarrer le serveur. Le modèle choisi doit être accessible au compte API concerné ; aucun modèle n'est deviné par l'application.
+4. Copier le checkpoint Phase 3 entraîné dans le chemin attendu par la configuration du projet. Sans lui, le dossier fonctionne avec les descripteurs, **sans score VIH**.
+5. Démarrer `python -m webapp.run`, ouvrir `http://127.0.0.1:8000`, vérifier le bandeau de l'onglet Phase 4, puis lancer un dossier. Les erreurs de fournisseur et les étapes manquantes apparaissent dans le dossier ; le bandeau seul ne prouve pas les crédits ni la validité d'un checkpoint.
+
+Ne transmettre aucune clé API dans un chat public, un rapport ou un commit Git. Un abonnement à l'interface ChatGPT n'active pas automatiquement l'API du projet.
 
 ## Audit des faux positifs et faux négatifs
 

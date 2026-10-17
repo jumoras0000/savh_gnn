@@ -677,6 +677,8 @@ async def api_phase4(request):
     def _run():
         from webapp.phase4 import build_dossier, markdown_report
         dossier = build_dossier(candidates, with_claude=body.get("with_claude") is True,
+                               with_chatgpt=body.get("with_chatgpt") is True,
+                               hypotheses=body.get("hypotheses"),
                                literature=body.get("literature") is not False)
         dossier["report_markdown"] = markdown_report(dossier)
         return dossier
@@ -688,6 +690,22 @@ async def api_phase4(request):
     except Exception as exc:
         return JSONResponse({"error": f"Phase 4 indisponible : {type(exc).__name__}: {exc}"},
                             status_code=503)
+
+
+async def api_phase4_status(request):
+    """Disponibilité réelle des composants, sans exposer les clés API."""
+    import importlib.util
+    from webapp import chatbot, research
+    return JSONResponse({
+        "claude": chatbot._claude_available(),
+        "chatgpt": bool(os.environ.get("OPENAI_API_KEY") and os.environ.get("OPENAI_MODEL")
+                        and importlib.util.find_spec("openai")),
+        "openai_model_configured": bool(os.environ.get("OPENAI_MODEL")),
+        "phase3_checkpoint": Path(research._phase3_default()).is_file(),
+        "phase2_checkpoint": Path(research._phase2_default()).is_file(),
+        "pubmed": "network_check_on_request",
+        "clinical_validation": False,
+    })
 
 
 async def api_evaluate(request):
@@ -838,6 +856,7 @@ routes = [
     Route("/api/libraries", api_libraries),
     Route("/api/screen", api_screen, methods=["POST"]),
     Route("/api/phase4", api_phase4, methods=["POST"]),
+    Route("/api/phase4/status", api_phase4_status),
     Route("/api/capabilities", api_capabilities),
     Route("/api/glossary", api_glossary),
     Route("/api/chat", api_chat, methods=["POST"]),

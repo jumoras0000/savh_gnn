@@ -11,5 +11,9 @@ uvicorn>=0.30
 #   pip install anthropic   + variable d'env ANTHROPIC_API_KEY
 # anthropic>=0.40
 
+# Revue contradictoire ChatGPT de la Phase 4 (OPTIONNELLE) :
+#   pip install openai   + OPENAI_API_KEY et OPENAI_MODEL
+# openai>=1.0
+
 # Dépendances de DEV uniquement (tests) :
 #   httpx>=0.27   # requis par starlette.testclient.TestClient

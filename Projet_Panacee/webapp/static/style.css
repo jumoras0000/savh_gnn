@@ -639,3 +639,10 @@ textarea { resize: vertical; line-height: 1.5; }
 .p4-fill { height: 100%; background: var(--vital); }
 .p4-paper { margin: 8px 0; font-size: 13px; }
 .p4-note { color: var(--warn); font-size: 13px; line-height: 1.5; }
+.p4-components { padding: 12px; margin: 12px 0; border: 1px solid var(--line);
+  border-radius: 8px; line-height: 1.5; font-size: 13px; }
+.p4-options { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0; }
+#p4Hypotheses { display: block; width: 100%; margin-top: 6px; }
+.p4-review { border-top: 1px solid var(--line); padding: 12px 0; }
+.p4-review-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit;
+  font-size: 13px; line-height: 1.6; max-height: 420px; overflow-y: auto; }

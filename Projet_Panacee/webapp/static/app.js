@@ -2011,25 +2011,49 @@ function setupPhase4() {
   const run = document.getElementById("p4Run");
   if (!run) return;
   let lastReport = "";
+  fetchJSON("/api/phase4/status").then(available => {
+    document.getElementById("p4Components").textContent =
+      `Modèle Phase 3 : ${available.phase3_checkpoint ? "checkpoint présent" : "absent"} · ` +
+      `Claude : ${available.claude ? "clé configurée, crédit non garanti" : "indisponible"} · ` +
+      `ChatGPT API : ${available.chatgpt ? "configurée, appel non testé" : "non configurée"} · ` +
+      "Validation clinique : non";
+  }).catch(() => {
+    document.getElementById("p4Components").textContent = "État des composants indisponible.";
+  });
   run.addEventListener("click", async () => {
     const status = document.getElementById("p4Status");
     const results = document.getElementById("p4Results");
     const chart = document.getElementById("p4Chart");
     const exportBtn = document.getElementById("p4Export");
+    const hypotheses = document.getElementById("p4Hypotheses").value
+      .split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    if (hypotheses.length > 10 || hypotheses.some(s => s.length > 300)) {
+      status.textContent = "Maximum 10 hypothèses de 300 caractères chacune.";
+      return;
+    }
     run.disabled = true;
-    status.textContent = "Recherche des notices PubMed et analyse des candidats…";
+    status.textContent = "Analyse du modèle, notices PubMed et revues IA demandées…";
     results.replaceChildren(); chart.replaceChildren(); exportBtn.style.display = "none";
     try {
       const dossier = await fetchJSON("/api/phase4", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ library: document.getElementById("p4Library").value,
-          with_claude: document.getElementById("p4Claude").checked }),
+          hypotheses, with_claude: document.getElementById("p4Claude").checked,
+          with_chatgpt: document.getElementById("p4ChatGPT").checked }),
       });
       lastReport = dossier.report_markdown;
       status.textContent = dossier.conclusion;
       const heading = document.createElement("h3");
       heading.textContent = "Scores du modèle (exploratoires, non cliniques)";
       chart.append(heading);
+      if (dossier.hypotheses.length) {
+        const h = document.createElement("h3"); h.textContent = "Hypothèses déclarées (non vérifiées)";
+        results.append(h);
+        dossier.hypotheses.forEach(item => {
+          const p = document.createElement("p"); p.className = "p4-note";
+          p.textContent = `${item.id} · ${item.text}`; results.append(p);
+        });
+      }
       dossier.candidates.forEach(item => {
         const section = document.createElement("section");
         const title = document.createElement("h3"); title.textContent = item.name || item.smiles;
@@ -2056,9 +2080,32 @@ function setupPhase4() {
           row.append(label, track, value); chart.append(row);
         }
       });
-      const review = document.createElement("p"); review.className = "p4-note";
-      review.textContent = dossier.claude_review.text || `Claude : ${dossier.claude_review.status}`;
-      results.append(review);
+      const modelCheck = document.createElement("p"); modelCheck.className = "p4-note";
+      modelCheck.textContent = dossier.model_checks.conclusion;
+      results.append(modelCheck);
+      [["Claude · première analyse", dossier.claude_review],
+       ["ChatGPT · contre-analyse", dossier.chatgpt_review],
+       ["Claude · réponse à la critique", dossier.claude_followup],
+       ["ChatGPT · réponse finale", dossier.chatgpt_followup]].forEach(([label, review]) => {
+        const card = document.createElement("section"); card.className = "p4-review";
+        const title = document.createElement("h3"); title.textContent = label; card.append(title);
+        const state = document.createElement("p"); state.className = "p4-note";
+        state.textContent = `Statut : ${review.status} · contenu non vérifié indépendamment`;
+        card.append(state);
+        if (review.hypothesis_ids_not_mentioned?.length) {
+          const p = document.createElement("p"); p.className = "p4-note";
+          p.textContent = `Hypothèses non mentionnées : ${review.hypothesis_ids_not_mentioned.join(", ")}`;
+          card.append(p);
+        }
+        if (review.unverified_pmids?.length) {
+          const p = document.createElement("p"); p.className = "p4-note";
+          p.textContent = `PMID absents des notices : ${review.unverified_pmids.join(", ")}`;
+          card.append(p);
+        }
+        const content = document.createElement("pre"); content.className = "p4-review-text";
+        content.textContent = review.text || review.error || `Aucune analyse (${review.status}).`;
+        card.append(content); results.append(card);
+      });
       exportBtn.style.display = "inline-flex";
     } catch (error) {
       status.textContent = `Phase 4 indisponible : ${error.message}`;

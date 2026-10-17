@@ -337,6 +337,10 @@
         <p class="hint">Le modèle et Claude examinent des hypothèses ; ce dossier ne démontre
           ni guérison, ni sécurité humaine. Les notices PubMed identifient des articles,
           elles ne valident pas leurs conclusions.</p>
+        <div id="p4Components" class="p4-components" role="status">Vérification des composants…</div>
+        <p class="hint">Activation : clé et crédit Anthropic dans l'onglet Assistant pour Claude ;
+          <code>OPENAI_API_KEY</code> et <code>OPENAI_MODEL</code> pour ChatGPT (optionnel) ;
+          checkpoint Phase 3 pour les scores VIH. Aucun fournisseur IA ne garantit une guérison.</p>
         <label for="p4Library">Bibliothèque de candidats</label>
         <select id="p4Library" class="picker">
           <option value="hiv_reference">Antirétroviraux de référence</option>
@@ -346,7 +350,12 @@
           <option value="hiv_insti">Inhibiteurs d’intégrase</option>
           <option value="natural_products">Produits naturels</option>
         </select>
-        <label style="margin-left:12px"><input type="checkbox" id="p4Claude" checked /> Analyse Claude si disponible</label>
+        <label for="p4Hypotheses">Hypothèses à examiner (une par ligne, maximum 10)</label>
+        <textarea id="p4Hypotheses" rows="4" maxlength="3000" placeholder="Ex. H1 : l'activité prédite se maintient sur des variants résistants — à vérifier expérimentalement"></textarea>
+        <div class="p4-options">
+          <label><input type="checkbox" id="p4Claude" checked /> Claude : hypothèses et réponse critique</label>
+          <label><input type="checkbox" id="p4ChatGPT" checked /> ChatGPT : contre-analyse</label>
+        </div>
         <button class="btn" id="p4Run">Créer le dossier</button>
         <p id="p4Status" class="hint" role="status"></p>
         <div id="p4Chart" class="p4-chart" aria-label="Scores exploratoires du modèle"></div>

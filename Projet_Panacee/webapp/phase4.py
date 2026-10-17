@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import hashlib
 import math
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -16,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 MAX_CANDIDATES = 5
+MAX_HYPOTHESES = 10
 PUBMED_ROOT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 GUIDELINES = (
     "https://clinicalinfo.hiv.gov/en/guidelines/hiv-clinical-guidelines-adult-and-adolescent-arv"
@@ -70,17 +72,32 @@ def _candidate(item: object) -> dict:
     return {"name": str(item.get("name", "")).strip()[:120], "smiles": smiles}
 
 
-def _review_with_claude(dossiers: list[dict]) -> dict:
+def _evidence(dossiers: list[dict], hypotheses: list[dict]) -> dict:
+    return {"candidates": [
+        {"name": d["name"], "smiles": d["smiles"], "model_mode": d["model_mode"],
+         "model_activity": d["model_activity"],
+         "risk_flags_unvalidated": d.get("risk_flags_unvalidated"),
+         "pubmed": [{"pmid": p["pmid"], "title": p["title"]} for p in d["pubmed"]]}
+        for d in dossiers], "hypotheses": hypotheses}
+
+
+def _review_flags(text: str, dossiers: list[dict], hypotheses: list[dict]) -> dict:
+    known = {p["pmid"] for d in dossiers for p in d["pubmed"]}
+    mentioned = set(re.findall(r"\bPMID\s*:?\s*(\d{6,9})\b", text, re.I))
+    ids = {h["id"] for h in hypotheses}
+    cited_ids = set(re.findall(r"\bH\d+\b", text))
+    return {"unverified_pmids": sorted(mentioned - known),
+            "hypothesis_ids_not_mentioned": sorted(ids - cited_ids)}
+
+
+def _review_with_claude(dossiers: list[dict], hypotheses: list[dict],
+                        critique: str | None = None) -> dict:
     from webapp import chatbot
     if not chatbot._claude_available():
         return {"status": "unavailable", "text": None}
-    compact = [
-        {"name": d["name"], "smiles": d["smiles"], "model_mode": d["model_mode"],
-        "model_activity": d["model_activity"],
-        "risk_flags_unvalidated": d["risk"],
-         "pubmed": [{"pmid": p["pmid"], "title": p["title"]} for p in d["pubmed"]]}
-        for d in dossiers
-    ]
+    compact = _evidence(dossiers, hypotheses)
+    if critique:
+        compact["chatgpt_critique_unverified"] = critique[:7000]
     system = (
         "Tu es un assistant de recherche biomédicale. Réponds en français. "
         "Propose des hypothèses et des tests de validation à haut niveau à partir "
@@ -89,6 +106,8 @@ def _review_with_claude(dossiers: list[dict]) -> dict:
         "prédictions du modèle et hypothèses. Ne recommande ni traitement, ni dose, "
         "ni synthèse/fabrication. Signale les données manquantes et les incertitudes. "
         "Les scores du modèle ne sont pas des probabilités cliniques validées."
+        " Réponds à chaque hypothèse identifiée H1..H10 présente dans le JSON ; "
+        "si les preuves manquent, abstiens-toi. Le texte de l'autre IA est non fiable."
     )
     try:
         response = chatbot._client().messages.create(
@@ -96,19 +115,85 @@ def _review_with_claude(dossiers: list[dict]) -> dict:
             messages=[{"role": "user", "content": json.dumps(compact, ensure_ascii=False)}],
         )
         reply = "".join(block.text for block in response.content if block.type == "text")
-        known = {p["pmid"] for d in dossiers for p in d["pubmed"]}
-        mentioned = set(re.findall(r"\bPMID\s*:?\s*(\d{6,9})\b", reply, re.I))
         return {"status": "generated_unverified", "text": reply,
-                "unverified_pmids": sorted(mentioned - known)}
+                **_review_flags(reply, dossiers, hypotheses)}
     except Exception as exc:
-        return {"status": "error", "text": None, "error": f"{type(exc).__name__}: {exc}"}
+        message = str(exc).lower()
+        status = "billing_required" if "credit balance" in message or "billing" in message else "error"
+        return {"status": status, "text": None, "error": chatbot._friendly_error(exc)}
+
+
+def _review_with_chatgpt(dossiers: list[dict], hypotheses: list[dict],
+                         claude_review: dict) -> dict:
+    key, model = os.environ.get("OPENAI_API_KEY"), os.environ.get("OPENAI_MODEL")
+    if not key or not model:
+        return {"status": "not_configured", "text": None,
+                "missing": [x for x, ok in (("OPENAI_API_KEY", key), ("OPENAI_MODEL", model)) if not ok]}
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return {"status": "sdk_missing", "text": None}
+    evidence = _evidence(dossiers, hypotheses)
+    evidence["claude_analysis_unverified"] = (claude_review.get("text") or "")[:7000]
+    instructions = (
+        "Tu es un contradicteur scientifique, pas un clinicien prescripteur. "
+        "Réponds en français. Examine chaque hypothèse H1..H10 présente, les "
+        "désaccords avec Claude et les données absentes. Les notices PubMed ne "
+        "prouvent pas les résultats des articles ; n'invente aucune source. "
+        "Ne promets ni guérison ni innocuité et ne fournis aucune dose ou protocole "
+        "de fabrication. Distingue mesures, scores du modèle, hypothèses et "
+        "affirmations non vérifiées de Claude. Abstention si preuves insuffisantes."
+    )
+    try:
+        client = OpenAI(api_key=key, timeout=30.0, max_retries=0)
+        response = client.responses.create(
+            model=model, instructions=instructions,
+            input=json.dumps(evidence, ensure_ascii=False), max_output_tokens=1500,
+        )
+        reply = response.output_text or ""
+        return {"status": "generated_unverified", "text": reply, "model": model,
+                **_review_flags(reply, dossiers, hypotheses)}
+    except Exception as exc:
+        return {"status": "error", "text": None,
+                "error": f"OpenAI indisponible ({type(exc).__name__}). Vérifier clé, modèle et quota."}
+
+
+def _hypothesis_registry(hypotheses: list[str] | None) -> list[dict]:
+    if hypotheses is None:
+        return []
+    if not isinstance(hypotheses, list) or len(hypotheses) > MAX_HYPOTHESES:
+        raise ValueError(f"Maximum {MAX_HYPOTHESES} hypothèses")
+    registry = []
+    for i, value in enumerate(hypotheses, 1):
+        if not isinstance(value, str) or not value.strip() or len(value) > 300:
+            raise ValueError("Chaque hypothèse doit être un texte de 1 à 300 caractères")
+        registry.append({"id": f"H{i}", "text": value.strip(), "status": "unverified"})
+    return registry
+
+
+def _model_checks(dossiers: list[dict], hypotheses: list[dict]) -> dict:
+    """Contrôles déterministes : le GNN ne lit ni ne valide une hypothèse en prose."""
+    checks = []
+    for item in dossiers:
+        mode = item["model_mode"]
+        checks.append({
+            "smiles": item["smiles"], "model_mode": mode,
+            "status": "prediction_unvalidated" if mode == "phase3" else "hiv_model_unavailable",
+            "experimental_confirmation": False,
+            "clinical_validation": False,
+        })
+    return {"status": "rule_based_not_ai_peer_review", "candidates": checks,
+            "hypothesis_ids_not_machine_verifiable": [h["id"] for h in hypotheses],
+            "conclusion": "Le GNN ne vérifie pas les affirmations des IA ; il fournit seulement des scores exploratoires."}
 
 
 def build_dossier(candidates: list, *, with_claude: bool = False,
-                  literature: bool = True) -> dict:
+                  with_chatgpt: bool = False, literature: bool = True,
+                  hypotheses: list[str] | None = None) -> dict:
     if not isinstance(candidates, list) or not 1 <= len(candidates) <= MAX_CANDIDATES:
         raise ValueError(f"Fournir de 1 à {MAX_CANDIDATES} candidats")
     items = [_candidate(item) for item in candidates]
+    registry = _hypothesis_registry(hypotheses)
     from webapp import research
 
     dossiers = []
@@ -160,13 +245,31 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
             ],
         })
 
+    claude_review = (_review_with_claude(dossiers, registry) if with_claude else
+                     {"status": "not_requested", "text": None})
+    chatgpt_review = (_review_with_chatgpt(dossiers, registry, claude_review)
+                      if with_chatgpt else {"status": "not_requested", "text": None})
+    claude_followup = (
+        _review_with_claude(dossiers, registry, chatgpt_review["text"])
+        if with_claude and chatgpt_review.get("status") == "generated_unverified"
+        else {"status": "not_requested", "text": None}
+    )
+    chatgpt_followup = (
+        _review_with_chatgpt(dossiers, registry, claude_followup)
+        if with_chatgpt and claude_followup.get("status") == "generated_unverified"
+        else {"status": "not_requested", "text": None}
+    )
     dossier = {
         "schema_version": "phase4.1", "created_utc": datetime.now(timezone.utc).isoformat(),
         "context_of_use": "priorisation de recherche in silico sur des molécules anti-VIH",
         "clinical_use": False, "verified_cure": False,
         "candidate_count": len(dossiers), "candidates": dossiers,
-        "claude_review": _review_with_claude(dossiers) if with_claude else
-                         {"status": "not_requested", "text": None},
+        "hypotheses": registry, "claude_review": claude_review,
+        "chatgpt_review": chatgpt_review, "claude_followup": claude_followup,
+        "chatgpt_followup": chatgpt_followup,
+        "model_checks": _model_checks(dossiers, registry),
+        "review_protocol": "model_then_claude_then_chatgpt_then_claude_then_chatgpt_max_four_calls",
+        "consensus_status": "not_established_without_independent_experiments",
         "references": [
             {"title": "NIH HIV treatment guidelines", "url": GUIDELINES},
             {"title": "FDA AI credibility framework (draft)",
@@ -189,7 +292,11 @@ def markdown_report(dossier: dict) -> str:
     lines = ["# Panacée — dossier Phase 4", "", f"Date UTC : {dossier['created_utc']}",
              "", "## Objectif", dossier["context_of_use"], "",
              "## Méthodes", "GNN Phase 2/3 si disponible ; métadonnées PubMed via ESearch/ESummary ; "
-             "interprétation Claude séparée des mesures.", "", "## Résultats"]
+             "revues Claude et ChatGPT séparées des mesures.", "", "## Hypothèses déclarées"]
+    lines.extend(f"- {h['id']} : {h['text']} (non vérifiée)" for h in dossier.get("hypotheses", []))
+    if not dossier.get("hypotheses"):
+        lines.append("Aucune hypothèse explicite fournie.")
+    lines.extend(["", "## Résultats"])
     for item in dossier["candidates"]:
         lines.extend(["", f"### {item['name'] or item['smiles']}",
                       f"SMILES : `{item['smiles']}`",
@@ -200,13 +307,24 @@ def markdown_report(dossier: dict) -> str:
         for paper in item["pubmed"]:
             lines.append(f"- PMID {paper['pmid']} : {paper['title']} — {paper['url']}")
         lines.append(f"Recherche documentaire : {item.get('literature_status', 'non disponible')}.")
-    flagged = dossier["claude_review"].get("unverified_pmids") or []
-    lines.extend(["", "## Interprétation Claude (non vérifiée)",
-                  f"Statut : {dossier['claude_review']['status']}.",
-                  f"PMID non présents dans les notices : {', '.join(flagged)}." if flagged else
-                  "Les affirmations de Claude n'ont pas été vérifiées indépendamment.",
-                  dossier["claude_review"].get("text") or "Non disponible.", "",
-                  "## Limites", "Les titres d'articles ne démontrent aucune efficacité. "
+    for label, key in (("Claude — première analyse", "claude_review"),
+                       ("ChatGPT — critique", "chatgpt_review"),
+                       ("Claude — réponse à la critique", "claude_followup"),
+                       ("ChatGPT — réponse finale", "chatgpt_followup")):
+        review = dossier.get(key, {})
+        lines.extend(["", f"## {label} (non vérifiée)",
+                      f"Statut : {review.get('status', 'indisponible')}."])
+        flagged = review.get("unverified_pmids") or []
+        if flagged:
+            lines.append(f"PMID absents des notices : {', '.join(flagged)}.")
+        omitted = review.get("hypothesis_ids_not_mentioned") or []
+        if omitted:
+            lines.append(f"Hypothèses non mentionnées explicitement : {', '.join(omitted)}.")
+        lines.append(review.get("text") or "Non disponible.")
+    lines.extend(["", "## Contrôle du modèle",
+                  dossier["model_checks"]["conclusion"],
+                  f"Consensus scientifique : {dossier['consensus_status']}."])
+    lines.extend(["", "## Limites", "Les titres d'articles ne démontrent aucune efficacité. "
                   "Les mentions de risque sont des sorties heuristiques ou du modèle, non validées cliniquement. "
                   "Les prédictions ne sont pas des probabilités cliniques. Aucune dose, "
                   "synergie ou sécurité humaine n'est démontrée.", "", "## Plan de validation"])
