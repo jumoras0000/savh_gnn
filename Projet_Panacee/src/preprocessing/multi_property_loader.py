@@ -47,7 +47,7 @@ def download_dataset(name: str, save_dir: str) -> dict:
     try:
         import deepchem as dc
     except ImportError as e:
-        raise ImportError("DeepChem requis : pip install deepchem") from e
+        raise ImportError(f"DeepChem ne peut pas être importé : {e}") from e
 
     os.makedirs(save_dir, exist_ok=True)
     loaders = {
@@ -106,6 +106,17 @@ def download_all_phase3_data(base_dir: str | None = None) -> dict:
     if base_dir is None:
         base_dir = str(EXTERNAL_DIR / "phase3")
 
+    # Vérifier l'import réel : find_spec('deepchem') ne garantit pas que ses
+    # dépendances sont utilisables dans cet environnement Python.
+    try:
+        import deepchem  # noqa: F401
+    except Exception as e:
+        raise RuntimeError(
+            f"DeepChem est installé mais inutilisable : {type(e).__name__}: {e}"
+        ) from e
+
+    os.makedirs(base_dir, exist_ok=True)
+
     all_paths = {}
     datasets_to_download = ["tox21", "esol", "lipo", "bbbp", "clintox", "hiv"]
 
@@ -119,6 +130,8 @@ def download_all_phase3_data(base_dir: str | None = None) -> dict:
             print(f"  ✗ Erreur {name}: {e}")
             all_paths[name] = None
 
+    if not any(all_paths.values()):
+        raise RuntimeError("Aucun dataset Phase 3 téléchargé ; voir les erreurs ci-dessus")
     return all_paths
 
 

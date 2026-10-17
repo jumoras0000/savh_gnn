@@ -58,6 +58,13 @@ def check_dependencies():
         errors.append("  ✗ torch-geometric non installé")
     if _u.find_spec("deepchem") is None:
         errors.append("  ✗ DeepChem non installé (pip install deepchem)")
+    else:
+        try:
+            import deepchem  # noqa: F401
+        except Exception as e:
+            errors.append(
+                f"  ✗ DeepChem installé mais import impossible : {type(e).__name__}: {e}"
+            )
     if _u.find_spec("sklearn") is None:
         errors.append("  ✗ scikit-learn non installé")
 

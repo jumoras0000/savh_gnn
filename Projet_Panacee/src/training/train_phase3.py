@@ -396,6 +396,7 @@ def main():
         data_paths = download_all_phase3_data(data_dir)
 
         # Sauvegarder les chemins pour utilisation future
+        os.makedirs(data_dir, exist_ok=True)
         paths_file = os.path.join(data_dir, "data_paths.json")
         serializable_paths = {}
         for k, v in data_paths.items():
