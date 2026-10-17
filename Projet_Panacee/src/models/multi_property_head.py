@@ -13,7 +13,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .encoder import MolecularEncoder
+try:
+    from .encoder import MolecularEncoder
+except ModuleNotFoundError as exc:  # la loss reste testable sans PyG
+    if exc.name != "torch_geometric":
+        raise
+    MolecularEncoder = None
 
 
 class PropertyHead(nn.Module):

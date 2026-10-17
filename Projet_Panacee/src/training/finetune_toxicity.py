@@ -52,10 +52,26 @@ from src.config import (
     loader_kwargs,
     lr_scale_for_batch,
 )
-from src.models.encoder import MolecularEncoder
-from src.models.toxicity_classifier import MultiTaskBCELoss, ToxicityClassifier
-from src.preprocessing.scaffold_split import scaffold_kfold
-from src.preprocessing.toxicity_loader import ToxicityDataset, collate_toxicity_batch
+try:
+    from src.models.encoder import MolecularEncoder
+except ModuleNotFoundError as exc:  # permet d'importer les métriques sans PyG
+    if exc.name != "torch_geometric":
+        raise
+    MolecularEncoder = None
+try:
+    from src.models.toxicity_classifier import MultiTaskBCELoss, ToxicityClassifier
+except ModuleNotFoundError as exc:  # métriques importables sans PyG
+    if exc.name != "torch_geometric":
+        raise
+    MultiTaskBCELoss = None
+    ToxicityClassifier = None
+try:
+    from src.preprocessing.scaffold_split import scaffold_kfold
+    from src.preprocessing.toxicity_loader import ToxicityDataset, collate_toxicity_batch
+except ModuleNotFoundError as exc:  # métriques importables sans RDKit
+    if exc.name not in {"rdkit", "pandas"}:
+        raise
+    scaffold_kfold = ToxicityDataset = collate_toxicity_batch = None
 from src.utils.ema import ModelEMA
 from src.utils.live_logger import LiveLogger
 from src.validation.clinical_metrics import clinical_score as clinical_score_fn

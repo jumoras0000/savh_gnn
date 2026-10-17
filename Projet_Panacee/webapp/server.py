@@ -394,8 +394,14 @@ async def api_libraries(request):
 
     try:
         res = await asyncio.to_thread(_run)
-    except Exception as e:  # pragma: no cover
-        return JSONResponse({"error": f"RDKit indisponible: {e}"}, status_code=500)
+    except Exception as e:  # pragma: no cover - dépendance optionnelle
+        # La liste du catalogue est indépendante de RDKit.  La validation des
+        # SMILES intervient uniquement lors d'une analyse/visualisation.
+        from webapp.catalog import LIBRARIES
+        return JSONResponse({
+            "libraries": LIBRARIES,
+            "warning": f"RDKit indisponible : validation différée ({e})",
+        })
     return JSONResponse(res)
 
 

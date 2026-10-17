@@ -50,16 +50,29 @@ from src.config import (
     loader_kwargs,
     lr_scale_for_batch,
 )
-from src.models.encoder import MolecularEncoder
-from src.models.multi_property_head import MultiPropertyLoss, MultiPropertyPredictor
+try:
+    from src.models.encoder import MolecularEncoder
+    from src.models.multi_property_head import MultiPropertyLoss, MultiPropertyPredictor
+except ModuleNotFoundError as exc:  # métriques utilisables sans PyG installé
+    if exc.name != "torch_geometric":
+        raise
+    MolecularEncoder = None
+    MultiPropertyLoss = None
+    MultiPropertyPredictor = None
 from src.models.reasoner import MolecularReasoner, ReasonerLoss
-from src.preprocessing.multi_property_loader import (
-    MultiPropertyDataset,
-    TaskBalancedSampler,
-    collate_multi_property,
-    download_all_phase3_data,
-    merge_datasets,
-)
+try:
+    from src.preprocessing.multi_property_loader import (
+        MultiPropertyDataset,
+        TaskBalancedSampler,
+        collate_multi_property,
+        download_all_phase3_data,
+        merge_datasets,
+    )
+except ModuleNotFoundError as exc:  # métriques importables sans pandas/DeepChem
+    if exc.name not in {"pandas", "deepchem", "torch_geometric"}:
+        raise
+    MultiPropertyDataset = TaskBalancedSampler = None
+    collate_multi_property = download_all_phase3_data = merge_datasets = None
 from src.utils.error_handler import (
     HealthMonitor,
     emergency_save,
