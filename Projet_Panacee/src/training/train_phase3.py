@@ -232,7 +232,7 @@ def compute_phase3_metrics(predictions, targets):
 # ======================================================================
 
 def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoch,
-                    scaler=None, accum_steps=1):
+                    scaler=None, accum_steps=1, use_amp=None, amp_dtype=torch.float16):
     if accum_steps < 1:
         raise ValueError("accum_steps doit être >= 1")
     model.train()
@@ -241,23 +241,44 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
     all_preds = {k: [] for k in ["toxicity", "efficacy", "solubility",
                                    "lipophilicity", "bbb_penetration", "clinical_toxicity"]}
     all_targets = {k: [] for k in all_preds}
-    use_amp = scaler is not None
+    use_amp = scaler is not None if use_amp is None else use_amp
     pending_backward = 0
+    bad_batches = 0
+    optimizer_updates = 0
+    optimizer_params = [p for group in optimizer.param_groups for p in group["params"]]
+
+    def finite_state():
+        return (all(torch.isfinite(p).all() for p in optimizer_params) and
+                all(torch.isfinite(b).all() for b in model.buffers() if b.is_floating_point()))
 
     def apply_gradients():
-        nonlocal pending_backward
+        nonlocal pending_backward, bad_batches, optimizer_updates
         if pending_backward == 0:
             return
-        if use_amp:
+        if scaler is not None:
             scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        if use_amp:
-            scaler.step(optimizer)
-            scaler.update()
+        gradients_finite = all(torch.isfinite(p.grad).all() for p in optimizer_params
+                               if p.grad is not None)
+        if gradients_finite:
+            torch.nn.utils.clip_grad_norm_(optimizer_params, grad_clip,
+                                            error_if_nonfinite=True)
+            if scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+            optimizer_updates += 1
         else:
-            optimizer.step()
+            bad_batches += 1
+            logger.warning("Gradients non finis ; mise à jour ignorée (epoch=%s)", epoch)
+            if scaler is not None:
+                # Le scaler a enregistré les inf/NaN lors de unscale_ ; adapter
+                # son échelle sans appliquer de mise à jour corrompue.
+                scaler.update()
         optimizer.zero_grad()
         pending_backward = 0
+        if bad_batches >= 3:
+            raise RuntimeError("Trop de batches/gradients non finis ; entraînement arrêté")
 
     optimizer.zero_grad()
     pbar = tqdm(loader, desc=f"[Train] Epoch {epoch}")
@@ -265,18 +286,40 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
         batch_data = batch_data.to(device)
         labels_device = {k: v.to(device) for k, v in labels.items()}
 
-        with torch.amp.autocast("cuda", enabled=use_amp):
+        # BatchNorm modifie ses buffers pendant le forward, même si la loss est
+        # ensuite rejetée. Les restaurer si ce batch les a rendus non finis.
+        buffer_snapshot = [(b, b.detach().clone()) for b in model.buffers()
+                           if b.is_floating_point()]
+        with torch.amp.autocast("cuda", enabled=use_amp, dtype=amp_dtype):
             predictions = model(batch_data)
+        nonfinite_heads = [name for name, output in predictions.items()
+                           if not torch.isfinite(output).all()]
+        nonfinite_buffers = any(not torch.isfinite(buffer).all()
+                                for buffer, _ in buffer_snapshot)
+        if nonfinite_heads or nonfinite_buffers:
+            bad_batches += 1
+            for buffer, previous in buffer_snapshot:
+                buffer.copy_(previous)
+            logger.warning("Forward non fini, batch ignoré (step=%s, têtes=%s, buffers=%s)",
+                           step, nonfinite_heads, nonfinite_buffers)
+            if not finite_state() or bad_batches >= 3:
+                raise RuntimeError("Batches non finis répétés ou état non fini ; entraînement arrêté")
+            continue
         # BCE/Huber en FP32 : la réduction en FP16 peut déborder sur les
         # batches clairsemés des différentes tâches.
         loss, _ = criterion({k: v.float() for k, v in predictions.items()}, labels_device)
 
         if not torch.isfinite(loss).all() or not loss.requires_grad:
-            logger.warning("Loss non finie ou sans gradient, batch ignore (step=%s)", step)
+            bad_batches += 1
+            for buffer, previous in buffer_snapshot:
+                buffer.copy_(previous)
+            logger.warning("Loss non finie ou sans gradient, batch ignoré (step=%s)", step)
+            if not finite_state() or bad_batches >= 3:
+                raise RuntimeError("Batches non finis répétés ou état non fini ; entraînement arrêté")
             continue
 
         loss_scaled = loss / accum_steps
-        if use_amp:
+        if scaler is not None:
             scaler.scale(loss_scaled).backward()
         else:
             loss_scaled.backward()
@@ -297,8 +340,12 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
 
     # Un batch ignoré ne crée aucun gradient et ne doit pas déclencher GradScaler.step.
     apply_gradients()
+    if not finite_state():
+        raise RuntimeError("Poids ou buffers non finis après entraînement ; aucun checkpoint sauvegardé")
     if n == 0:
         raise RuntimeError("Aucun batch valide pendant cette epoch ; vérifier les labels et la loss")
+    if optimizer_updates == 0:
+        raise RuntimeError("Aucune mise à jour de l'optimiseur pendant cette epoch")
 
     merged_preds = {}
     merged_targets = {}
@@ -309,11 +356,13 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
 
     metrics = compute_phase3_metrics(merged_preds, merged_targets)
     metrics["_loss"] = total_loss / max(n, 1)
+    metrics["_bad_batches"] = bad_batches
+    metrics["_optimizer_updates"] = optimizer_updates
     return metrics
 
 
 @torch.no_grad()
-def evaluate(model, loader, criterion, device, use_amp=False):
+def evaluate(model, loader, criterion, device, use_amp=False, amp_dtype=torch.float16):
     model.eval()
     total_loss = 0.0
     n = 0
@@ -325,7 +374,7 @@ def evaluate(model, loader, criterion, device, use_amp=False):
         batch_data = batch_data.to(device)
         labels_device = {k: v.to(device) for k, v in labels.items()}
 
-        with torch.amp.autocast("cuda", enabled=use_amp):
+        with torch.amp.autocast("cuda", enabled=use_amp, dtype=amp_dtype):
             predictions = model(batch_data)
         loss, _ = criterion({k: v.float() for k, v in predictions.items()}, labels_device)
 
@@ -631,9 +680,13 @@ def main():
         optimizer, PHASE3["warmup_epochs"], args.epochs, PHASE3["lr_min"],
     )
 
-    # AMP (mixed precision) — 2x throughput, moitié VRAM
+    # BF16 conserve l'étendue dynamique du FP32 et évite une classe de
+    # débordements FP16 sur les graphes/molécules de tailles variables.
     use_amp = device.type == "cuda"
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp) if use_amp else None
+    amp_dtype = (torch.bfloat16 if use_amp and torch.cuda.is_bf16_supported()
+                 else torch.float16)
+    scaler = torch.amp.GradScaler("cuda") if use_amp and amp_dtype == torch.float16 else None
+    print(f"  Précision AMP : {amp_dtype if use_amp else 'FP32'}")
     accum_steps = PHASE3.get("gradient_accumulation_steps", 2)
 
     # EMA pour stabiliser les poids (decay=0.999)
@@ -689,6 +742,7 @@ def main():
             model, train_loader, optimizer, criterion, device,
             PHASE3["grad_clip"], epoch,
             scaler=scaler, accum_steps=accum_steps,
+            use_amp=use_amp, amp_dtype=amp_dtype,
         )
         if not all(torch.isfinite(p).all() for p in model.parameters()):
             raise RuntimeError(
@@ -701,7 +755,8 @@ def main():
 
         # Validation (EMA si disponible, sinon modele brut)
         eval_model = ema_model if ema_model is not None else model
-        val_m, val_preds, val_targets = evaluate(eval_model, val_loader, criterion, device, use_amp)
+        val_m, val_preds, val_targets = evaluate(
+            eval_model, val_loader, criterion, device, use_amp, amp_dtype)
 
         # Score composite (moyenne pondérée des métriques)
         score = 0.0
@@ -744,6 +799,8 @@ def main():
             f"Epoch {epoch:3d}/{args.epochs} | "
             f"t_loss={train_loss:.4f} v_loss={val_loss:.4f} | "
             f"score={composite_score:.4f} | "
+            f"bad_batches={train_m.get('_bad_batches', 0)} "
+            f"updates={train_m.get('_optimizer_updates', 0)} | "
             f"{' '.join(prop_summary)} | "
             f"lr={lrs[0]:.1e} | ETA {eta}"
         )
@@ -752,6 +809,8 @@ def main():
         history_entry = {
             "epoch": epoch,
             "train_loss": train_loss,
+            "train_bad_batches": train_m.get("_bad_batches", 0),
+            "optimizer_updates": train_m.get("_optimizer_updates", 0),
             "val_loss": val_loss,
             "composite_score": composite_score,
             "lr": lrs[0],
@@ -766,6 +825,8 @@ def main():
         rec = {
             "epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
             "composite_score": composite_score, "lr": lrs[0],
+            "train_bad_batches": train_m.get("_bad_batches", 0),
+            "optimizer_updates": train_m.get("_optimizer_updates", 0),
         }
         with contextlib.suppress(Exception):
             scalar_map = {"toxicity": ("tox_auc", "roc_auc"),
@@ -877,7 +938,7 @@ def main():
     # Seuils optimaux sur VAL set (max F1 par tache)
     print("\n  Recherche seuils optimaux sur val set...")
     val_m_final, val_preds_final, val_targets_final = evaluate(
-        model, val_loader, criterion, device, use_amp)
+        model, val_loader, criterion, device, use_amp, amp_dtype)
     optimal_thresholds = find_optimal_thresholds_multi(val_preds_final, val_targets_final)
     for task_name, thresh_list in optimal_thresholds.items():
         mean_t = np.mean(thresh_list)
@@ -919,7 +980,7 @@ def main():
             test_ds, batch_size=batch_size, shuffle=False,
             collate_fn=collate_multi_property, **loader_kwargs(),
         )
-        test_m, _, _ = evaluate(model, test_loader, criterion, device, use_amp)
+        test_m, _, _ = evaluate(model, test_loader, criterion, device, use_amp, amp_dtype)
         print(f"\n  Test loss: {test_m.get('_loss', 0):.4f}")
         for prop in ["toxicity", "efficacy", "solubility", "lipophilicity",
                       "bbb_penetration", "clinical_toxicity"]:
