@@ -180,15 +180,19 @@ def train_one_epoch_parallel(model, loader, optimizer, device, grad_clip, epoch)
         optimizer.zero_grad()
         logits, types = model(data_list)              # sorties regroupées sur cuda:0
         loss = criterion(logits, types)
+        if not torch.isfinite(loss):
+            raise RuntimeError("Phase 1 : loss non finie")
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
         optimizer.step()
         bs = types.size(0)
         total_loss += loss.item() * bs
         n_atoms += bs
         n_correct += (logits.argmax(dim=1) == types).sum().item()
         pbar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{n_correct / max(n_atoms, 1):.3f}")
-    return total_loss / max(n_atoms, 1), n_correct / max(n_atoms, 1)
+    if n_atoms == 0:
+        raise RuntimeError("Phase 1 : aucun atome à entraîner")
+    return total_loss / n_atoms, n_correct / n_atoms
 
 
 @torch.no_grad()
@@ -199,11 +203,15 @@ def evaluate_parallel(model, loader, device):
     for data_list in loader:
         logits, types = model(data_list)
         loss = criterion(logits, types)
+        if not torch.isfinite(loss):
+            raise RuntimeError("Phase 1 : validation non finie")
         bs = types.size(0)
         total_loss += loss.item() * bs
         n_atoms += bs
         n_correct += (logits.argmax(dim=1) == types).sum().item()
-    return total_loss / max(n_atoms, 1), n_correct / max(n_atoms, 1)
+    if n_atoms == 0:
+        raise RuntimeError("Phase 1 : aucun atome à évaluer")
+    return total_loss / n_atoms, n_correct / n_atoms
 
 
 # ======================================================================
@@ -257,10 +265,10 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
                 )
                 loss = criterion(logits.float(), masked_types)
             if not torch.isfinite(loss).all():
-                continue
+                raise RuntimeError("Phase 1 : loss non finie")
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
             scaler.step(optimizer)
             scaler.update()
         else:
@@ -270,9 +278,9 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
             )
             loss = criterion(logits, masked_types)
             if not torch.isfinite(loss).all():
-                continue
+                raise RuntimeError("Phase 1 : loss non finie")
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
             optimizer.step()
 
         bs = masked_types.size(0)
@@ -303,12 +311,16 @@ def evaluate(model, loader, device):
             batch_graph.batch, masked_indices,
         )
         loss = criterion(logits, masked_types)
+        if not torch.isfinite(loss):
+            raise RuntimeError("Phase 1 : validation non finie")
         bs = masked_types.size(0)
         total_loss += loss.item() * bs
         n_atoms += bs
         n_correct += (logits.argmax(dim=1) == masked_types).sum().item()
 
-    return total_loss / max(n_atoms, 1), n_correct / max(n_atoms, 1)
+    if n_atoms == 0:
+        raise RuntimeError("Phase 1 : aucun atome à évaluer")
+    return total_loss / n_atoms, n_correct / n_atoms
 
 
 # ======================================================================

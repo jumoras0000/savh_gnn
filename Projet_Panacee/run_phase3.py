@@ -25,7 +25,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.config import CHECKPOINT_DIR, PHASE3
 
 
-def check_prerequisites():
+def check_prerequisites(pretrained_model=None):
     """Vérifie que la Phase 2 est terminée (Phase 3 part de l'encodeur Phase 2).
 
     NB : la Phase 1 n'est PAS requise — la Phase 2 fournit l'encodeur fine-tuné,
@@ -33,7 +33,7 @@ def check_prerequisites():
     """
     errors = []
 
-    phase2_ckpt = CHECKPOINT_DIR / "phase2" / "best_toxicity_model.pth"
+    phase2_ckpt = Path(pretrained_model) if pretrained_model else CHECKPOINT_DIR / "phase2" / "best_toxicity_model.pth"
 
     if not phase2_ckpt.exists():
         errors.append(f"  ✗ Phase 2 manquante : {phase2_ckpt}")
@@ -89,11 +89,17 @@ def main():
                    help="Dossier de sauvegarde")
     p.add_argument("--skip_checks", action="store_true",
                    help="Ignorer les vérifications de pré-requis")
+    p.add_argument("--warm_start", type=int, choices=[0, 1], default=1)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--device", type=str, default=None)
     args = p.parse_args()
 
     if args.run_name:
         safe_name = "".join(c for c in args.run_name if c.isalnum() or c in ("-", "_"))
-        os.environ.setdefault("PANACEE_PUSH_RUN", safe_name)
+        if not safe_name:
+            p.error("run_name doit contenir un caractère alphanumérique")
+        args.save_dir = str(CHECKPOINT_DIR / safe_name)
+        os.environ["PANACEE_PUSH_RUN"] = safe_name
 
     # ── Bannière ──
     print("=" * 80)
@@ -123,7 +129,7 @@ def main():
             sys.exit(1)
         print("  ✓ Dépendances OK")
 
-        prereq_errors = check_prerequisites()
+        prereq_errors = check_prerequisites(args.pretrained_model)
         if prereq_errors:
             print("❌ Pré-requis manquants :")
             for err in prereq_errors:
@@ -147,7 +153,11 @@ def main():
             "--batch_size", str(args.batch_size),
             "--patience", str(args.patience),
             "--save_dir", args.save_dir,
+            "--warm_start", str(args.warm_start),
+            "--seed", str(args.seed),
         ]
+        if args.device:
+            sys_args.extend(["--device", args.device])
 
         if args.download:
             sys_args.append("--download")
@@ -163,7 +173,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\n⚠️ Entraînement interrompu par l'utilisateur")
-        sys.exit(0)
+        sys.exit(130)
     except Exception as e:
         print(f"\n❌ ERREUR lors de l'entraînement : {e}")
         import traceback
@@ -178,7 +188,7 @@ def main():
     print("✅ PHASE 3 TERMINÉE")
     print("=" * 80)
     print()
-    print("  Modèle sauvegardé : checkpoints/phase3/panacee_phase3_complete.pth")
+    print(f"  Modèle sauvegardé : {Path(args.save_dir) / 'panacee_phase3_complete.pth'}")
     print()
     print("  Pour utiliser le modèle :")
     print("    python predict_molecules.py --smiles \"CCO,CC(=O)O\"")

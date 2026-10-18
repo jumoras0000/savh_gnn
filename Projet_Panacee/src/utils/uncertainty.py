@@ -49,6 +49,8 @@ def summarize(samples) -> dict:
         scalaires sinon). IC à 95 % par percentiles.
     """
     arr = np.asarray(samples, dtype=float)
+    if arr.ndim not in (1, 2) or arr.size == 0 or not np.isfinite(arr).all():
+        raise ValueError("Échantillons finis, non vides, à une ou deux dimensions requis")
     if arr.ndim == 1:
         mean = float(arr.mean())
         std = float(arr.std())

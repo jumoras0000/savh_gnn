@@ -13,7 +13,6 @@ import hashlib
 import json
 import logging
 import os
-import shutil
 import sys
 import time
 from datetime import datetime, timedelta
@@ -21,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from sklearn.metrics import f1_score, roc_auc_score
+from sklearn.metrics import average_precision_score, f1_score, precision_recall_curve, precision_score, recall_score, roc_auc_score
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -33,6 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.utils.reproducibility import set_seed
+from src.utils.prediction_contract import calibrated_logits
 
 from src.config import (
     ATOM_FEATURE_DIM,
@@ -88,6 +88,30 @@ from src.validation.clinical_metrics import summarize as clinical_summarize
 # Scheduler warmup + cosine
 # ======================================================================
 
+def phase3_parameter_groups(module, lr, weight_decay):
+    """Include frozen parameters: they must remain optimizable after unfreezing."""
+    decay, no_decay = [], []
+    for name, parameter in module.named_parameters():
+        if parameter.dim() <= 1 or "bias" in name or "norm" in name.lower():
+            no_decay.append(parameter)
+        else:
+            decay.append(parameter)
+    return [
+        {"params": params, "lr": lr, "weight_decay": wd}
+        for params, wd in ((decay, weight_decay), (no_decay, 0.0)) if params
+    ]
+
+
+def validate_warm_start(checkpoint, split_provenance, regression_stats):
+    if checkpoint.get("split_provenance", {}).get("split_sha256") != split_provenance.get("split_sha256"):
+        raise ValueError("Warm-start incompatible avec les partitions actuelles ; utiliser --warm_start 0")
+    if checkpoint.get("regression_stats") != regression_stats:
+        raise ValueError("Warm-start incompatible avec la normalisation actuelle ; utiliser --warm_start 0")
+    if not all(torch.isfinite(v).all() for v in checkpoint["model_state_dict"].values()
+               if torch.is_tensor(v)):
+        raise ValueError("Warm-start contenant des poids non finis")
+
+
 class WarmupCosineScheduler:
     def __init__(self, optimizer, warmup_epochs, total_epochs, lr_min=1e-7):
         self.optimizer = optimizer
@@ -120,9 +144,10 @@ def find_optimal_thresholds_multi(preds_dict, targets_dict):
     for name in classification_tasks:
         if name not in preds_dict or name not in targets_dict:
             continue
-        probs = torch.sigmoid(preds_dict[name]).cpu().numpy()
-        tgt = targets_dict[name].cpu().numpy()
-        valid = np.isfinite(tgt) & np.isfinite(probs)
+        logits = preds_dict[name].detach().float().cpu()
+        probs = torch.sigmoid(logits).numpy()
+        tgt = targets_dict[name].detach().cpu().numpy()
+        valid = np.isfinite(tgt) & np.isfinite(logits.numpy())
         task_thresh = []
         for t in range(tgt.shape[1]):
             mask = valid[:, t]
@@ -134,18 +159,56 @@ def find_optimal_thresholds_multi(preds_dict, targets_dict):
             if len(np.unique(y)) < 2:
                 task_thresh.append(0.5)
                 continue
-            best_t, best_f1 = 0.5, 0.0
-            for th in np.arange(0.2, 0.8, 0.05):
-                f = f1_score(y, (p > th).astype(int), zero_division=0)
-                if f > best_f1:
-                    best_f1 = f
-                    best_t = float(th)
-            task_thresh.append(best_t)
+            precision, recall, candidates = precision_recall_curve(y, p)
+            scores = 2 * precision[:-1] * recall[:-1] / np.maximum(precision[:-1] + recall[:-1], 1e-12)
+            # Consumers use >, while sklearn's PR curve uses >=.
+            best_t = float(np.nextafter(candidates[int(np.argmax(scores))], np.float32(-np.inf)))
+            task_thresh.append(max(0.0, best_t))
         thresholds[name] = task_thresh
     return thresholds
 
 
-def compute_phase3_metrics(predictions, targets):
+def fit_temperature(logits, targets):
+    """Fit a positive scalar on observed validation labels; never worsen NLL."""
+    valid = torch.isfinite(targets) & torch.isfinite(logits)
+    if valid.sum() < 10:
+        return 1.0
+    logits, targets = logits[valid].detach().float(), targets[valid].detach().float()
+    log_temp = torch.nn.Parameter(torch.zeros((), device=logits.device))
+    opt = torch.optim.LBFGS([log_temp], lr=0.1, max_iter=50)
+    def closure():
+        opt.zero_grad()
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            logits / log_temp.clamp(-2.302585, 4.605170).exp(), targets)
+        loss.backward()
+        return loss
+    baseline = torch.nn.functional.binary_cross_entropy_with_logits(logits, targets).item()
+    opt.step(closure)
+    temperature = float(log_temp.detach().clamp(-2.302585, 4.605170).exp())
+    final = torch.nn.functional.binary_cross_entropy_with_logits(logits / temperature, targets).item()
+    return temperature if np.isfinite(final) and final <= baseline else 1.0
+
+
+def phase3_composite_score(metrics):
+    """Score de sélection; conserve la pénalité d'un R² négatif."""
+    values = []
+    for name, result in metrics.items():
+        if name.startswith("_") or not isinstance(result, dict):
+            continue
+        if "roc_auc" in result:
+            if not np.isfinite(result["roc_auc"]):
+                raise ValueError(f"{name}: AUC non finie")
+            values.append(result["roc_auc"])
+        elif "r2" in result:
+            if not np.isfinite(result["r2"]):
+                raise ValueError(f"{name}: R² non fini")
+            values.append(max(-1.0, min(1.0, result["r2"])))
+    if not values:
+        raise RuntimeError("Aucune métrique de validation calculable en Phase 3")
+    return sum(values) / len(values)
+
+
+def compute_phase3_metrics(predictions, targets, thresholds=None, regression_stats=None):
     """
     Calcule les métriques pour toutes les propriétés.
 
@@ -171,11 +234,15 @@ def compute_phase3_metrics(predictions, targets):
 
         prop_metrics = {}
 
-        if prop_name in ("toxicity", "bbb_penetration", "clinical_toxicity"):
+        if prop_name in ("toxicity", "efficacy", "bbb_penetration", "clinical_toxicity"):
             # Classification : AUC + F1
             probs = torch.sigmoid(pred).numpy()
             aucs = []
             f1s = []
+            aps, precisions, recalls = [], [], []
+            task_thresholds = (thresholds or {}).get(prop_name, [0.5] * tgt.shape[1])
+            if len(task_thresholds) != tgt.shape[1]:
+                raise ValueError(f"{prop_name}: nombre de seuils incorrect")
             for t in range(tgt.shape[1]):
                 mask = valid[:, t]
                 if mask.sum() < 2:
@@ -185,38 +252,38 @@ def compute_phase3_metrics(predictions, targets):
                 # AUC et F1 seulement si les DEUX classes sont présentes :
                 # un 0 fictif (tâche mono-classe) fausserait la macro-moyenne.
                 if len(np.unique(y)) > 1:
+                    decisions = (p > task_thresholds[t]).astype(int)
                     aucs.append(roc_auc_score(y, p))
-                    f1s.append(f1_score(y, (p > 0.5).astype(int), zero_division=0))
+                    f1s.append(f1_score(y, decisions, zero_division=0))
+                    aps.append(average_precision_score(y, p))
+                    precisions.append(precision_score(y, decisions, zero_division=0))
+                    recalls.append(recall_score(y, decisions, zero_division=0))
 
             prop_metrics["n_tasks_scored"] = len(aucs)
             if aucs:
                 prop_metrics["roc_auc"] = float(np.mean(aucs))
                 prop_metrics["f1"] = float(np.mean(f1s))
+                prop_metrics["average_precision"] = float(np.mean(aps))
+                prop_metrics["precision"] = float(np.mean(precisions))
+                prop_metrics["recall"] = float(np.mean(recalls))
+                prop_metrics["positive_fraction"] = float(tgt[valid].mean())
             else:
                 logger.warning("%s: AUC/F1 non calculables (aucune tâche avec deux classes)", prop_name)
-
-        elif prop_name in ("efficacy",):
-            # Classification binaire
-            probs = torch.sigmoid(pred).numpy()
-            y = tgt[valid].flatten()
-            p = probs[valid[:, 0] if valid.ndim > 1 else valid].flatten()
-            if len(y) > 0 and len(np.unique(y)) > 1:
-                prop_metrics["n_tasks_scored"] = 1
-                prop_metrics["roc_auc"] = float(roc_auc_score(y, p))
-                prop_metrics["f1"] = float(f1_score(y, (p > 0.5).astype(int), zero_division=0))
-            else:
-                prop_metrics["n_tasks_scored"] = 0
-                logger.warning("%s: AUC/F1 non calculables (une seule classe)", prop_name)
 
         else:
             # Régression : RMSE + R²
             pred_valid = pred_np[valid]
             tgt_valid = tgt[valid]
+            stats = (regression_stats or {}).get(prop_name)
+            if stats is not None:
+                pred_valid = pred_valid * stats["std"] + stats["mean"]
+                tgt_valid = tgt_valid * stats["std"] + stats["mean"]
             rmse = float(np.sqrt(np.mean((pred_valid - tgt_valid) ** 2)))
             ss_res = float(np.sum((tgt_valid - pred_valid) ** 2))
             ss_tot = float(np.sum((tgt_valid - tgt_valid.mean()) ** 2))
             # R² indéfini sur une cible constante : ne pas fabriquer un zéro.
             prop_metrics["rmse"] = rmse
+            prop_metrics["units"] = "original_target" if stats is not None else "normalized_target"
             if ss_tot > 1e-8:
                 prop_metrics["r2"] = float(1 - ss_res / ss_tot)
             else:
@@ -232,7 +299,8 @@ def compute_phase3_metrics(predictions, targets):
 # ======================================================================
 
 def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoch,
-                    scaler=None, accum_steps=1, use_amp=None, amp_dtype=torch.float16):
+                    scaler=None, accum_steps=1, use_amp=None, amp_dtype=torch.float16,
+                    ema_model=None):
     if accum_steps < 1:
         raise ValueError("accum_steps doit être >= 1")
     model.train()
@@ -257,6 +325,12 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
             return
         if scaler is not None:
             scaler.unscale_(optimizer)
+        # The final accumulation window can contain fewer batches. Its
+        # gradients must still be an average, not shrink by accum_steps.
+        if pending_backward < accum_steps:
+            for parameter in optimizer_params:
+                if parameter.grad is not None:
+                    parameter.grad.mul_(accum_steps / pending_backward)
         gradients_finite = all(torch.isfinite(p.grad).all() for p in optimizer_params
                                if p.grad is not None)
         if gradients_finite:
@@ -268,6 +342,10 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
             else:
                 optimizer.step()
             optimizer_updates += 1
+            if not finite_state():
+                raise RuntimeError("État non fini après optimizer.step ; entraînement arrêté")
+            if ema_model is not None:
+                ema_model.update_parameters(model)
         else:
             bad_batches += 1
             logger.warning("Gradients non finis ; mise à jour ignorée (epoch=%s)", epoch)
@@ -376,11 +454,14 @@ def evaluate(model, loader, criterion, device, use_amp=False, amp_dtype=torch.fl
 
         with torch.amp.autocast("cuda", enabled=use_amp, dtype=amp_dtype):
             predictions = model(batch_data)
+        if any(not torch.isfinite(value).all() for value in predictions.values()):
+            raise RuntimeError("Prédictions non finies pendant l'évaluation")
         loss, _ = criterion({k: v.float() for k, v in predictions.items()}, labels_device)
 
-        if torch.isfinite(loss).all():
-            total_loss += loss.item() * batch_data.num_graphs
-            n += batch_data.num_graphs
+        if not torch.isfinite(loss).all():
+            raise RuntimeError("Loss non finie pendant l'évaluation")
+        total_loss += loss.item() * batch_data.num_graphs
+        n += batch_data.num_graphs
 
         for k in predictions:
             if k in labels_device:
@@ -394,8 +475,15 @@ def evaluate(model, loader, criterion, device, use_amp=False, amp_dtype=torch.fl
             merged_preds[k] = torch.cat(all_preds[k])
             merged_targets[k] = torch.cat(all_targets[k])
 
+    if n == 0:
+        raise RuntimeError("Aucun exemple à évaluer")
     metrics = compute_phase3_metrics(merged_preds, merged_targets)
-    metrics["_loss"] = total_loss / max(n, 1)
+    # Sparse multi-task labels: averaging batch losses weights tasks according
+    # to which batches they appear in. Evaluate each task over all its labels.
+    full_loss, _ = criterion(merged_preds, merged_targets)
+    if not torch.isfinite(full_loss).all():
+        raise RuntimeError("Loss globale de validation non finie")
+    metrics["_loss"] = full_loss.item()
     return metrics, merged_preds, merged_targets
 
 
@@ -423,13 +511,23 @@ def main():
     p.add_argument("--seed", type=int, default=42,
                    help="Random seed (varier pour Deep Ensemble : --seed 42, 123, 456, ...)")
     args = p.parse_args()
+    if args.epochs < 1 or args.patience < 1 or args.batch_size < 2:
+        p.error("epochs/patience doivent être >= 1 et batch_size >= 2 (BatchNorm)")
 
     # Reproductibilité
     set_seed(args.seed)
 
     # Initialisation GPU et logging
-    gpu = get_gpu_manager(force_cpu=(args.device == "cpu"))
-    device = gpu.device
+    gpu = get_gpu_manager(force_cpu=(args.device == "cpu"), device=args.device)
+    device = torch.device(args.device)
+    if device.type == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA demandé mais indisponible")
+        if device.index is None:
+            device = torch.device("cuda", torch.cuda.current_device())
+        torch.cuda.set_device(device)
+    elif device.type != "cpu":
+        raise ValueError("Phase 3 supporte cpu ou cuda[:index]")
     setup_logging(name="panacee.phase3")
     health = HealthMonitor(check_interval=50)
 
@@ -556,16 +654,23 @@ def main():
 
     # Charger les poids Phase 2
     ckpt = torch.load(pretrained, map_location="cpu", weights_only=False)
+    pretrained_provenance = {
+        "checkpoint_sha256": hashlib.sha256(Path(pretrained).read_bytes()).hexdigest(),
+        "upstream_split_audit": "not_verified",
+    }
+    logger.warning("Partitions Phase 3 vérifiées, mais exposition antérieure de l'encodeur Phase 2 aux données de validation/test non vérifiée")
     if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
         sd = ckpt["model_state_dict"]
         encoder_sd = {k.replace("encoder.", ""): v for k, v in sd.items() if k.startswith("encoder.")}
         if encoder_sd:
-            encoder.load_state_dict(encoder_sd, strict=False)
+            if not all(torch.isfinite(v).all() for v in encoder_sd.values() if torch.is_tensor(v)):
+                raise ValueError("Poids de l'encodeur Phase 2 non finis")
+            encoder.load_state_dict(encoder_sd, strict=True)
             print("  ✓ Encodeur Phase 2 chargé")
         else:
-            print("  ⚠ Pas de poids encoder dans le checkpoint Phase 2")
+            raise ValueError("Pas de poids encoder dans le checkpoint Phase 2")
     else:
-        print("  ⚠ Format checkpoint non reconnu")
+        raise ValueError("Format checkpoint Phase 2 non reconnu")
 
     # Modèle multi-propriétés
     model = MultiPropertyPredictor(
@@ -577,21 +682,14 @@ def main():
     # (poursuite de l'entraînement sur les phases à venir).
     prev_best = Path(args.save_dir) / PHASE3["checkpoint_name"]
     if getattr(args, "warm_start", 1) and prev_best.exists():
-        try:
-            prev = torch.load(prev_best, map_location="cpu", weights_only=False)
-            if isinstance(prev, dict) and "model_state_dict" in prev:
-                state = prev["model_state_dict"]
-                if all(torch.isfinite(v).all() for v in state.values() if torch.is_tensor(v)):
-                    model.load_state_dict(state, strict=False)
-                    print("  ✓ Warm-start : meilleur modèle Phase 3 précédent rechargé")
-                else:
-                    print("  ⚠ Checkpoint Phase 3 non fini : reprise depuis la Phase 2")
-        except Exception as e:
-            print(f"  ⚠ Warm-start Phase 3 ignoré ({e})")
+        prev = torch.load(prev_best, map_location="cpu", weights_only=False)
+        validate_warm_start(prev, split_provenance, train_ds.regression_stats)
+        model.load_state_dict(prev["model_state_dict"], strict=True)
+        print("  ✓ Warm-start : partitions et normalisation vérifiées")
 
     # Raisonneur IA (sera entraîné après le multi-propriétés)
     reasoner = MolecularReasoner(
-        mol_dim=OUTPUT_DIM,
+        mol_dim=HIDDEN_DIM,
         hidden_dim=PHASE3["reasoner_hidden_dim"],
         num_heads=PHASE3["reasoner_num_heads"],
         num_layers=PHASE3["reasoner_num_layers"],
@@ -633,20 +731,7 @@ def main():
     # Separer params : weight_decay exclus des biais et LayerNorm
     wd = PHASE3["weight_decay"]
     def _split_params(module, lr):
-        decay, no_decay = [], []
-        for name, p in module.named_parameters():
-            if not p.requires_grad:
-                continue
-            if p.dim() <= 1 or "bias" in name or "norm" in name.lower():
-                no_decay.append(p)
-            else:
-                decay.append(p)
-        groups = []
-        if decay:
-            groups.append({"params": decay, "lr": lr, "weight_decay": wd})
-        if no_decay:
-            groups.append({"params": no_decay, "lr": lr, "weight_decay": 0.0})
-        return groups
+        return phase3_parameter_groups(module, lr, wd)
 
     # Layer-wise LR decay (LLRD) : couches profondes = LR plus bas
     llrd_factor = PHASE3.get("llrd_factor", 0.8)
@@ -675,6 +760,10 @@ def main():
         param_groups.append({"params": list(criterion.log_vars.parameters()),
                              "lr": lr_hd, "weight_decay": 0.0})
     optimizer = AdamW(param_groups)
+    optimized_ids = {id(p) for group in param_groups for p in group["params"]}
+    missing = [name for name, p in model.named_parameters() if id(p) not in optimized_ids]
+    if missing:
+        raise RuntimeError(f"Paramètres absents de l'optimiseur : {missing}")
 
     scheduler = WarmupCosineScheduler(
         optimizer, PHASE3["warmup_epochs"], args.epochs, PHASE3["lr_min"],
@@ -696,10 +785,11 @@ def main():
         ema_model = torch.optim.swa_utils.AveragedModel(
             model,
             multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(ema_decay),
+            use_buffers=True,
         )
 
     # ── Étape 6 : Boucle d'entraînement ──────────────────────────────
-    best_score = 0.0
+    best_score = -float("inf")
     no_improve = 0
     history = []
     best_path = Path(args.save_dir) / PHASE3["checkpoint_name"]
@@ -709,8 +799,9 @@ def main():
     # nouveau run -> dossier propre, cohérent avec live_metrics.jsonl réinitialisé.
     epochs_dir = Path(args.save_dir) / "epochs"
     save_epochs = bool(getattr(args, "save_epochs", 1))
-    if epochs_dir.exists():
-        shutil.rmtree(epochs_dir, ignore_errors=True)
+    if epochs_dir.exists() and any(epochs_dir.iterdir()):
+        archive = epochs_dir.with_name("epochs_previous_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+        epochs_dir.rename(archive)
     if save_epochs:
         epochs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -743,15 +834,12 @@ def main():
             PHASE3["grad_clip"], epoch,
             scaler=scaler, accum_steps=accum_steps,
             use_amp=use_amp, amp_dtype=amp_dtype,
+            ema_model=ema_model,
         )
         if not all(torch.isfinite(p).all() for p in model.parameters()):
             raise RuntimeError(
                 "Poids Phase 3 non finis après entraînement ; aucun checkpoint corrompu sauvegardé"
             )
-
-        # EMA update
-        if ema_model is not None:
-            ema_model.update_parameters(model)
 
         # Validation (EMA si disponible, sinon modele brut)
         eval_model = ema_model if ema_model is not None else model
@@ -759,24 +847,7 @@ def main():
             eval_model, val_loader, criterion, device, use_amp, amp_dtype)
 
         # Score composite (moyenne pondérée des métriques)
-        score = 0.0
-        n_scores = 0
-        for prop, prop_m in val_m.items():
-            if prop.startswith("_"):
-                continue
-            if isinstance(prop_m, dict):
-                if "roc_auc" in prop_m:
-                    score += prop_m["roc_auc"]
-                    n_scores += 1
-                elif "r2" in prop_m:
-                    score += max(prop_m["r2"], 0)
-                    n_scores += 1
-        if n_scores == 0:
-            raise RuntimeError(
-                "Aucune métrique de validation calculable en Phase 3 ; "
-                "vérifier les classes, les cibles et les prédictions avant de sauvegarder"
-            )
-        composite_score = score / n_scores
+        composite_score = phase3_composite_score(val_m)
 
         elapsed = time.time() - t0
         eta = timedelta(seconds=int((elapsed / epoch) * (args.epochs - epoch)))
@@ -858,11 +929,23 @@ def main():
             rec.get("val_auc"), rec.get("macro_sensitivity"),
             rec.get("macro_fnr"), rec.get("n_danger"))
 
+        selection_score = 0.6 * rec["clinical_score"] + 0.4 * composite_score
+        if not np.isfinite(selection_score):
+            raise RuntimeError("Score de sélection non fini")
+        is_best = selection_score > best_score
+        if is_best:
+            best_score = selection_score
+        rec["selection_score"] = selection_score
+        history_entry["selection_score"] = selection_score
+
         # Checkpoint
         ckpt_data = {
             "epoch": epoch,
             "model_state_dict": ema_model.module.state_dict() if ema_model is not None else model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
+            "raw_model_state_dict": model.state_dict(),
+            "criterion_state_dict": criterion.state_dict(),
+            "selection_score": selection_score,
             "val_metrics": {k: v for k, v in val_m.items() if not k.startswith("_")},
             "composite_score": composite_score,
             "clinical_score": rec["clinical_score"],
@@ -871,6 +954,7 @@ def main():
             "property_dims": train_ds.get_property_dims(),
             "regression_stats": train_ds.regression_stats,
             "split_provenance": split_provenance,
+            "pretrained_provenance": pretrained_provenance,
             "training_stage": "training",
             "config": {
                 "hidden_dim": HIDDEN_DIM,
@@ -890,15 +974,12 @@ def main():
         if save_epochs:
             ep_path = epochs_dir / f"epoch_{epoch:03d}.pth"
             slim = {k: v for k, v in ckpt_data.items()
-                    if k not in ("history", "optimizer_state_dict")}
+                    if k not in ("history", "optimizer_state_dict", "raw_model_state_dict")}
             torch.save(slim, ep_path)
             ckpt_rel = f"epochs/epoch_{epoch:03d}.pth"
 
         # Securite d'abord : 60% clinical_score + 40% composite_score
-        selection_score = 0.6 * rec["clinical_score"] + 0.4 * composite_score
-        is_best = selection_score > best_score
         if is_best:
-            best_score = selection_score
             no_improve = 0
             torch.save(ckpt_data, best_path)
             print(f"  → Nouvelle meilleure epoch (score={best_score:.4f}) sauvegardée !")
@@ -922,7 +1003,7 @@ def main():
                 model, optimizer, epoch,
                 str(Path(args.save_dir) / "emergency_checkpoint.pth"),
             )
-            break
+            raise RuntimeError("Entraînement interrompu par le contrôle de santé")
 
         gpu.clear_memory()
 
@@ -933,18 +1014,13 @@ def main():
 
     # Charger meilleur modele
     best_ckpt_eval = torch.load(best_path, map_location=device, weights_only=False)
-    model.load_state_dict(best_ckpt_eval["model_state_dict"], strict=False)
+    model.load_state_dict(best_ckpt_eval["model_state_dict"], strict=True)
+    criterion.load_state_dict(best_ckpt_eval["criterion_state_dict"])
 
     # Seuils optimaux sur VAL set (max F1 par tache)
     print("\n  Recherche seuils optimaux sur val set...")
     val_m_final, val_preds_final, val_targets_final = evaluate(
         model, val_loader, criterion, device, use_amp, amp_dtype)
-    optimal_thresholds = find_optimal_thresholds_multi(val_preds_final, val_targets_final)
-    for task_name, thresh_list in optimal_thresholds.items():
-        mean_t = np.mean(thresh_list)
-        print(f"    {task_name}: mean_thresh={mean_t:.3f} ({len(thresh_list)} sub-tasks)")
-    best_ckpt_eval["optimal_thresholds"] = optimal_thresholds
-
     # Temperature scaling (calibration post-hoc sur val set)
     print("\n  Temperature scaling (calibration)...")
     temperatures = {}
@@ -953,24 +1029,13 @@ def main():
             continue
         logits = val_preds_final[task_name].to(device)
         tgt = val_targets_final[task_name].to(device)
-        valid = ~torch.isnan(tgt)
-        if valid.sum() < 10:
-            continue
-        temp = torch.nn.Parameter(torch.ones(1, device=device) * 1.5)
-        temp_opt = torch.optim.LBFGS([temp], lr=0.01, max_iter=50)
-        def _closure():
-            temp_opt.zero_grad()
-            scaled = logits / temp.clamp(min=0.1)
-            tgt_safe = torch.where(valid, tgt, torch.zeros_like(tgt))
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                scaled, tgt_safe, reduction="none")
-            loss = (loss * valid.float()).sum() / valid.sum().clamp(min=1)
-            loss.backward()
-            return loss
-        temp_opt.step(_closure)
-        temperatures[task_name] = float(temp.item())
-        print(f"    {task_name}: T={temp.item():.3f}")
+        temperatures[task_name] = fit_temperature(logits, tgt)
+        print(f"    {task_name}: T={temperatures[task_name]:.3f}")
     best_ckpt_eval["temperatures"] = temperatures
+    optimal_thresholds = find_optimal_thresholds_multi(
+        calibrated_logits(val_preds_final, temperatures), val_targets_final)
+    best_ckpt_eval["optimal_thresholds"] = optimal_thresholds
+    best_ckpt_eval["threshold_space"] = "calibrated_probability"
 
     # Évaluation TEST SET (hold-out)
     try:
@@ -980,7 +1045,14 @@ def main():
             test_ds, batch_size=batch_size, shuffle=False,
             collate_fn=collate_multi_property, **loader_kwargs(),
         )
-        test_m, _, _ = evaluate(model, test_loader, criterion, device, use_amp, amp_dtype)
+        raw_test_m, test_preds, test_targets = evaluate(model, test_loader, criterion, device, use_amp, amp_dtype)
+        test_m = compute_phase3_metrics(calibrated_logits(test_preds, temperatures), test_targets,
+                                        thresholds=optimal_thresholds,
+                                        regression_stats=train_ds.regression_stats)
+        test_m["_loss"] = raw_test_m["_loss"]
+        best_ckpt_eval["test_metric_convention"] = {
+            "classification": "calibrated_probability_with_validation_thresholds",
+            "regression": "original_target_units", "loss": "raw_logits_with_saved_criterion"}
         print(f"\n  Test loss: {test_m.get('_loss', 0):.4f}")
         for prop in ["toxicity", "efficacy", "solubility", "lipophilicity",
                       "bbb_penetration", "clinical_toxicity"]:
@@ -1017,10 +1089,12 @@ def main():
     all_bbb = []         # P(BBB permeable)
     all_druglike = []    # score drug-likeness composite [0,1]
     with torch.no_grad():
-        for batch_data, _ in tqdm(train_loader, desc="  Embeddings"):
+        embedding_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=False,
+                                      collate_fn=collate_multi_property, **loader_kwargs())
+        for batch_data, _ in tqdm(embedding_loader, desc="  Embeddings"):
             batch_data = batch_data.to(device)
             emb = model.encode(batch_data)
-            preds = model(batch_data)
+            preds = calibrated_logits(model(batch_data), best_ckpt.get("temperatures", {}))
 
             tox = torch.sigmoid(preds["toxicity"]).mean(dim=1)
             safety = (1.0 - tox).cpu()
@@ -1048,11 +1122,14 @@ def main():
         reasoner_optimizer, warmup_epochs=3, total_epochs=reasoner_epochs, lr_min=1e-6,
     )
 
-    max_combo = PHASE3["max_molecules_combo"]
-    n_combos_per_epoch = min(len(all_embeddings) // max_combo, 500)
+    max_combo = min(PHASE3["max_molecules_combo"], len(all_embeddings))
+    if max_combo < 2:
+        raise RuntimeError("Au moins deux molécules requises pour entraîner le raisonneur")
+    n_combos_per_epoch = min(max(1, len(all_embeddings) // max_combo), 500)
 
     print(f"  {n_combos_per_epoch} combinaisons par epoch, max {max_combo} molécules")
     for r_epoch in range(1, reasoner_epochs + 1):
+        reasoner_scheduler.step(r_epoch - 1)
         reasoner.train()
         total_r_loss = 0.0
 
@@ -1090,13 +1167,12 @@ def main():
             targets = {"success_labels": success_target}
             loss, _ = reasoner_criterion(output, targets)
 
-            if torch.isfinite(loss).all():
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(reasoner.parameters(), 1.0)
-                reasoner_optimizer.step()
-                total_r_loss += loss.item()
-
-        reasoner_scheduler.step(r_epoch - 1)
+            if not torch.isfinite(loss).all():
+                raise RuntimeError("Loss du raisonneur non finie")
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(reasoner.parameters(), 1.0, error_if_nonfinite=True)
+            reasoner_optimizer.step()
+            total_r_loss += loss.item()
         avg_loss = total_r_loss / max(n_combos_per_epoch, 1)
         print(f"  Reasoner Epoch {r_epoch:2d}/{reasoner_epochs} | loss={avg_loss:.4f}"
               f" | lr={reasoner_scheduler.get_last_lr()[0]:.1e}")
@@ -1110,6 +1186,10 @@ def main():
     if not all(torch.isfinite(p).all() for p in reasoner.parameters()):
         raise RuntimeError("Poids du raisonneur non finis ; checkpoint Phase 3 non finalisé")
     best_ckpt["reasoner_state_dict"] = reasoner.state_dict()
+    best_ckpt["reasoner_supervision"] = {
+        "success": "model_derived_proxy", "synergy": False,
+        "dose": False, "confidence": False,
+    }
     best_ckpt["training_stage"] = "complete"
     best_ckpt["reasoner_config"] = {
         "hidden_dim": PHASE3["reasoner_hidden_dim"],
@@ -1124,7 +1204,7 @@ def main():
 
     total_time = time.time() - t0
     print(f"\n✅ Phase 3 terminée en {timedelta(seconds=int(total_time))}")
-    print(f"   Meilleur score composite = {best_score:.4f}")
+    print(f"   Meilleur score de sélection = {best_score:.4f}")
     print(f"   Modèle sauvegardé : {best_path}")
 
     # Sauvegarder l'historique

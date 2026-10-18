@@ -1594,7 +1594,7 @@ function renderCombo(res) {
     <div class="grid-2">
       <div>
         <div class="o-head">Synergie par paire</div>
-        <table><thead><tr><th>Molécule 1</th><th>Molécule 2</th><th>Synergie</th><th>Type</th></tr></thead><tbody>${pairs}</tbody></table>
+        ${pairs ? `<table><thead><tr><th>Molécule 1</th><th>Molécule 2</th><th>Synergie</th><th>Type</th></tr></thead><tbody>${pairs}</tbody></table>` : '<p class="hint">Indisponible : aucune mesure de synergie utilisée pour entraîner cette tête du modèle.</p>'}
       </div>
     </div>
     <div class="o-head" style="margin-top:12px">Interprétation IA</div>

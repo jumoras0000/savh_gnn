@@ -59,8 +59,10 @@ def smiles_to_graph(smiles: str):
     Features de liaison (6-dim, binaires) :
         single, double, triple, aromatic, conjugated, in_ring
     """
+    if not isinstance(smiles, str) or not smiles.strip():
+        return None
     mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
+    if mol is None or mol.GetNumAtoms() == 0:
         return None
 
     # ── Features atomiques ────────────────────────────────────────────
@@ -131,6 +133,8 @@ def mask_atoms(graph: Data, mask_prob: float = 0.15):
         - masked_types_tensor    : [M]            classe d'élément (cible principale)
     """
     num_atoms = graph.x.size(0)
+    if num_atoms == 0 or not 0 < mask_prob <= 1:
+        raise ValueError("Graphe non vide et mask_prob dans ]0, 1] requis")
     num_masked = max(1, int(num_atoms * mask_prob))
 
     perm = torch.randperm(num_atoms)[:num_masked]

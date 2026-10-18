@@ -41,6 +41,19 @@ class CalibrationAnalyzer:
             n_bins: nombre de bins pour calibration
         """
         self.n_bins = n_bins
+        if not isinstance(n_bins, int) or n_bins < 1:
+            raise ValueError("n_bins doit être un entier positif")
+
+    @staticmethod
+    def _validate(y_true, y_proba):
+        y_true, y_proba = np.asarray(y_true), np.asarray(y_proba)
+        if y_true.shape != y_proba.shape or y_true.ndim != 1 or not len(y_true):
+            raise ValueError("Cibles et probabilités doivent être des vecteurs non vides de même taille")
+        if not np.isfinite(y_true).all() or not np.isfinite(y_proba).all():
+            raise ValueError("Valeurs non finies dans la calibration")
+        if not np.isin(y_true, [0, 1]).all() or ((y_proba < 0) | (y_proba > 1)).any():
+            raise ValueError("Cibles binaires et probabilités dans [0, 1] requises")
+        return y_true, y_proba
 
     def expected_calibration_error(
         self,
@@ -58,13 +71,14 @@ class CalibrationAnalyzer:
             0.0 = parfaitement calibré
             1.0 = complètement décalibré
         """
+        y_true, y_proba = self._validate(y_true, y_proba)
         bin_edges = np.linspace(0, 1, self.n_bins + 1)
 
         total_samples = len(y_true)
         ece = 0.0
 
         for i in range(self.n_bins):
-            mask = (y_proba >= bin_edges[i]) & (y_proba < bin_edges[i + 1])
+            mask = (y_proba >= bin_edges[i]) & ((y_proba <= bin_edges[i + 1]) if i == self.n_bins - 1 else (y_proba < bin_edges[i + 1]))
             if mask.sum() == 0:
                 continue
 
@@ -86,11 +100,12 @@ class CalibrationAnalyzer:
 
         Pire écart de confiance dans un bin.
         """
+        y_true, y_proba = self._validate(y_true, y_proba)
         bin_edges = np.linspace(0, 1, self.n_bins + 1)
         mce = 0.0
 
         for i in range(self.n_bins):
-            mask = (y_proba >= bin_edges[i]) & (y_proba < bin_edges[i + 1])
+            mask = (y_proba >= bin_edges[i]) & ((y_proba <= bin_edges[i + 1]) if i == self.n_bins - 1 else (y_proba < bin_edges[i + 1]))
             if mask.sum() == 0:
                 continue
 
@@ -111,6 +126,7 @@ class CalibrationAnalyzer:
 
         Version pondérée par la disparité des confiances.
         """
+        y_true, y_proba = self._validate(y_true, y_proba)
         predictions = (y_proba > 0.5).astype(int)
         overconfident = y_proba[predictions != y_true]
 
@@ -135,7 +151,7 @@ class CalibrationAnalyzer:
             "mce": self.maximum_calibration_error(y_true, y_proba),
             "sce": self.static_calibration_error(y_true, y_proba),
             "brier_score": float(brier_score_loss(y_true, y_proba)),
-            "log_loss": float(log_loss(y_true, y_proba)),
+            "log_loss": float(log_loss(y_true, y_proba, labels=[0, 1])),
         }
 
     def reliability_diagram(
@@ -149,23 +165,26 @@ class CalibrationAnalyzer:
 
         Visualise la calibration : (confidence, accuracy) points et diagonal.
         """
+        y_true, y_proba = self._validate(y_true, y_proba)
         bin_edges = np.linspace(0, 1, self.n_bins + 1)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
         bin_accs = []
         bin_confs = []
         bin_counts = []
+        used_centers = []
 
         for i in range(self.n_bins):
-            mask = (y_proba >= bin_edges[i]) & (y_proba < bin_edges[i + 1])
+            mask = (y_proba >= bin_edges[i]) & ((y_proba <= bin_edges[i + 1]) if i == self.n_bins - 1 else (y_proba < bin_edges[i + 1]))
             if mask.sum() == 0:
                 continue
 
-            bin_accs.append(y_true[mask].mean())
-            bin_confs.append(y_proba[mask].mean())
-            bin_counts.append(mask.sum())
+            bin_accs.append(float(y_true[mask].mean()))
+            bin_confs.append(float(y_proba[mask].mean()))
+            bin_counts.append(int(mask.sum()))
+            used_centers.append(float(bin_centers[i]))
 
         diagram_data = {
-            "bin_centers": bin_centers[: len(bin_accs)].tolist(),
+            "bin_centers": used_centers,
             "accuracies": bin_accs,
             "confidences": bin_confs,
             "bin_counts": bin_counts,
@@ -215,19 +234,25 @@ class UncertaintyDecomposition:
         Returns:
             {total, aleatoric, epistemic}
         """
-        # Epistemic (aleatoric) : variance across MC samples
-        epistemic = np.var(y_proba_samples, axis=0)
-
-        # Aleatoric : average entropy
-        entropy = -y_proba_mean * np.log(y_proba_mean + 1e-10) - (1 - y_proba_mean) * np.log(1 - y_proba_mean + 1e-10)
-
-        # Total : entropy + epistemic
-        total = entropy + epistemic
+        samples = np.asarray(y_proba_samples, dtype=float)
+        mean = np.asarray(y_proba_mean, dtype=float)
+        if samples.ndim != mean.ndim + 1 or samples.shape[0] == 0 or samples.shape[1:] != mean.shape:
+            raise ValueError("Dimensions des échantillons MC incompatibles")
+        if not np.isfinite(samples).all() or ((samples < 0) | (samples > 1)).any():
+            raise ValueError("Probabilités MC invalides")
+        if not np.allclose(mean, samples.mean(axis=0), atol=1e-6):
+            raise ValueError("La moyenne ne correspond pas aux échantillons MC")
+        def entropy(prob):
+            p = np.clip(prob, 1e-15, 1 - 1e-15)
+            return -(p * np.log(p) + (1 - p) * np.log1p(-p))
+        total = entropy(mean)
+        aleatoric = entropy(samples).mean(axis=0)
+        epistemic = np.maximum(total - aleatoric, 0.0)
 
         return {
             "total_uncertainty": total,
             "epistemic_uncertainty": epistemic,
-            "aleatoric_uncertainty": entropy,
+            "aleatoric_uncertainty": aleatoric,
         }
 
     @staticmethod
@@ -287,9 +312,11 @@ class ConfidenceThreshold:
         thresholds = np.linspace(0.5, 1.0, 20)
         coverages = []
         accuracies = []
+        y_true, y_proba = CalibrationAnalyzer._validate(y_true, y_proba)
+        used_thresholds = []
 
         for threshold in thresholds:
-            mask = y_proba >= threshold
+            mask = np.maximum(y_proba, 1 - y_proba) >= threshold
             if mask.sum() == 0:
                 continue
 
@@ -298,6 +325,7 @@ class ConfidenceThreshold:
 
             coverages.append(float(coverage))
             accuracies.append(float(accuracy))
+            used_thresholds.append(float(threshold))
 
         # AUC sur (couverture, accuracy) : trier par couverture croissante,
         # sinon np.trapz sur des x décroissants renvoie une aire négative.
@@ -306,10 +334,11 @@ class ConfidenceThreshold:
             order = np.argsort(coverages)
             cov_sorted = np.array(coverages)[order]
             acc_sorted = np.array(accuracies)[order]
-            auc_val = float(np.trapz(acc_sorted, cov_sorted))
+            auc_val = float(np.trapezoid(acc_sorted, cov_sorted) if hasattr(np, "trapezoid")
+                            else np.trapz(acc_sorted, cov_sorted))
 
         return {
-            "thresholds": thresholds[: len(coverages)].tolist(),
+            "thresholds": used_thresholds,
             "coverages": coverages,
             "accuracies": accuracies,
             "area_under_curve": auc_val,
@@ -381,7 +410,11 @@ class SelectivePrediction:
         Returns:
             {accepted_indices, rejected_indices, metrics}
         """
-        accepted = y_proba >= rejection_threshold
+        y_proba = np.asarray(y_proba)
+        CalibrationAnalyzer._validate(np.zeros_like(y_proba), y_proba)
+        if not 0.5 <= rejection_threshold <= 1.0:
+            raise ValueError("Seuil de confiance attendu dans [0.5, 1]")
+        accepted = np.maximum(y_proba, 1 - y_proba) >= rejection_threshold
         rejected = ~accepted
 
         return {
@@ -402,9 +435,10 @@ class SelectivePrediction:
         thresholds = np.linspace(0.5, 1.0, 20)
         accuracies = []
         rejection_rates = []
+        y_true, y_proba = CalibrationAnalyzer._validate(y_true, y_proba)
 
         for threshold in thresholds:
-            accepted = y_proba >= threshold
+            accepted = np.maximum(y_proba, 1 - y_proba) >= threshold
             if accepted.sum() == 0:
                 continue
 

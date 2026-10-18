@@ -20,8 +20,9 @@ logger = logging.getLogger("panacee.gpu")
 class GPUManager:
     """Gestionnaire centralisé des ressources GPU."""
 
-    def __init__(self, force_cpu: bool = False):
+    def __init__(self, force_cpu: bool = False, device: str | None = None):
         self.force_cpu = force_cpu
+        self.requested_device = device
         self._device = None
         self._gpu_info = None
         self._supports_fp16 = False
@@ -61,6 +62,12 @@ class GPUManager:
             except Exception as e:
                 logger.warning(f"  GPU {i}: erreur détection - {e}")
 
+        if self.requested_device is not None:
+            requested = torch.device(self.requested_device)
+            if requested.type == "cuda":
+                best_gpu = requested.index if requested.index is not None else torch.cuda.current_device()
+                if not 0 <= best_gpu < n_gpus:
+                    raise ValueError(f"GPU inexistant : {requested}")
         device = torch.device(f"cuda:{best_gpu}")
 
         # Vérifier support FP16
@@ -175,9 +182,10 @@ class GPUManager:
 # Singleton global
 _gpu_manager = None
 
-def get_gpu_manager(force_cpu: bool = False) -> GPUManager:
+def get_gpu_manager(force_cpu: bool = False, device: str | None = None) -> GPUManager:
     """Retourne le gestionnaire GPU global."""
     global _gpu_manager
-    if _gpu_manager is None:
-        _gpu_manager = GPUManager(force_cpu=force_cpu)
+    if (_gpu_manager is None or _gpu_manager.force_cpu != force_cpu
+            or _gpu_manager.requested_device != device):
+        _gpu_manager = GPUManager(force_cpu=force_cpu, device=device)
     return _gpu_manager

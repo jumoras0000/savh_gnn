@@ -13,6 +13,8 @@ L'encodeur ainsi pré-entraîné se sauvegarde au MÊME format que la Phase 1 MG
 (model_state_dict avec préfixe "encoder."), donc la Phase 2 le charge tel quel.
 """
 import json
+import math
+import warnings
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -32,13 +34,15 @@ from src.preprocessing.graph_builder import smiles_to_graph
 # ──────────────────────────────────────────────────────────────────────
 
 def augment_graph(data: Data, edge_drop: float = 0.15, attr_mask: float = 0.15) -> Data:
+    if not 0 <= edge_drop <= 1 or not 0 <= attr_mask <= 1:
+        raise ValueError("Les probabilités d'augmentation doivent être dans [0, 1]")
     x = data.x.clone()
 
     # Attribute masking : met à zéro les features de quelques atomes
     n = x.size(0)
     if attr_mask > 0 and n > 1:
         k = max(1, int(n * attr_mask))
-        idx = torch.randperm(n)[:k]
+        idx = torch.randperm(n, device=x.device)[:k]
         x[idx] = 0.0
 
     edge_index = data.edge_index
@@ -47,9 +51,13 @@ def augment_graph(data: Data, edge_drop: float = 0.15, attr_mask: float = 0.15) 
     # Edge dropping : supprime une fraction d'arêtes
     e = edge_index.size(1)
     if edge_drop > 0 and e > 2:
-        keep = torch.rand(e) > edge_drop
-        if keep.sum() < 1:
-            keep[0] = True
+        # A chemical bond is represented by two directed edges; drop both.
+        pairs = edge_index.t().sort(dim=1).values
+        _, inverse = torch.unique(pairs, dim=0, return_inverse=True)
+        keep_pairs = torch.rand(int(inverse.max()) + 1, device=edge_index.device) > edge_drop
+        if not keep_pairs.any():
+            keep_pairs[0] = True
+        keep = keep_pairs[inverse]
         edge_index = edge_index[:, keep]
         edge_attr = edge_attr[keep]
 
@@ -60,7 +68,12 @@ class GraphCLDataset(Dataset):
     """Retourne deux vues augmentées de chaque molécule."""
 
     def __init__(self, smiles_list, edge_drop=0.15, attr_mask=0.15):
-        self.smiles_list = smiles_list
+        self.smiles_list = [s for s in smiles_list if smiles_to_graph(s) is not None]
+        self.invalid_count = len(smiles_list) - len(self.smiles_list)
+        if self.invalid_count:
+            warnings.warn(f"GraphCL : {self.invalid_count} SMILES invalides exclus", stacklevel=2)
+        if not self.smiles_list:
+            raise ValueError("GraphCL : aucun SMILES valide")
         self.edge_drop = edge_drop
         self.attr_mask = attr_mask
 
@@ -70,13 +83,7 @@ class GraphCLDataset(Dataset):
     def __getitem__(self, idx):
         g = smiles_to_graph(self.smiles_list[idx])
         if g is None:
-            # fallback : premier SMILES valide
-            for j in range(1, len(self.smiles_list)):
-                g = smiles_to_graph(self.smiles_list[(idx + j) % len(self.smiles_list)])
-                if g is not None:
-                    break
-            if g is None:
-                raise RuntimeError("Aucun SMILES valide dans le dataset")
+            raise RuntimeError("SMILES devenu invalide après validation du dataset")
         v1 = augment_graph(g, self.edge_drop, self.attr_mask)
         v2 = augment_graph(g, self.edge_drop, self.attr_mask)
         return v1, v2
@@ -115,6 +122,10 @@ class GraphCLModel(nn.Module):
 
 def nt_xent_loss(z1, z2, temperature: float = 0.2):
     """InfoNCE symétrique : positives = (i, i+N)."""
+    if not math.isfinite(temperature) or temperature <= 0:
+        raise ValueError("Température contrastive positive et finie requise")
+    if z1.ndim != 2 or z1.shape != z2.shape or z1.shape[0] < 2:
+        raise ValueError("Deux vues de même taille avec au moins deux graphes requises")
     z1 = F.normalize(z1, dim=1)
     z2 = F.normalize(z2, dim=1)
     n = z1.size(0)
@@ -162,7 +173,7 @@ def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-5)
 
     use_amp = (device.type == "cuda")
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     print(f"GraphCL : {len(smiles_list)} molecules, conv={CONV_TYPE}, AMP={use_amp}")
     best_loss = float("inf")
@@ -178,15 +189,15 @@ def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
             v2 = v2.to(device)
             optimizer.zero_grad()
             if use_amp:
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast("cuda"):
                     z1 = model(v1)
                     z2 = model(v2)
                     loss = nt_xent_loss(z1.float(), z2.float())
                 if not torch.isfinite(loss).all():
-                    continue
+                    raise RuntimeError("GraphCL : loss non finie")
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -194,9 +205,9 @@ def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
                 z2 = model(v2)
                 loss = nt_xent_loss(z1, z2)
                 if not torch.isfinite(loss).all():
-                    continue
+                    raise RuntimeError("GraphCL : loss non finie")
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
                 optimizer.step()
 
             total += loss.item()

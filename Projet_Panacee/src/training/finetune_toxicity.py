@@ -188,19 +188,19 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
                 logits = model(batch_data)
             loss = criterion(logits.float(), labels)
             if not torch.isfinite(loss).all():
-                continue
+                raise RuntimeError("Phase 2 : loss non finie")
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
             scaler.step(optimizer)
             scaler.update()
         else:
             logits = model(batch_data)
             loss = criterion(logits, labels)
             if not torch.isfinite(loss).all():
-                continue
+                raise RuntimeError("Phase 2 : loss non finie")
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
             optimizer.step()
 
         if ema is not None:
@@ -231,10 +231,13 @@ def evaluate(model, loader, criterion, device):
         batch_data = batch_data.to(device)
         labels = labels.to(device)
         logits = model(batch_data)
+        if not torch.isfinite(logits).all():
+            raise RuntimeError("Phase 2 : prédictions de validation non finies")
         loss = criterion(logits, labels)
-        if torch.isfinite(loss).all():
-            total_loss += loss.item() * labels.size(0)
-            n += labels.size(0)
+        if not torch.isfinite(loss).all():
+            raise RuntimeError("Phase 2 : loss de validation non finie")
+        total_loss += loss.item() * labels.size(0)
+        n += labels.size(0)
         all_logits.append(logits.float())
         all_targets.append(labels)
 

@@ -711,7 +711,7 @@ class AdvancedMolecularReasoner:
         mol_names: List[str] | None = None,
         indication: str = "",
         use_mcts: bool = False,
-        use_bayesian: bool = True,
+        use_bayesian: bool = False,
         use_web_search: bool = False,
     ) -> Dict:
         """
@@ -728,6 +728,8 @@ class AdvancedMolecularReasoner:
         Returns:
             Résultats d'analyse complets avec chaîne de pensée
         """
+        if use_bayesian:
+            raise ValueError("Optimisation de dose indisponible : aucune mesure dose-réponse fournie")
         if mol_embeddings.dim() == 2:
             mol_embeddings = mol_embeddings.unsqueeze(0)
 

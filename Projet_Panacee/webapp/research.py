@@ -19,6 +19,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 _CACHE: dict = {}
 
+
+def _checkpoint_cache_key(kind, path):
+    resolved = Path(path).resolve()
+    stat = resolved.stat()
+    return (kind, str(resolved), stat.st_size, stat.st_mtime_ns)
+
 TOX21_TASKS = [
     "NR-AR", "NR-AR-LBD", "NR-AhR", "NR-Aromatase",
     "NR-ER", "NR-ER-LBD", "NR-PPAR-gamma",
@@ -62,7 +68,7 @@ def get_analyzer(checkpoint: str | None = None):
             f"Checkpoint Phase 3 introuvable : {ckpt}. "
             f"Entraîne d'abord la Phase 3 (onglet Entraînement) ou importe un .pth."
         )
-    key = ("phase3", ckpt)
+    key = _checkpoint_cache_key("phase3", ckpt)
     if key in _CACHE:
         return _CACHE[key]
     from src.utils.safe_load import safe_load_checkpoint
@@ -172,7 +178,7 @@ def get_phase2(checkpoint: str | None = None) -> _Phase2Predictor:
     ckpt = checkpoint or _phase2_default()
     if not os.path.exists(ckpt):
         raise FileNotFoundError(f"Checkpoint Phase 2 introuvable : {ckpt}.")
-    key = ("phase2", ckpt)
+    key = _checkpoint_cache_key("phase2", ckpt)
     if key not in _CACHE:
         _CACHE[key] = _Phase2Predictor(ckpt)
     return _CACHE[key]
@@ -192,7 +198,9 @@ def _resolve_model(checkpoint: str | None):
             return "phase3", get_analyzer(checkpoint)
         if kind == "phase2":
             return "phase2", get_phase2(checkpoint)
-        return "descriptors", None  # encodeur Phase 1 / inconnu → descripteurs seuls
+        if kind == "encoder":
+            return "descriptors", None
+        raise ValueError("Checkpoint illisible ou format non reconnu")
     # auto : Phase 3 > Phase 2 > descripteurs
     if os.path.exists(_phase3_default()):
         return "phase3", get_analyzer()
@@ -228,8 +236,11 @@ def assess_risk(result: dict) -> dict:
         obs.append({"level": sev,
                     "text": f"Toxicité prédite sur {len(toxic_eps)} endpoint(s) : "
                             f"{', '.join(toxic_eps[:6])}{'…' if len(toxic_eps) > 6 else ''}."})
-    else:
+    elif tox:
         obs.append({"level": "OK", "text": "Aucun signal de toxicité Tox21 détecté."})
+    else:
+        bump("WARN")
+        obs.append({"level": "WARN", "text": "Toxicité Tox21 non évaluée : aucune prédiction disponible."})
 
     # Score de sécurité
     safety = result.get("safety_score")

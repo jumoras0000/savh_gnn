@@ -234,6 +234,13 @@ class MolecularReasoner(nn.Module):
             dict avec toutes les prédictions
         """
         B, N, _ = mol_embeddings.shape
+        if B == 0 or N == 0 or N > self.max_molecules:
+            raise ValueError("Nombre de molécules hors des limites du raisonneur")
+        if mask is not None:
+            if mask.shape != (B, N) or mask.dtype != torch.bool:
+                raise ValueError("Masque booléen [batch, molécules] requis")
+            if mask.all(dim=1).any():
+                raise ValueError("Une combinaison ne peut pas être entièrement masquée")
 
         # 1. Projeter dans l'espace du raisonneur
         x = self.input_projection(mol_embeddings)  # [B, N, hidden_dim]

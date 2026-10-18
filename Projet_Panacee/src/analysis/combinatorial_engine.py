@@ -49,6 +49,7 @@ from src.models.multi_property_head import MultiPropertyPredictor
 from src.models.reasoner import MolecularReasoner
 from src.preprocessing.graph_builder import smiles_to_graph
 from src.utils.gpu_manager import get_gpu_manager
+from src.utils.prediction_contract import calibrated_logits, checkpoint_thresholds
 
 logger = logging.getLogger("panacee.analysis")
 
@@ -100,6 +101,11 @@ class PanaceeAnalyzer:
         # Charger le checkpoint (sécurisé : weights_only par défaut, cf. safe_load)
         from src.utils.safe_load import safe_load_checkpoint
         self.ckpt = safe_load_checkpoint(checkpoint_path)
+        if self.ckpt.get("training_stage") not in (None, "complete"):
+            raise RuntimeError("Checkpoint Phase 3 non finalisé")
+        if not all(torch.isfinite(v).all() for v in self.ckpt["model_state_dict"].values()
+                   if torch.is_tensor(v)):
+            raise ValueError("Checkpoint contenant des poids non finis")
 
         # Reconstruire l'encodeur
         config = self.ckpt.get("config", {})
@@ -112,6 +118,7 @@ class PanaceeAnalyzer:
             dropout=config.get("dropout", DROPOUT),
             conv_type=config.get("conv_type", CONV_TYPE),
             attention_heads=config.get("attention_heads", ATTENTION_HEADS),
+            use_virtual_node=config.get("use_virtual_node", True),
         )
 
         # Reconstruire le modèle multi-propriétés
@@ -122,14 +129,14 @@ class PanaceeAnalyzer:
         )
 
         # Charger les poids
-        self.model.load_state_dict(self.ckpt["model_state_dict"], strict=False)
+        self.model.load_state_dict(self.ckpt["model_state_dict"], strict=True)
         self.model.to(self.device)
         self.model.eval()
 
         # Reconstruire le Raisonneur IA
         r_config = self.ckpt.get("reasoner_config", {})
         self.reasoner = MolecularReasoner(
-            mol_dim=config.get("output_dim", OUTPUT_DIM),
+            mol_dim=config.get("hidden_dim", HIDDEN_DIM),
             hidden_dim=r_config.get("hidden_dim", PHASE3["reasoner_hidden_dim"]),
             num_heads=r_config.get("num_heads", PHASE3["reasoner_num_heads"]),
             num_layers=r_config.get("num_layers", PHASE3["reasoner_num_layers"]),
@@ -140,19 +147,20 @@ class PanaceeAnalyzer:
 
         if "reasoner_state_dict" in self.ckpt:
             self.reasoner.load_state_dict(self.ckpt["reasoner_state_dict"])
+        self.reasoner_available = "reasoner_state_dict" in self.ckpt
         self.reasoner.to(self.device)
         self.reasoner.eval()
 
         self.dose_levels = r_config.get("dose_levels", PHASE3["dose_levels"])
         self.max_molecules = r_config.get("max_molecules", PHASE3["max_molecules_combo"])
         self.regression_stats = self.ckpt.get("regression_stats", {})
-        self.optimal_thresholds = self.ckpt.get("optimal_thresholds", {})
+        self.optimal_thresholds = checkpoint_thresholds(self.ckpt)
         self.temperatures = self.ckpt.get("temperatures", {})
 
         print("   ✓ Modèle chargé avec succès")
         if self.optimal_thresholds:
             print(f"   ✓ Seuils optimaux chargés ({len(self.optimal_thresholds)} tâches)")
-        print("   ✓ Raisonneur IA prêt")
+        print("   ✓ Raisonneur IA prêt" if self.reasoner_available else "   Raisonneur absent : prédictions individuelles uniquement")
 
     # ──────────────────────────────────────────────────────────────────
     # Prédiction de propriétés
@@ -189,7 +197,18 @@ class PanaceeAnalyzer:
         batch = Batch.from_data_list([graph]).to(self.device)
 
         if self.ensemble is not None:
-            predictions, ens_std = self.ensemble.predict(batch)
+            classification_tasks = ("toxicity", "efficacy", "bbb_penetration", "clinical_toxicity")
+            def probability_outputs(outputs):
+                calibrated = calibrated_logits(outputs, self.temperatures)
+                return {k: v.sigmoid() if k in classification_tasks else v
+                        for k, v in calibrated.items()}
+            predictions, ens_std = self.ensemble.predict(batch, transform=probability_outputs)
+            for task in classification_tasks:
+                if task in predictions:
+                    predictions[task] = torch.logit(predictions[task].clamp(1e-7, 1 - 1e-7)) * float(self.temperatures.get(task, 1.0))
+            for task in ("solubility", "lipophilicity"):
+                if task in ens_std and task in self.regression_stats:
+                    ens_std[task] = ens_std[task] * self.regression_stats[task]["std"]
             self._mc_uncertainties = ens_std
             mc_samples = len(self.ensemble.models)  # active le bloc uncertainty
         elif mc_samples > 0:
@@ -198,9 +217,9 @@ class PanaceeAnalyzer:
             predictions = self.model(batch)
 
         # Temperature scaling (calibration post-hoc)
-        for task_name, temp in self.temperatures.items():
-            if task_name in predictions and temp > 0:
-                predictions[task_name] = predictions[task_name] / temp
+        predictions = calibrated_logits(predictions, self.temperatures)
+        if any(not torch.isfinite(value).all() for value in predictions.values()):
+            raise RuntimeError("Prédictions non finies : analyse impossible")
 
         result = {"smiles": smiles}
 
@@ -296,7 +315,10 @@ class PanaceeAnalyzer:
                 "bbb_std": float(unc.get("bbb_penetration", torch.tensor(0)).mean()),
                 "clinical_tox_std": float(unc.get("clinical_toxicity", torch.tensor(0)).mean()),
             }
-            avg_std = np.mean(list(result["uncertainty"].values())[2:])
+            # Confidence thresholds apply to probability dispersion, not a mix
+            # of LogS/LogP units and probabilities.
+            avg_std = max(result["uncertainty"][name] for name in
+                          ("toxicity_std", "efficacy_std", "bbb_std", "clinical_tox_std"))
             result["uncertainty"]["confidence_level"] = (
                 "high" if avg_std < 0.1 else "medium" if avg_std < 0.3 else "low"
             )
@@ -309,6 +331,14 @@ class PanaceeAnalyzer:
         from src.models.ensemble import DeepEnsemble
 
         config = self.ckpt.get("config", {})
+        # Shared calibration/thresholds are valid here only for matching metadata.
+        # Heterogeneous ensembles need a separately fitted calibration contract.
+        from src.utils.safe_load import safe_load_checkpoint
+        for path in checkpoint_paths:
+            candidate = safe_load_checkpoint(path)
+            for key in ("config", "temperatures", "regression_stats", "optimal_thresholds", "threshold_space"):
+                if candidate.get(key) != self.ckpt.get(key):
+                    raise ValueError(f"Ensemble incompatible : {key}; calibration commune requise")
 
         def factory():
             enc = MolecularEncoder(
@@ -320,6 +350,7 @@ class PanaceeAnalyzer:
                 dropout=config.get("dropout", DROPOUT),
                 conv_type=config.get("conv_type", CONV_TYPE),
                 attention_heads=config.get("attention_heads", ATTENTION_HEADS),
+                use_virtual_node=config.get("use_virtual_node", True),
             )
             return MultiPropertyPredictor(
                 encoder=enc,
@@ -336,21 +367,35 @@ class PanaceeAnalyzer:
 
     def _mc_dropout_predict(self, batch, n_samples: int = 30) -> dict:
         """MC Dropout : N forward passes avec dropout activé → mean + std."""
-        self.model.train()  # active dropout
+        from src.utils.uncertainty import enable_mc_dropout
+        if n_samples < 1:
+            raise ValueError("n_samples doit être positif")
+        enable_mc_dropout(self.model)
         all_preds = {}
-        for _ in range(n_samples):
-            with torch.no_grad():
-                preds = self.model(batch)
-            for k, v in preds.items():
-                all_preds.setdefault(k, []).append(v.float())
-        self.model.eval()
+        try:
+            for _ in range(n_samples):
+                with torch.no_grad():
+                    preds = self.model(batch)
+                for k, v in preds.items():
+                    all_preds.setdefault(k, []).append(v.float())
+        finally:
+            self.model.eval()
 
         result = {}
         self._mc_uncertainties = {}
         for k, tensors in all_preds.items():
             stacked = torch.stack(tensors, dim=0)  # [N, B, D]
-            result[k] = stacked.mean(dim=0)
-            self._mc_uncertainties[k] = stacked.std(dim=0)
+            if k in ("toxicity", "efficacy", "bbb_penetration", "clinical_toxicity"):
+                temperature = float(self.temperatures.get(k, 1.0))
+                probabilities = calibrated_logits({k: stacked}, {k: temperature})[k].sigmoid()
+                mean = probabilities.mean(dim=0).clamp(1e-7, 1 - 1e-7)
+                # predict_properties will apply temperature scaling once more.
+                result[k] = mean.logit() * temperature
+                self._mc_uncertainties[k] = probabilities.std(dim=0, unbiased=False)
+            else:
+                result[k] = stacked.mean(dim=0)
+                scale = self.regression_stats.get(k, {}).get("std", 1.0)
+                self._mc_uncertainties[k] = stacked.std(dim=0, unbiased=False) * scale
         return result
 
     @torch.no_grad()
@@ -389,8 +434,9 @@ class PanaceeAnalyzer:
             return None
 
         if len(smiles_list) > self.max_molecules:
-            print(f"  ⚠ Maximum {self.max_molecules} molécules par combinaison")
-            smiles_list = smiles_list[:self.max_molecules]
+            raise ValueError(f"Maximum {self.max_molecules} molécules par combinaison")
+        if not self.reasoner_available:
+            raise RuntimeError("Aucun raisonneur entraîné dans ce checkpoint")
 
         # Prédire les propriétés individuelles
         individual_results = []
@@ -430,28 +476,14 @@ class PanaceeAnalyzer:
 
         # Extraire les résultats
         synergy_matrix = reasoner_output["synergy_matrix"][0, :N, :N].cpu().numpy()
-        dose_dists = np.exp(reasoner_output["dose_distributions"][0, :N].cpu().numpy())
-        confidence = reasoner_output["confidence"][0].cpu().item()
         success_score = reasoner_output["success_score"][0].cpu().item()
 
-        # Construire les recommandations de dose
+        # Aucune tête de dose n'est supervisée par le pipeline actuel.
         dose_recommendations = []
-        for i in range(N):
-            best_dose_idx = int(np.argmax(dose_dists[i]))
-            best_dose = self.dose_levels[best_dose_idx]
-            dose_dist = {
-                f"{self.dose_levels[j]} mg/kg": round(float(dose_dists[i, j]) * 100, 1)
-                for j in range(len(self.dose_levels))
-            }
-            dose_recommendations.append({
-                "smiles": valid_smiles[i],
-                "dose_optimale_mg_kg": best_dose,
-                "distribution": dose_dist,
-            })
 
         # Sécurité combinée
         safety_scores = [r["safety_score"] for r in individual_results]
-        combined_safety = float(np.mean(safety_scores))
+        combined_safety = float(np.prod(np.asarray(safety_scores) / 100.0) * 100.0)
 
         # Synergie moyenne
         synergy_pairs = []
@@ -466,6 +498,12 @@ class PanaceeAnalyzer:
                             "Additive" if syn_score > 0.4 else "Antagoniste",
                 })
 
+        # Ces têtes n'ont reçu aucune mesure de synergie/confiance dans ce pipeline.
+        if not self.ckpt.get("reasoner_supervision", {}).get("synergy", False):
+            synergy_pairs = []
+            synergy_matrix = None
+        confidence = None
+
         # Interprétation IA
         interpretation = self._generate_interpretation(
             individual_results, synergy_pairs, dose_recommendations,
@@ -475,9 +513,11 @@ class PanaceeAnalyzer:
         return {
             "molecules": individual_results,
             "synergy_pairs": synergy_pairs,
-            "synergy_matrix": synergy_matrix.tolist(),
+            "synergy_matrix": synergy_matrix.tolist() if synergy_matrix is not None else None,
             "dose_recommendations": dose_recommendations,
-            "confidence": round(confidence * 100, 1),
+            "confidence": None,
+            "validation_status": "exploratory_model_proxy_only",
+            "dose_recommendations_available": False,
             "success_score": round(success_score * 100, 1),
             "combined_safety": round(combined_safety, 1),
             "interpretation": interpretation,
@@ -503,6 +543,8 @@ class PanaceeAnalyzer:
         Returns:
             list triée des meilleures combinaisons
         """
+        if not 2 <= combo_size <= self.max_molecules or top_k < 1:
+            raise ValueError("combo_size doit être entre 2 et max_molecules, top_k >= 1")
         print(f"\n🔍 Analyse combinatoire : {len(smiles_list)} molécules, "
               f"combinaisons de {combo_size}")
 
@@ -709,7 +751,7 @@ class PanaceeAnalyzer:
         lines = []
         lines.append("=== EXPLORATION IA PANACÉE, NON VALIDÉE ===")
         lines.append("Les scores ci-dessous sont des proxys du modèle, pas des probabilités cliniques.")
-        lines.append(f"Score proxy de confiance : {round(confidence * 100, 1)}%")
+        lines.append("Confiance du raisonneur : non évaluée.")
         lines.append(f"Score proxy de combinaison : {round(success * 100, 1)}%")
         lines.append(f"Score proxy de sécurité : {round(safety, 1)}%")
         lines.append("")
@@ -965,7 +1007,7 @@ class PanaceeAnalyzer:
                 logger.warning(f"Pareto échoué: {e}")
 
         # ── 4. Raisonnement avancé sur la meilleure combinaison ──
-        if best_combos:
+        if best_combos and self.ckpt.get("reasoner_supervision", {}).get("synergy", False):
             print("\n── ÉTAPE 4 : Raisonnement avancé ──")
             top_combo = best_combos[0]
             try:
@@ -990,7 +1032,7 @@ class PanaceeAnalyzer:
                         mol_embeddings=emb_tensor,
                         mol_names=top_combo["molecules"],
                         indication=indication,
-                        use_bayesian=True,
+                        use_bayesian=False,
                         use_web_search=use_web,
                     )
 

@@ -40,7 +40,7 @@ class ToxicityClassifier(nn.Module):
 
         # Tête de classification plus robuste
         self.classifier = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(getattr(encoder, "output_dim", hidden_dim), hidden_dim // 2),
             nn.BatchNorm1d(hidden_dim // 2),
             nn.SiLU(),
             nn.Dropout(dropout),
@@ -63,6 +63,12 @@ class ToxicityClassifier(nn.Module):
         for p in self.encoder.parameters():
             p.requires_grad = False
 
+    def train(self, mode=True):
+        super().train(mode)
+        if mode and not any(p.requires_grad for p in self.encoder.parameters()):
+            self.encoder.eval()
+        return self
+
     def unfreeze_encoder(self):
         for p in self.encoder.parameters():
             p.requires_grad = True
@@ -74,10 +80,10 @@ class ToxicityClassifier(nn.Module):
         Epoch freeze_epochs+i : dégèle couche -(i+1).
         """
         n_layers = self.encoder.num_layers
-        if epoch < total_freeze_epochs:
+        if epoch <= total_freeze_epochs:
             self._freeze_encoder()
         else:
-            layers_to_unfreeze = min(epoch - total_freeze_epochs + 1, n_layers)
+            layers_to_unfreeze = min(epoch - total_freeze_epochs, n_layers)
             # D'abord tout geler
             self._freeze_encoder()
             # Puis dégeler les N dernières couches (les plus proches de la sortie)
@@ -96,6 +102,9 @@ class ToxicityClassifier(nn.Module):
                     p.requires_grad = True
                 for p in self.encoder.pool_gate.parameters():
                     p.requires_grad = True
+                if hasattr(self.encoder, "virtual_node"):
+                    for p in self.encoder.virtual_node.parameters():
+                        p.requires_grad = True
 
     # ──────────────────────────────────────────────────────────────────
     def forward(self, batch):

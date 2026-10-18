@@ -600,6 +600,8 @@ class TaskBalancedSampler(torch.utils.data.Sampler):
     """
 
     def __init__(self, dataset, batch_size=32, shuffle=True):
+        if batch_size < 1:
+            raise ValueError("batch_size doit être positif")
         self.dataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle
@@ -614,6 +616,8 @@ class TaskBalancedSampler(torch.utils.data.Sampler):
 
     def __iter__(self):
         task_names = list(self.task_indices.keys())
+        if not task_names:
+            return iter(())
         pools = {}
         for t in task_names:
             arr = np.array(self.task_indices[t])
@@ -635,7 +639,9 @@ class TaskBalancedSampler(torch.utils.data.Sampler):
         return iter(indices)
 
     def __len__(self):
-        return len(self.dataset)
+        # Un composé présent dans plusieurs tâches est échantillonné une fois
+        # par tâche. La longueur doit refléter ce flux réel (DataLoader/tqdm).
+        return sum(len(indices) for indices in self.task_indices.values())
 
 
 def collate_multi_property(batch):

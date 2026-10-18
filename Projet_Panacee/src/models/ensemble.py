@@ -21,7 +21,8 @@ class DeepEnsemble(nn.Module):
 
     def __init__(self, models: List[nn.Module]):
         super().__init__()
-        assert len(models) >= 2, "Ensemble nécessite >= 2 modèles"
+        if len(models) < 2:
+            raise ValueError("Ensemble nécessite >= 2 modèles")
         self.models = nn.ModuleList(models)
 
     @classmethod
@@ -35,20 +36,28 @@ class DeepEnsemble(nn.Module):
         models = []
         for p in paths:
             m = model_factory()
-            ckpt = torch.load(p, map_location=device, weights_only=False)
-            m.load_state_dict(ckpt[key], strict=False)
+            from src.utils.safe_load import safe_load_checkpoint
+            ckpt = safe_load_checkpoint(p)
+            m.load_state_dict(ckpt[key], strict=True)
             m.to(device)
             m.eval()
             models.append(m)
         return cls(models)
 
     @torch.no_grad()
-    def predict(self, batch) -> tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+    def predict(self, batch, transform=None) -> tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
         """Retourne (mean_preds, std_preds) par task group."""
         all_preds: Dict[str, List[torch.Tensor]] = {}
 
         for model in self.models:
+            model.eval()
             preds = model(batch)
+            if transform is not None:
+                preds = transform(preds)
+            if any(not torch.isfinite(value).all() for value in preds.values()):
+                raise ValueError("Prédictions non finies dans l'ensemble")
+            if all_preds and set(preds) != set(all_preds):
+                raise ValueError("Les modèles de l'ensemble ne prédisent pas les mêmes tâches")
             for k, v in preds.items():
                 all_preds.setdefault(k, []).append(v.float())
 

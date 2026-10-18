@@ -19,6 +19,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -37,12 +38,18 @@ def images_dir() -> Path:
     return d
 
 
+@contextmanager
 def _conn():
     c = sqlite3.connect(str(_db_path()), timeout=10, check_same_thread=False)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    c.execute("PRAGMA busy_timeout=5000")
-    return c
+    try:
+        c.row_factory = sqlite3.Row
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA busy_timeout=5000")
+        c.execute("PRAGMA foreign_keys=ON")
+        with c:
+            yield c
+    finally:
+        c.close()
 
 
 def init_db():
@@ -124,6 +131,7 @@ def get_messages(conv_id: str) -> list[dict]:
 
 
 def conversation_exists(conv_id: str) -> bool:
+    init_db()
     with _conn() as c:
         return c.execute("SELECT 1 FROM conversations WHERE id=?", (conv_id,)).fetchone() is not None
 
@@ -151,12 +159,14 @@ def add_message(conv_id: str, role: str, content: str,
 
 
 def rename_conversation(conv_id: str, title: str):
+    init_db()
     with _LOCK, _conn() as c:
         c.execute("UPDATE conversations SET title=?, updated_at=? WHERE id=?",
                   (title[:120] or "Conversation", time.time(), conv_id))
 
 
 def delete_conversation(conv_id: str):
+    init_db()
     with _LOCK, _conn() as c:
         c.execute("DELETE FROM messages WHERE conversation_id=?", (conv_id,))
         c.execute("DELETE FROM conversations WHERE id=?", (conv_id,))

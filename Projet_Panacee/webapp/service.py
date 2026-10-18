@@ -450,7 +450,8 @@ def epoch_clinical_score(rec: dict) -> float:
 def best_epoch_number(epochs: list, meta: dict | None = None) -> int | None:
     """Numéro de la MEILLEURE epoch.
 
-    Phase 2/3 : meilleur score clinique (sécurité). Phase 1 : plus faible val_loss.
+    Phase 3 : score de sélection enregistré. Phase 2 : score clinique.
+    Phase 1 : plus faible val_loss.
     """
     pretrain = is_pretrain(meta, epochs[-1] if epochs else None)
     best_n, best_s = None, None
@@ -461,7 +462,15 @@ def best_epoch_number(epochs: list, meta: dict | None = None) -> int | None:
                 continue
             s = -float(vl)  # perte plus basse = meilleure
         else:
-            s = epoch_clinical_score(e)
+            if e.get("selection_score") is not None:
+                s = e["selection_score"]
+            elif _finite(e.get("composite_score")) and _finite(e.get("clinical_score")):
+                s = 0.6 * float(e["clinical_score"]) + 0.4 * float(e["composite_score"])
+            else:
+                s = epoch_clinical_score(e)
+            if not _finite(s):
+                continue
+            s = float(s)
         if best_s is None or s > best_s:
             best_s, best_n = s, e.get("epoch")
     return best_n

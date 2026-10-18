@@ -74,7 +74,7 @@ class MultiPropertyPredictor(nn.Module):
 
         # Couche partagée pour enrichir la représentation
         self.shared_layer = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(getattr(encoder, "output_dim", hidden_dim), hidden_dim),
             nn.BatchNorm1d(hidden_dim),
             nn.SiLU(),
             nn.Dropout(dropout),
@@ -101,16 +101,22 @@ class MultiPropertyPredictor(nn.Module):
         for p in self.encoder.parameters():
             p.requires_grad = False
 
+    def train(self, mode=True):
+        super().train(mode)
+        if mode and not any(p.requires_grad for p in self.encoder.parameters()):
+            self.encoder.eval()
+        return self
+
     def unfreeze_encoder(self):
         for p in self.encoder.parameters():
             p.requires_grad = True
 
     def gradual_unfreeze(self, epoch: int, total_freeze_epochs: int = 5):
         n_layers = self.encoder.num_layers
-        if epoch < total_freeze_epochs:
+        if epoch <= total_freeze_epochs:
             self._freeze_encoder()
         else:
-            layers_to_unfreeze = min(epoch - total_freeze_epochs + 1, n_layers)
+            layers_to_unfreeze = min(epoch - total_freeze_epochs, n_layers)
             self._freeze_encoder()
             for i in range(n_layers - layers_to_unfreeze, n_layers):
                 for p in self.encoder.convs[i].parameters():
@@ -176,7 +182,9 @@ class MultiPropertyLoss(nn.Module):
             "bbb_penetration": 0.8,
             "clinical_toxicity": 0.8,
         }
-        self.task_weights = task_weights or default_weights
+        self.task_weights = default_weights if task_weights is None else dict(task_weights)
+        if any(not torch.isfinite(torch.tensor(w)) or w < 0 for w in self.task_weights.values()):
+            raise ValueError("Les poids des tâches doivent être finis et positifs ou nuls")
         self.uncertainty_weighting = uncertainty_weighting
         if uncertainty_weighting:
             # Kendall et al. 2018: log(sigma^2) per task, learned jointly
@@ -200,11 +208,12 @@ class MultiPropertyLoss(nn.Module):
             target = targets[name]
             weight = self.task_weights.get(name, 1.0)
 
-            # Aligner les dimensions defensivement (robustesse si data != tete)
-            if pred.shape != target.shape and pred.dim() == target.dim() == 2:
-                m = min(pred.shape[1], target.shape[1])
-                pred = pred[:, :m]
-                target = target[:, :m]
+            if pred.shape != target.shape:
+                raise ValueError(f"{name}: dimensions prédictions/cibles différentes")
+            if torch.isinf(target).any():
+                raise ValueError(f"{name}: cible infinie")
+            if weight == 0:
+                continue
 
             # Masquer les NaN SANS aplatir (preserve le broadcast de pos_weight)
             valid_mask = ~torch.isnan(target)
@@ -219,6 +228,8 @@ class MultiPropertyLoss(nn.Module):
             # cohérent avec l'évaluation (sigmoid + ROC-AUC). Auparavant en Huber
             # (régression) par erreur → loss incohérente avec la métrique.
             if name in ("toxicity", "efficacy", "bbb_penetration", "clinical_toxicity"):
+                if ((target_safe < 0) | (target_safe > 1)).any():
+                    raise ValueError(f"{name}: cible binaire hors de [0, 1]")
                 pw_map = {
                     "toxicity": self.tox_pos_weight,
                     "efficacy": self.efficacy_pos_weight,
@@ -242,8 +253,9 @@ class MultiPropertyLoss(nn.Module):
 
             loss_details[name] = loss.item()
             if self.uncertainty_weighting and name in self.log_vars:
-                precision = torch.exp(-self.log_vars[name])
-                total_loss = total_loss + precision * loss + 0.5 * self.log_vars[name]
+                log_var = self.log_vars[name].clamp(-10.0, 10.0)
+                precision = torch.exp(-log_var)
+                total_loss = total_loss + weight * (precision * loss + 0.5 * log_var)
             else:
                 total_loss = total_loss + weight * loss
 
