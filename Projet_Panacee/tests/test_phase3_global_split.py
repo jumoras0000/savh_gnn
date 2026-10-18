@@ -45,12 +45,11 @@ def test_integrity_detects_equivalent_smiles_across_splits(tmp_path):
 
 
 @pytest.mark.parametrize("name", ["esol", "lipo"])
-def test_regression_duplicates_use_median_and_are_audited(tmp_path, name):
+def test_regression_duplicates_are_quarantined_and_audited(tmp_path, name):
     molecules = ["C1" + "C" * (size - 1) + "1" for size in range(3, 15)]
     paths = {name: _paths(tmp_path, name, molecules + [molecules[0]],
                           list(range(12)) + [4])}
-    # The helper writes only twelve rows; put the equivalent structure in a
-    # separate partition so both observations reach canonical reconciliation.
+    # The helper writes only twelve rows; add the conflicting observation.
     test_path = paths[name]["test"]
     test_frame = pd.read_csv(test_path)
     test_frame.loc[len(test_frame)] = [molecules[0], 4]
@@ -58,10 +57,11 @@ def test_regression_duplicates_use_median_and_are_audited(tmp_path, name):
     manifest = repartition_global_scaffolds(paths, str(tmp_path))
     audit = manifest["duplicate_resolution"][name]
     assert audit["repeated_compounds"] == 1
-    assert audit["discordant_regression_labels"] == 1
+    assert audit["quarantined_compounds"] == 1
+    assert [r["labels"][f"{name}_label"] for r in audit["conflicts"][0]["observations"]] == [0.0, 4.0]
     rows = pd.concat([pd.read_csv(path) for path in paths[name].values()])
-    assert rows.loc[rows.smiles == molecules[0], f"{name}_label"].tolist() == [2.0]
-    assert manifest["audit"]["unique_molecules"] == 12
+    assert molecules[0] not in rows.smiles.tolist()
+    assert manifest["audit"]["unique_molecules"] == 11
 
 
 def test_classification_disagreement_still_fails(tmp_path):

@@ -226,24 +226,25 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
         frame = pd.concat([pd.read_csv(paths[split]) for split in ("train", "val", "test")],
                           ignore_index=True)
         canonical = []
+        scaffolds = {}
         for smiles in frame["smiles"]:
             key, scaffold = _chemical_key(smiles)
             canonical.append(key)
-            groups.setdefault(scaffold, set()).add(key)
+            scaffolds[key] = scaffold
+        frame["source_smiles"] = frame["smiles"]
         frame["smiles"] = canonical
-        # Les mesures continues répétées peuvent différer. Leur médiane est
-        # déterministe et l'écart est conservé dans le manifeste d'audit.
-        # Une contradiction sur une classe reste bloquante.
+        # Une même clé canonique peut représenter des stéréoisomères dont le
+        # SMILES ne précise pas la stéréochimie. Ne pas moyenner leurs labels.
         regression = name in {"esol", "lipo"}
         resolved = []
-        examples = []
+        quarantined = []
         repeated = 0
-        differing = 0
         for key, records in frame.groupby("smiles", sort=False):
             if len(records) > 1:
                 repeated += 1
             row = {"smiles": key}
-            for col in frame.columns.drop("smiles"):
+            conflict = False
+            for col in frame.columns.drop(["smiles", "source_smiles"]):
                 values = pd.to_numeric(records[col], errors="coerce").dropna()
                 if not np.isfinite(values.to_numpy(dtype=float)).all():
                     raise ValueError(f"{name}: valeur non finie pour {key}, colonne {col}")
@@ -254,23 +255,25 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
                             f"{name}: étiquettes discordantes pour {key}, colonne {col} "
                             f"({len(unique)} valeurs)"
                         )
-                    differing += 1
-                    if len(examples) < 20:
-                        examples.append({"smiles": key, "column": col,
-                                         "count": int(len(values)),
-                                         "min": float(values.min()),
-                                         "max": float(values.max())})
-                row[col] = float(values.median()) if regression and len(values) else (
-                    values.iloc[0] if len(values) else np.nan
-                )
-            resolved.append(row)
-        datasets[name] = pd.DataFrame(resolved, columns=frame.columns)
+                    conflict = True
+                row[col] = values.iloc[0] if len(values) else np.nan
+            if conflict:
+                quarantined.append({"canonical_smiles": key, "observations": [
+                    {"source_smiles": str(record["source_smiles"]),
+                     "labels": {col: (None if pd.isna(record[col]) else float(record[col]))
+                                for col in frame.columns.drop(["smiles", "source_smiles"])}}
+                    for _, record in records.iterrows()
+                ]})
+            else:
+                resolved.append(row)
+                groups.setdefault(scaffolds[key], set()).add(key)
+        datasets[name] = pd.DataFrame(resolved, columns=frame.columns.drop("source_smiles"))
         duplicate_audit[name] = {"repeated_compounds": repeated,
-                                 "discordant_regression_labels": differing,
-                                 "resolution": "median" if regression else "identical_only",
-                                 "examples": examples}
-        if differing:
-            print(f"  ⚠ {name}: {differing} mesures répétées discordantes; médiane utilisée (voir split_manifest.json)")
+                                 "quarantined_compounds": len(quarantined),
+                                 "resolution": "quarantine_discordant" if regression else "identical_only",
+                                 "conflicts": quarantined}
+        if quarantined:
+            print(f"  ⚠ {name}: {len(quarantined)} composés ambigus exclus des splits; observations dans split_manifest.json")
 
     assignment = _assign_global_scaffolds(groups)
     prepared = {}
