@@ -128,9 +128,12 @@ def _review_with_claude(dossiers: list[dict], hypotheses: list[dict],
 def _review_with_chatgpt(dossiers: list[dict], hypotheses: list[dict],
                          claude_review: dict | None = None,
                          own_analysis: dict | None = None,
-                         claude_followup: dict | None = None) -> dict:
+                         claude_followup: dict | None = None,
+                         source: str = "api") -> dict:
     key, model = os.environ.get("OPENAI_API_KEY"), os.environ.get("OPENAI_MODEL")
-    if not key or not model:
+    if source == "plan" and not model:
+        return {"status": "not_configured", "text": None, "missing": ["OPENAI_MODEL"]}
+    if source == "api" and (not key or not model):
         return {"status": "not_configured", "text": None,
                 "missing": [x for x, ok in (("OPENAI_API_KEY", key), ("OPENAI_MODEL", model)) if not ok]}
     try:
@@ -152,15 +155,24 @@ def _review_with_chatgpt(dossiers: list[dict], hypotheses: list[dict],
         "affirmations non vérifiées des IA. Abstention si preuves insuffisantes."
     )
     try:
-        client = OpenAI(api_key=key, timeout=30.0, max_retries=0)
-        response = client.responses.create(
-            model=model, instructions=instructions,
-            input=json.dumps(evidence, ensure_ascii=False), max_output_tokens=1500,
-        )
-        reply = response.output_text or ""
+        if source == "plan":
+            from webapp import siwc
+            reply = siwc.complete_response(
+                model, instructions + " Réponse concise, 900 mots maximum.", evidence)
+        else:
+            client = OpenAI(api_key=key, timeout=30.0, max_retries=0)
+            response = client.responses.create(
+                model=model, instructions=instructions,
+                input=json.dumps(evidence, ensure_ascii=False), max_output_tokens=1500,
+            )
+            reply = response.output_text or ""
         return {"status": "generated_unverified", "text": reply, "model": model,
+                "source": source,
                 **_review_flags(reply, dossiers, hypotheses)}
     except Exception as exc:
+        if source == "plan":
+            return {"status": "plan_unavailable", "text": None, "source": source,
+                    "error": str(exc) if type(exc).__name__ == "PlanError" else "Connexion ChatGPT indisponible."}
         return {"status": "error", "text": None,
                 "error": f"OpenAI indisponible ({type(exc).__name__}). Vérifier clé, modèle et quota."}
 
@@ -196,7 +208,10 @@ def _model_checks(dossiers: list[dict], hypotheses: list[dict]) -> dict:
 
 def build_dossier(candidates: list, *, with_claude: bool = False,
                   with_chatgpt: bool = False, literature: bool = True,
-                  hypotheses: list[str] | None = None) -> dict:
+                  hypotheses: list[str] | None = None,
+                  chatgpt_source: str = "api") -> dict:
+    if chatgpt_source not in ("api", "plan"):
+        raise ValueError("Source ChatGPT invalide")
     if not isinstance(candidates, list) or not 1 <= len(candidates) <= MAX_CANDIDATES:
         raise ValueError(f"Fournir de 1 à {MAX_CANDIDATES} candidats")
     items = [_candidate(item) for item in candidates]
@@ -254,7 +269,7 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
 
     claude_review = (_review_with_claude(dossiers, registry) if with_claude else
                      {"status": "not_requested", "text": None})
-    chatgpt_review = (_review_with_chatgpt(dossiers, registry)
+    chatgpt_review = (_review_with_chatgpt(dossiers, registry, source=chatgpt_source)
                       if with_chatgpt else {"status": "not_requested", "text": None})
     claude_followup = (
         _review_with_claude(dossiers, registry, chatgpt_review["text"], claude_review["text"])
@@ -263,7 +278,8 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
         else {"status": "not_requested", "text": None}
     )
     chatgpt_followup = (
-        _review_with_chatgpt(dossiers, registry, claude_review, chatgpt_review, claude_followup)
+        _review_with_chatgpt(dossiers, registry, claude_review, chatgpt_review,
+                             claude_followup, source=chatgpt_source)
         if (with_chatgpt and chatgpt_review.get("status") == "generated_unverified"
             and claude_followup.get("status") == "generated_unverified")
         else {"status": "not_requested", "text": None}
@@ -276,6 +292,7 @@ def build_dossier(candidates: list, *, with_claude: bool = False,
         "hypotheses": registry, "claude_review": claude_review,
         "chatgpt_review": chatgpt_review, "claude_followup": claude_followup,
         "chatgpt_followup": chatgpt_followup,
+        "chatgpt_source": chatgpt_source,
         "model_checks": _model_checks(dossiers, registry),
         "review_protocol": "independent_claude_and_chatgpt_then_cross_review_max_four_calls",
         "consensus_status": "not_established_without_independent_experiments",

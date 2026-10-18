@@ -30,6 +30,7 @@ ENV/
 .env
 .env.*
 !.env.example
+webapp/.siwc/
 
 # IDE
 .vscode/

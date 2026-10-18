@@ -338,9 +338,19 @@
           ni guérison, ni sécurité humaine. Les notices PubMed identifient des articles,
           elles ne valident pas leurs conclusions.</p>
         <div id="p4Components" class="p4-components" role="status">Vérification des composants…</div>
-        <p class="hint">Activation : clé et crédit Anthropic dans l'onglet Assistant pour Claude ;
-          <code>OPENAI_API_KEY</code> et <code>OPENAI_MODEL</code> pour ChatGPT (optionnel) ;
-          checkpoint Phase 3 pour les scores VIH. Aucun fournisseur IA ne garantit une guérison.</p>
+        <p class="hint">Claude nécessite du crédit Anthropic. ChatGPT peut utiliser un abonnement éligible après consentement, ou une clé API facturée séparément. Le checkpoint Phase 3 est requis pour les scores VIH. Aucune IA ne garantit une guérison.</p>
+        <label for="p4ChatGPTSource">Source ChatGPT</label>
+        <select id="p4ChatGPTSource" class="picker">
+          <option value="plan">Mon abonnement ChatGPT (si éligible)</option>
+          <option value="api">Clé API OpenAI (facturation séparée)</option>
+        </select>
+        <div class="p4-options">
+          <a class="btn" id="p4SIWCConnect" href="/api/siwc/start">Continuer avec ChatGPT</a>
+          <select id="p4SIWCProfile" class="picker" aria-label="Compte ChatGPT enregistré"><option value="">Nouveau compte</option></select>
+          <button class="btn ghost" id="p4SIWCDisconnect" type="button" style="display:none">Déconnecter</button>
+          <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Gérer mon utilisation</a>
+        </div>
+        <p id="p4SIWCStatus" class="hint" role="status">Connexion ChatGPT non vérifiée.</p>
         <label for="p4Library">Bibliothèque de candidats</label>
         <select id="p4Library" class="picker">
           <option value="hiv_reference">Antirétroviraux de référence</option>

@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 from starlette.applications import Starlette
-from starlette.responses import FileResponse, JSONResponse, PlainTextResponse
+from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -664,6 +664,9 @@ async def api_phase4(request):
         return JSONResponse({"error": "JSON invalide"}, status_code=400)
     if not isinstance(body, dict):
         return JSONResponse({"error": "objet JSON attendu"}, status_code=400)
+    source = body.get("chatgpt_source", "api")
+    if source == "plan" and (not _siwc_local(request) or not _siwc_same_origin(request)):
+        return JSONResponse({"error": "Abonnement ChatGPT réservé à 127.0.0.1"}, status_code=403)
     candidates = body.get("candidates")
     if not candidates and body.get("library"):
         from webapp.catalog import LIBRARIES
@@ -678,6 +681,7 @@ async def api_phase4(request):
         from webapp.phase4 import build_dossier, markdown_report
         dossier = build_dossier(candidates, with_claude=body.get("with_claude") is True,
                                with_chatgpt=body.get("with_chatgpt") is True,
+                               chatgpt_source=source,
                                hypotheses=body.get("hypotheses"),
                                literature=body.get("literature") is not False)
         dossier["report_markdown"] = markdown_report(dossier)
@@ -696,16 +700,93 @@ async def api_phase4_status(request):
     """Disponibilité réelle des composants, sans exposer les clés API."""
     import importlib.util
     from webapp import chatbot, research
+    from webapp import siwc
     return JSONResponse({
         "claude": chatbot._claude_available(),
         "chatgpt": bool(os.environ.get("OPENAI_API_KEY") and os.environ.get("OPENAI_MODEL")
                         and importlib.util.find_spec("openai")),
         "openai_model_configured": bool(os.environ.get("OPENAI_MODEL")),
+        "chatgpt_plan": siwc.status()["connected"] if _siwc_local(request) else False,
         "phase3_checkpoint": Path(research._phase3_default()).is_file(),
         "phase2_checkpoint": Path(research._phase2_default()).is_file(),
         "pubmed": "network_check_on_request",
         "clinical_validation": False,
     })
+
+
+def _siwc_local(request) -> bool:
+    """Never offer user-plan credentials through a remotely exposed dashboard."""
+    return (request.url.hostname == "127.0.0.1"
+            and request.client is not None and request.client.host in ("127.0.0.1", "::1"))
+
+
+def _siwc_same_origin(request) -> bool:
+    origin = request.headers.get("origin")
+    site = request.headers.get("sec-fetch-site")
+    return (site not in ("cross-site", "same-site")
+            and (not origin or origin == f"http://127.0.0.1:{request.url.port or 80}"))
+
+
+async def api_siwc_status(request):
+    if not _siwc_local(request):
+        return JSONResponse({"error": "Connexion locale uniquement"}, status_code=403)
+    from webapp import siwc
+    return JSONResponse(siwc.status())
+
+
+async def api_siwc_start(request):
+    if not _siwc_local(request) or not _siwc_same_origin(request):
+        return JSONResponse({"error": "Connexion locale uniquement"}, status_code=403)
+    from webapp import siwc
+    try:
+        redirect_uri = f"http://127.0.0.1:{request.url.port or 80}/auth/callback"
+        url, binding = await asyncio.to_thread(siwc.start, redirect_uri,
+                                                request.query_params.get("profile"))
+        response = RedirectResponse(url, status_code=302)
+        response.set_cookie("panacee_siwc_pending", binding, max_age=600,
+                            httponly=True, samesite="lax", secure=False, path="/auth/callback")
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    except siwc.PlanError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+async def api_siwc_callback(request):
+    if not _siwc_local(request):
+        return JSONResponse({"error": "Connexion locale uniquement"}, status_code=403)
+    from webapp import siwc
+    try:
+        await asyncio.to_thread(siwc.finish, dict(request.query_params),
+                                request.cookies.get("panacee_siwc_pending"))
+        response = RedirectResponse("/?chatgpt=connected", status_code=303)
+    except siwc.PlanError:
+        response = RedirectResponse("/?chatgpt=error", status_code=303)
+    response.delete_cookie("panacee_siwc_pending", path="/auth/callback")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+async def api_siwc_models(request):
+    if not _siwc_local(request):
+        return JSONResponse({"error": "Connexion locale uniquement"}, status_code=403)
+    from webapp import siwc
+    try:
+        return JSONResponse({"models": await asyncio.to_thread(siwc.models)})
+    except siwc.PlanError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+
+
+async def api_siwc_disconnect(request):
+    if (not _siwc_local(request) or not _siwc_same_origin(request)
+            or request.headers.get("x-panacee-action") != "siwc-disconnect"):
+        return JSONResponse({"error": "Connexion locale uniquement"}, status_code=403)
+    from webapp import siwc
+    try:
+        return JSONResponse(await asyncio.to_thread(siwc.disconnect))
+    except siwc.PlanError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
 
 
 async def api_evaluate(request):
@@ -857,6 +938,11 @@ routes = [
     Route("/api/screen", api_screen, methods=["POST"]),
     Route("/api/phase4", api_phase4, methods=["POST"]),
     Route("/api/phase4/status", api_phase4_status),
+    Route("/api/siwc/status", api_siwc_status),
+    Route("/api/siwc/start", api_siwc_start),
+    Route("/auth/callback", api_siwc_callback),
+    Route("/api/siwc/models", api_siwc_models),
+    Route("/api/siwc/disconnect", api_siwc_disconnect, methods=["POST"]),
     Route("/api/capabilities", api_capabilities),
     Route("/api/glossary", api_glossary),
     Route("/api/chat", api_chat, methods=["POST"]),

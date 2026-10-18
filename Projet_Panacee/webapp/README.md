@@ -27,6 +27,10 @@ python -m webapp.run                           # ouvre http://127.0.0.1:8000
 
 Puis ouvre **http://127.0.0.1:8000**.
 
+### Connexion ChatGPT par abonnement (Phase 4)
+
+L'onglet Phase 4 propose « Continuer avec ChatGPT » pour un compte éligible, distinct de la clé API OpenAI facturée séparément. Démarre impérativement l'application sur `http://127.0.0.1:8000`, installe les dépendances de `webapp/requirements.txt`, puis donne ton consentement dans le navigateur. L'application vérifie les modèles autorisés par le compte et n'utilise jamais la clé API comme secours silencieux quand « Mon abonnement » est choisi. Les jetons sont chiffrés localement et ignorés par Git ; déconnecte le compte depuis l'interface si nécessaire. Cette connexion n'est pas disponible depuis un client distant, et ni l'éligibilité du compte ni l'accès à `gpt-6.1-sol` ne sont garantis. Voir [la documentation OpenAI](https://developers.openai.com/siwc/token-sharing-open-source).
+
 Options : `--host 0.0.0.0 --port 8080`, `--root <dossier_checkpoints>`.
 
 ## Ce que montre le tableau de bord

@@ -2011,11 +2011,54 @@ function setupPhase4() {
   const run = document.getElementById("p4Run");
   if (!run) return;
   let lastReport = "";
+  const planStatus = document.getElementById("p4SIWCStatus");
+  const source = document.getElementById("p4ChatGPTSource");
+  const profile = document.getElementById("p4SIWCProfile");
+  const connect = document.getElementById("p4SIWCConnect");
+  const disconnect = document.getElementById("p4SIWCDisconnect");
+  const loginResult = new URLSearchParams(window.location.search).get("chatgpt");
+  if (loginResult) {
+    document.querySelector('.tab[data-tab="phase4"]')?.click();
+    history.replaceState(null, "", window.location.pathname);
+  }
+  function refreshPlan() {
+    fetchJSON("/api/siwc/status").then(async s => {
+      profile.replaceChildren(new Option("Nouveau compte", ""));
+      (s.profiles || []).forEach(p => profile.add(new Option(p.label, p.id)));
+      disconnect.style.display = s.connected ? "inline-flex" : "none";
+      planStatus.textContent = s.connected
+        ? `Abonnement connecté : ${s.account}. Disponibilité du modèle en cours de vérification…`
+        : (s.error || (loginResult === "error" ? "Connexion refusée ou impossible. Réessaie." : "Abonnement non connecté."));
+      if (s.connected) {
+        try {
+          const catalog = await fetchJSON("/api/siwc/models");
+          const target = "gpt-6.1-sol";
+          planStatus.textContent = (catalog.models || []).some(m => m.id === target)
+            ? `Abonnement connecté : ${s.account}. ${target} est dans le catalogue de ce compte ; son usage reste soumis aux limites du plan.`
+            : `Abonnement connecté : ${s.account}, mais ${target} n'est pas proposé à ce compte. Aucun autre modèle ne sera choisi automatiquement.`;
+        } catch (e) { planStatus.textContent = `Abonnement connecté, mais catalogue indisponible : ${e.message}`; }
+      }
+    }).catch(e => { planStatus.textContent = `État de la connexion indisponible : ${e.message}`; });
+  }
+  connect.addEventListener("click", () => {
+    connect.href = "/api/siwc/start" + (profile.value ? "?profile=" + encodeURIComponent(profile.value) : "");
+  });
+  disconnect.addEventListener("click", async () => {
+    try {
+      const result = await fetchJSON("/api/siwc/disconnect", {
+        method: "POST", headers: {"X-Panacee-Action": "siwc-disconnect"}});
+      planStatus.textContent = result.revocation_confirmed
+        ? "Compte déconnecté et session révoquée." : "Déconnecté localement ; révocation distante non confirmée. Vérifie les accès dans ChatGPT.";
+      refreshPlan();
+    } catch (e) { planStatus.textContent = `Déconnexion impossible : ${e.message}`; }
+  });
+  refreshPlan();
   fetchJSON("/api/phase4/status").then(available => {
     document.getElementById("p4Components").textContent =
       `Modèle Phase 3 : ${available.phase3_checkpoint ? "checkpoint présent" : "absent"} · ` +
       `Claude : ${available.claude ? "clé configurée, crédit non garanti" : "indisponible"} · ` +
       `ChatGPT API : ${available.chatgpt ? "configurée, appel non testé" : "non configurée"} · ` +
+      `Abonnement ChatGPT : ${available.chatgpt_plan ? "connecté" : "non connecté"} · ` +
       "Validation clinique : non";
   }).catch(() => {
     document.getElementById("p4Components").textContent = "État des composants indisponible.";
@@ -2039,7 +2082,8 @@ function setupPhase4() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ library: document.getElementById("p4Library").value,
           hypotheses, with_claude: document.getElementById("p4Claude").checked,
-          with_chatgpt: document.getElementById("p4ChatGPT").checked }),
+          with_chatgpt: document.getElementById("p4ChatGPT").checked,
+          chatgpt_source: source.value }),
       });
       lastReport = dossier.report_markdown;
       status.textContent = dossier.conclusion;
