@@ -125,6 +125,9 @@ class MultiPropertyPredictor(nn.Module):
                     p.requires_grad = True
             for p in self.encoder.projection.parameters():
                 p.requires_grad = True
+            if getattr(self.encoder, "use_chirality", False):
+                for p in self.encoder.chirality_embedding.parameters():
+                    p.requires_grad = True
             # Au dégel complet, dégeler aussi l'embedding d'entrée et le gating
             # du pooling (sinon ces sous-modules ne s'entraînent JAMAIS).
             if layers_to_unfreeze >= n_layers:
@@ -139,7 +142,8 @@ class MultiPropertyPredictor(nn.Module):
     def encode(self, batch):
         """Retourne l'embedding moléculaire."""
         mol_emb = self.encoder(
-            batch.x, batch.edge_index, batch.edge_attr, batch.batch
+            batch.x, batch.edge_index, batch.edge_attr, batch.batch,
+            chirality=getattr(batch, "chirality", None),
         )
         return self.shared_layer(mol_emb)
 

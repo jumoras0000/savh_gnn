@@ -90,6 +90,8 @@ def main():
     p.add_argument("--skip_checks", action="store_true",
                    help="Ignorer les vérifications de pré-requis")
     p.add_argument("--warm_start", type=int, choices=[0, 1], default=1)
+    p.add_argument("--selection_policy", choices=("multitask", "hiv_activity", "legacy_toxicity"),
+                   default="multitask")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", type=str, default=None)
     args = p.parse_args()
@@ -154,6 +156,7 @@ def main():
             "--patience", str(args.patience),
             "--save_dir", args.save_dir,
             "--warm_start", str(args.warm_start),
+            "--selection_policy", args.selection_policy,
             "--seed", str(args.seed),
         ]
         if args.device:

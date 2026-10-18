@@ -162,6 +162,7 @@ class MolecularEncoder(nn.Module):
         conv_type: str = "attention",
         attention_heads: int = 4,
         use_virtual_node: bool = True,
+        use_chirality: bool = False,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -169,6 +170,7 @@ class MolecularEncoder(nn.Module):
         self.output_dim = output_dim
         self.conv_type = conv_type
         self.use_virtual_node = use_virtual_node
+        self.use_chirality = use_chirality
 
         # ── Embedding initial ─────────────────────────────────────────
         self.atom_embedding = nn.Sequential(
@@ -177,6 +179,9 @@ class MolecularEncoder(nn.Module):
             nn.SiLU(),
             nn.Dropout(dropout),
         )
+        if use_chirality:
+            self.chirality_embedding = nn.Embedding(3, hidden_dim, padding_idx=0)
+            nn.init.zeros_(self.chirality_embedding.weight[0])
 
         # ── Virtual Node ──────────────────────────────────────────────
         if use_virtual_node:
@@ -208,9 +213,13 @@ class MolecularEncoder(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def encode_nodes(self, x, edge_index, edge_attr, batch=None):
+    def encode_nodes(self, x, edge_index, edge_attr, batch=None, chirality=None):
         """Embeddings par nœud (avant pooling) — réutilisé par la tête MGM (Phase 1)."""
         h = self.atom_embedding(x)
+        if self.use_chirality:
+            if chirality is None or chirality.shape != (x.size(0),):
+                raise ValueError("Chiralité par atome requise pour cet encodeur")
+            h = h + self.chirality_embedding(chirality.long())
 
         vn_feat = None
         if self.use_virtual_node:
@@ -230,7 +239,7 @@ class MolecularEncoder(nn.Module):
             h = h + h_res
         return h
 
-    def forward(self, x, edge_index, edge_attr, batch=None):
+    def forward(self, x, edge_index, edge_attr, batch=None, chirality=None):
         """
         Args:
             x          : [N, atom_dim]
@@ -241,7 +250,7 @@ class MolecularEncoder(nn.Module):
             [B, output_dim]
         """
         # 1-2. Embedding + message-passing avec skip connections (+ Virtual Node)
-        h = self.encode_nodes(x, edge_index, edge_attr, batch)
+        h = self.encode_nodes(x, edge_index, edge_attr, batch, chirality)
 
         # 3. Pooling global
         if batch is None:

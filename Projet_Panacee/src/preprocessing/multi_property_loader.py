@@ -5,7 +5,7 @@ Sources de données supportées :
   - Tox21 (toxicité, 12 tâches) via DeepChem
   - ESOL (solubilité aqueuse) via DeepChem
   - Lipophilicity (LogP) via DeepChem
-  - BBBP (bioavailabilité / passage barrière hémato-encéphalique) via DeepChem
+  - BBBP (passage de la barrière hémato-encéphalique) via DeepChem
   - ClinTox (toxicité clinique) via DeepChem
   - HIV (activité anti-VIH) via DeepChem
   - CSV personnalisé (format libre avec colonne SMILES)
@@ -592,11 +592,12 @@ class MultiPropertyDataset(Dataset):
 
 
 class TaskBalancedSampler(torch.utils.data.Sampler):
-    """Sampler qui équilibre les tâches dans chaque batch.
+    """Intercale les tâches tant que leurs pools contiennent des exemples.
 
     Problème : avec un outer join, chaque molécule n'a de labels que pour 1 dataset.
     Un batch aléatoire peut n'avoir que des molécules Tox21 → gradient nul pour
-    les autres tâches. Ce sampler intercale les sources pour diversifier chaque batch.
+    les autres tâches. Les petits pools s'épuisent en premier : l'intercalage
+    ne garantit ni un équilibre par batch, ni une pondération égale par époque.
     """
 
     def __init__(self, dataset, batch_size=32, shuffle=True):

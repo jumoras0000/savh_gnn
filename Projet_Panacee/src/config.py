@@ -179,6 +179,7 @@ PHASE3 = {
     "patience": 25,
     "grad_clip": 1.0,
     "freeze_encoder_epochs": 5,
+    "use_chirality": True,  # schéma v2 : CIP R/S appris en Phase 3
     "gradient_accumulation_steps": 2,
     "ema_decay": 0.999,
     "llrd_factor": 0.8,

@@ -102,11 +102,15 @@ def phase3_parameter_groups(module, lr, weight_decay):
     ]
 
 
-def validate_warm_start(checkpoint, split_provenance, regression_stats):
+def validate_warm_start(checkpoint, split_provenance, regression_stats,
+                        expected_feature_schema=None):
     if checkpoint.get("split_provenance", {}).get("split_sha256") != split_provenance.get("split_sha256"):
         raise ValueError("Warm-start incompatible avec les partitions actuelles ; utiliser --warm_start 0")
     if checkpoint.get("regression_stats") != regression_stats:
         raise ValueError("Warm-start incompatible avec la normalisation actuelle ; utiliser --warm_start 0")
+    if (expected_feature_schema is not None and
+            checkpoint.get("config", {}).get("feature_schema") != expected_feature_schema):
+        raise ValueError("Warm-start incompatible avec le schéma chimique actuel ; utiliser --warm_start 0")
     if not all(torch.isfinite(v).all() for v in checkpoint["model_state_dict"].values()
                if torch.is_tensor(v)):
         raise ValueError("Warm-start contenant des poids non finis")
@@ -206,6 +210,26 @@ def phase3_composite_score(metrics):
     if not values:
         raise RuntimeError("Aucune métrique de validation calculable en Phase 3")
     return sum(values) / len(values)
+
+
+def phase3_selection_score(metrics, clinical_score, policy="multitask"):
+    """Predeclared validation objective; never interpret it as clinical reliability."""
+    composite = phase3_composite_score(metrics)
+    if policy == "multitask":
+        return composite
+    if policy == "hiv_activity":
+        value = metrics.get("efficacy", {}).get("average_precision")
+        if value is None or not np.isfinite(value):
+            raise RuntimeError("AUPRC VIH absente : sélection hiv_activity impossible")
+        return float(value)
+    if policy == "legacy_toxicity":
+        return 0.6 * clinical_score + 0.4 * composite
+    raise ValueError(f"Politique de sélection inconnue : {policy}")
+
+
+def should_select_phase3_epoch(epoch, freeze_epochs, score, best_score):
+    """A final Phase 3 checkpoint must include encoder adaptation."""
+    return epoch > freeze_epochs and np.isfinite(score) and score > best_score
 
 
 def compute_phase3_metrics(predictions, targets, thresholds=None, regression_stats=None):
@@ -503,6 +527,8 @@ def main():
     p.add_argument("--epochs", type=int, default=PHASE3["epochs"])
     p.add_argument("--batch_size", type=int, default=PHASE3["batch_size"])
     p.add_argument("--patience", type=int, default=PHASE3["patience"])
+    p.add_argument("--selection_policy", choices=("multitask", "hiv_activity", "legacy_toxicity"),
+                   default="multitask", help="Objectif de validation, défini avant entraînement")
     p.add_argument("--warm_start", type=int, default=1,
                    help="1=reprend le meilleur modele Phase 3 precedent (transfert)")
     p.add_argument("--save_epochs", type=int, default=1,
@@ -513,6 +539,8 @@ def main():
     args = p.parse_args()
     if args.epochs < 1 or args.patience < 1 or args.batch_size < 2:
         p.error("epochs/patience doivent être >= 1 et batch_size >= 2 (BatchNorm)")
+    if args.epochs <= PHASE3["freeze_encoder_epochs"]:
+        p.error("epochs doit dépasser freeze_encoder_epochs : aucun encodeur adapté sinon")
 
     # Reproductibilité
     set_seed(args.seed)
@@ -627,11 +655,17 @@ def main():
     print(f"  Val   : {len(val_ds)} molécules")
 
     # Ajuster batch_size selon la VRAM disponible
-    batch_size = gpu.optimize_batch_size(args.batch_size, model_size_mb=50)
+    batch_size = max(2, gpu.optimize_batch_size(args.batch_size, model_size_mb=50))
+    if len(train_ds) < 2:
+        raise ValueError("Phase 3 nécessite au moins deux graphes d'entraînement (BatchNorm)")
     print(f"  Batch size : {batch_size} (demandé: {args.batch_size})")
 
     torch.backends.cudnn.benchmark = not torch.backends.cudnn.deterministic
     train_sampler = TaskBalancedSampler(train_ds, batch_size=batch_size, shuffle=True)
+    coverage = {name: len(indices) for name, indices in train_sampler.task_indices.items()}
+    print(f"  Étiquettes observées par groupe : {coverage}")
+    print("  Sampler : intercalage jusqu'à épuisement des petits groupes ; "
+          "la fin d'époque peut être dominée par les grands jeux")
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, sampler=train_sampler,
         collate_fn=collate_multi_property, drop_last=True, **loader_kwargs(),
@@ -650,6 +684,7 @@ def main():
         num_layers=NUM_GNN_LAYERS, edge_dim=BOND_FEATURE_DIM,
         output_dim=OUTPUT_DIM, dropout=DROPOUT,
         conv_type=CONV_TYPE, attention_heads=ATTENTION_HEADS,
+        use_chirality=PHASE3["use_chirality"],
     )
 
     # Charger les poids Phase 2
@@ -665,7 +700,12 @@ def main():
         if encoder_sd:
             if not all(torch.isfinite(v).all() for v in encoder_sd.values() if torch.is_tensor(v)):
                 raise ValueError("Poids de l'encodeur Phase 2 non finis")
-            encoder.load_state_dict(encoder_sd, strict=True)
+            result = encoder.load_state_dict(encoder_sd, strict=False)
+            allowed_missing = ({"chirality_embedding.weight"}
+                               if PHASE3["use_chirality"] else set())
+            if set(result.missing_keys) != allowed_missing or result.unexpected_keys:
+                raise ValueError("Encodeur Phase 2 incompatible avec le schéma Phase 3 : "
+                                 f"missing={result.missing_keys}, unexpected={result.unexpected_keys}")
             print("  ✓ Encodeur Phase 2 chargé")
         else:
             raise ValueError("Pas de poids encoder dans le checkpoint Phase 2")
@@ -681,9 +721,12 @@ def main():
     # Warm-start : reprend le MEILLEUR modèle Phase 3 précédent s'il existe
     # (poursuite de l'entraînement sur les phases à venir).
     prev_best = Path(args.save_dir) / PHASE3["checkpoint_name"]
+    feature_schema = ("atom9_bond6_cip_atom_v2" if PHASE3["use_chirality"]
+                      else "atom9_bond6_legacy_v1")
     if getattr(args, "warm_start", 1) and prev_best.exists():
         prev = torch.load(prev_best, map_location="cpu", weights_only=False)
-        validate_warm_start(prev, split_provenance, train_ds.regression_stats)
+        validate_warm_start(prev, split_provenance, train_ds.regression_stats,
+                            expected_feature_schema=feature_schema)
         model.load_state_dict(prev["model_state_dict"], strict=True)
         print("  ✓ Warm-start : partitions et normalisation vérifiées")
 
@@ -739,6 +782,9 @@ def main():
     param_groups = []
     # Embedding (couche la plus basse) → LR minimal
     param_groups.extend(_split_params(model.encoder.atom_embedding, lr_enc * llrd_factor ** n_enc_layers))
+    if PHASE3["use_chirality"]:
+        param_groups.extend(_split_params(model.encoder.chirality_embedding,
+                                          lr_enc * llrd_factor ** n_enc_layers))
     # Couches GNN : decay progressif (couche 0 = plus bas, couche N-1 = lr_enc)
     for i in range(n_enc_layers):
         layer_lr = lr_enc * llrd_factor ** (n_enc_layers - 1 - i)
@@ -794,6 +840,11 @@ def main():
     history = []
     best_path = Path(args.save_dir) / PHASE3["checkpoint_name"]
     latest_path = Path(args.save_dir) / "checkpoint_latest.pth"
+    if best_path.exists():
+        archived = best_path.with_name(
+            f"panacee_phase3_previous_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.pth")
+        best_path.rename(archived)
+        print(f"  Ancien checkpoint préservé : {archived}")
     freeze_epochs = PHASE3["freeze_encoder_epochs"]
     # Checkpoints par-epoch (gérables/supprimables depuis le dashboard) ;
     # nouveau run -> dossier propre, cohérent avec live_metrics.jsonl réinitialisé.
@@ -929,14 +980,23 @@ def main():
             rec.get("val_auc"), rec.get("macro_sensitivity"),
             rec.get("macro_fnr"), rec.get("n_danger"))
 
-        selection_score = 0.6 * rec["clinical_score"] + 0.4 * composite_score
+        selection_score = phase3_selection_score(val_m, rec["clinical_score"],
+                                                 args.selection_policy)
         if not np.isfinite(selection_score):
             raise RuntimeError("Score de sélection non fini")
-        is_best = selection_score > best_score
+        eligible = epoch > freeze_epochs
+        is_best = should_select_phase3_epoch(epoch, freeze_epochs,
+                                             selection_score, best_score)
         if is_best:
             best_score = selection_score
         rec["selection_score"] = selection_score
+        rec["selection_policy"] = args.selection_policy
+        rec["selection_eligible"] = eligible
         history_entry["selection_score"] = selection_score
+        history_entry["selection_eligible"] = eligible
+        print(f"  sélection={selection_score:.4f} ({args.selection_policy}, "
+              f"{'éligible' if eligible else 'encodeur gelé'}) ; "
+              f"proxy toxicité={rec['clinical_score']:.4f}")
 
         # Checkpoint
         ckpt_data = {
@@ -946,6 +1006,8 @@ def main():
             "raw_model_state_dict": model.state_dict(),
             "criterion_state_dict": criterion.state_dict(),
             "selection_score": selection_score,
+            "selection_policy": args.selection_policy,
+            "selection_eligible": eligible,
             "val_metrics": {k: v for k, v in val_m.items() if not k.startswith("_")},
             "composite_score": composite_score,
             "clinical_score": rec["clinical_score"],
@@ -965,6 +1027,8 @@ def main():
                 "bond_feature_dim": BOND_FEATURE_DIM,
                 "conv_type": CONV_TYPE,
                 "attention_heads": ATTENTION_HEADS,
+                "use_chirality": PHASE3["use_chirality"],
+                "feature_schema": feature_schema,
             },
         }
         torch.save(ckpt_data, latest_path)
@@ -978,12 +1042,12 @@ def main():
             torch.save(slim, ep_path)
             ckpt_rel = f"epochs/epoch_{epoch:03d}.pth"
 
-        # Securite d'abord : 60% clinical_score + 40% composite_score
+        # Only a checkpoint trained after encoder unfreezing can be selected.
         if is_best:
             no_improve = 0
             torch.save(ckpt_data, best_path)
             print(f"  → Nouvelle meilleure epoch (score={best_score:.4f}) sauvegardée !")
-        else:
+        elif eligible:
             no_improve += 1
 
         rec["is_best"] = is_best
@@ -1081,7 +1145,7 @@ def main():
 
     # Pré-calculer embeddings + profil pharmacologique par molécule.
     # Chaque molécule reçoit un vecteur de propriétés prédites pour le scoring
-    # combinatoire via le modèle Bliss independence (pharmacologiquement fondé).
+    # combinatoire heuristique, sans mesure expérimentale de synergie.
     print("  Calcul des embeddings + profils pharmacologiques...")
     all_embeddings = []
     all_safety = []      # 1 - mean(tox_probs)
@@ -1151,12 +1215,11 @@ def main():
             reasoner_optimizer.zero_grad()
             output = reasoner(combo_emb, mask)
 
-            # Proxy pharmacologique (Bliss independence + multi-critères).
-            # Bliss : P(combo_safe) = Π P(mol_i safe)  — indépendance des toxicités
-            # Eff Bliss : P(combo_eff) = 1 - Π(1 - P(mol_i eff)) — au moins 1 actif
-            # + diversité structurelle (molécules complémentaires = meilleure couverture)
-            combo_safety = all_safety[indices].prod().item()          # Bliss safety
-            combo_eff = 1.0 - (1.0 - all_efficacy[indices]).prod().item()  # Bliss efficacy
+            # Proxy heuristique issu des prédictions individuelles. Les produits
+            # supposent une indépendance, mais ne constituent PAS une mesure de
+            # synergie Bliss : aucune courbe dose-réponse expérimentale ici.
+            combo_safety = all_safety[indices].prod().item()
+            combo_eff = 1.0 - (1.0 - all_efficacy[indices]).prod().item()
             combo_bbb = all_bbb[indices].mean().item()
             diversity = torch.pdist(combo_emb[0, :n_mols]).mean().item()
             div_norm = min(diversity / 5.0, 1.0)

@@ -119,6 +119,7 @@ class PanaceeAnalyzer:
             conv_type=config.get("conv_type", CONV_TYPE),
             attention_heads=config.get("attention_heads", ATTENTION_HEADS),
             use_virtual_node=config.get("use_virtual_node", True),
+            use_chirality=config.get("use_chirality", False),
         )
 
         # Reconstruire le modèle multi-propriétés
@@ -351,6 +352,7 @@ class PanaceeAnalyzer:
                 conv_type=config.get("conv_type", CONV_TYPE),
                 attention_heads=config.get("attention_heads", ATTENTION_HEADS),
                 use_virtual_node=config.get("use_virtual_node", True),
+                use_chirality=config.get("use_chirality", False),
             )
             return MultiPropertyPredictor(
                 encoder=enc,

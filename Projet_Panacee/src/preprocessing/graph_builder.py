@@ -64,6 +64,14 @@ def smiles_to_graph(smiles: str):
     mol = Chem.MolFromSmiles(smiles)
     if mol is None or mol.GetNumAtoms() == 0:
         return None
+    # CIP R/S is invariant to SMILES atom ordering. Legacy models simply ignore
+    # this extra tensor; the optional v2 encoder consumes it explicitly.
+    Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+    chirality = torch.tensor([
+        1 if atom.HasProp("_CIPCode") and atom.GetProp("_CIPCode") == "R" else
+        2 if atom.HasProp("_CIPCode") and atom.GetProp("_CIPCode") == "S" else 0
+        for atom in mol.GetAtoms()
+    ], dtype=torch.long)
 
     # ── Features atomiques ────────────────────────────────────────────
     atom_features = []
@@ -113,7 +121,8 @@ def smiles_to_graph(smiles: str):
         edge_index = torch.tensor([edge_src, edge_dst], dtype=torch.long)
         edge_attr  = torch.tensor(edge_attr_list, dtype=torch.float)
 
-    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles)
+    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr,
+                chirality=chirality, smiles=smiles)
 
 
 def mask_atoms(graph: Data, mask_prob: float = 0.15):

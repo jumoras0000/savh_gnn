@@ -141,3 +141,28 @@ def test_dashboard_best_checkpoint_uses_training_selection_score():
     epochs = [{"epoch": 1, "clinical_score": 0.9, "selection_score": 0.4},
               {"epoch": 2, "clinical_score": 0.6, "selection_score": 0.7}]
     assert best_epoch_number(epochs, {"phase": "phase3"}) == 2
+
+
+def test_phase3_data_audit_reports_per_task_prevalence_and_empty_scaffolds(tmp_path):
+    import pandas as pd
+    from src.validation.phase3_data_audit import audit_phase3_data
+
+    paths = {}
+    for split, smiles, label in (("train", "CCO", 1),
+                                 ("val", "c1ccccc1", 0),
+                                 ("test", "C1CCCCC1", 1)):
+        path = tmp_path / f"hiv_{split}.csv"
+        pd.DataFrame({"smiles": [smiles], "hiv_HIV_active": [label]}).to_csv(path, index=False)
+        paths[split] = str(path)
+    esol_paths = {}
+    for split, smiles, label in (("train", ["CCO", "CCC"], [-2.0, -4.0]),
+                                 ("val", ["c1ccccc1"], [-2.0]),
+                                 ("test", ["C1CCCCC1"], [-1.0])):
+        path = tmp_path / f"esol_{split}.csv"
+        pd.DataFrame({"smiles": smiles, "esol_measured": label}).to_csv(path, index=False)
+        esol_paths[split] = str(path)
+    report = audit_phase3_data({"hiv": paths, "esol": esol_paths})
+    assert report["integrity"]["global_scaffold_disjoint"]
+    assert report["datasets"]["hiv"]["train"]["empty_scaffold_molecules"] == 1
+    assert report["datasets"]["hiv"]["test"]["labels"]["hiv_HIV_active"]["prevalence"] == 1
+    assert report["regression_baselines"]["esol"]["train_mean_test_rmse"] == 2.0
