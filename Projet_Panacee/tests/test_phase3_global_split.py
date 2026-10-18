@@ -22,6 +22,8 @@ def test_download_retains_exact_smiles_duplicates_for_audit(tmp_path):
     rows = pd.concat([pd.read_csv(path) for path in paths.values()])
     assert len(rows) == 13
     assert (rows.smiles == molecules[0]).sum() == 2
+    manifest = repartition_global_scaffolds({"esol": paths}, str(tmp_path))
+    assert len(manifest["sha256_raw_datasets"]["esol"]) == 64
 
 
 def test_download_rejects_nonnumeric_labels(tmp_path):
@@ -103,3 +105,15 @@ def test_classification_disagreement_is_quarantined_and_audited(tmp_path, name):
     assert [r["labels"][f"{name}_label"] for r in audit["conflicts"][0]["observations"]] == [0.0, 1.0]
     rows = pd.concat([pd.read_csv(path) for path in paths[name].values()])
     assert molecules[0] not in rows.smiles.tolist()
+
+
+def test_webapp_rejects_incomplete_phase3_checkpoint(tmp_path, monkeypatch):
+    from webapp import research
+    from src.utils import safe_load
+
+    checkpoint = tmp_path / "unfinished.pth"
+    checkpoint.write_bytes(b"placeholder")
+    monkeypatch.setattr(safe_load, "safe_load_checkpoint",
+                        lambda path: {"training_stage": "evaluated"})
+    with pytest.raises(RuntimeError, match="non finalisé"):
+        research.get_analyzer(str(checkpoint))

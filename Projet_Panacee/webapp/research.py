@@ -65,6 +65,12 @@ def get_analyzer(checkpoint: str | None = None):
     key = ("phase3", ckpt)
     if key in _CACHE:
         return _CACHE[key]
+    from src.utils.safe_load import safe_load_checkpoint
+    metadata = safe_load_checkpoint(ckpt)
+    if metadata.get("training_stage") not in (None, "complete"):
+        raise RuntimeError(
+            f"Checkpoint Phase 3 non finalisé (étape {metadata['training_stage']}) : {ckpt}"
+        )
     from src.analysis.combinatorial_engine import PanaceeAnalyzer
     analyzer = PanaceeAnalyzer(checkpoint_path=ckpt, device="cpu")
     _CACHE[key] = analyzer

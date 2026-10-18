@@ -302,8 +302,15 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
         hashes[f"{name}_{split}"] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     audit = verify_global_split_integrity(data_paths)
+    raw_hashes = {}
+    for name in data_paths:
+        if name in _DATASET_FILES:
+            raw_path = Path(base_dir) / name / _DATASET_FILES[name][0]
+            if raw_path.exists():
+                raw_hashes[name] = hashlib.sha256(raw_path.read_bytes()).hexdigest()
     manifest = {"method": "global_canonical_murcko_v1", "audit": audit,
                 "duplicate_resolution": duplicate_audit,
+                "sha256_raw_datasets": raw_hashes,
                 "sha256_generated_splits": hashes,
                 "warning": "Provenance externe et validité biologique non vérifiées"}
     (Path(base_dir) / "split_manifest.json").write_text(

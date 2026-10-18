@@ -68,15 +68,25 @@ def test_phase2_metrics_ignore_nonfinite_prediction():
     assert compute_metrics(logits, labels)["roc_auc"] == 1.0
 
 
-def test_phase3_r2_constant_target_is_zero_not_huge():
-    """R² sur cible quasi-constante → 0.0 (neutre), jamais un nombre délirant."""
+def test_phase3_r2_constant_target_is_not_reported():
+    """R² sur cible constante est indéfini, pas une performance de zéro."""
     from src.training.train_phase3 import compute_phase3_metrics
 
     preds = {"solubility": torch.tensor([[0.5], [0.4], [0.6], [0.55]])}
     tgts = {"solubility": torch.tensor([[2.0], [2.0], [2.0], [2.0]])}
     m = compute_phase3_metrics(preds, tgts)
-    assert m["solubility"]["r2"] == 0.0
+    assert "r2" not in m["solubility"]
     assert np.isfinite(m["solubility"]["rmse"])
+
+
+def test_phase3_single_class_auc_is_not_reported():
+    from src.training.train_phase3 import compute_phase3_metrics
+
+    logits = torch.tensor([[1.0], [2.0], [-1.0]])
+    labels = torch.tensor([[0.0], [0.0], [0.0]])
+    m = compute_phase3_metrics({"efficacy": logits}, {"efficacy": labels})
+    assert "roc_auc" not in m["efficacy"]
+    assert m["efficacy"]["n_tasks_scored"] == 0
 
 
 def test_phase3_r2_reasonable_when_target_varies():

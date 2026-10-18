@@ -9,6 +9,7 @@ Pipeline complet :
   5. Sauvegarder le modèle complet : panacee_phase3_complete.pth
 """
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -187,8 +188,12 @@ def compute_phase3_metrics(predictions, targets):
                     aucs.append(roc_auc_score(y, p))
                     f1s.append(f1_score(y, (p > 0.5).astype(int), zero_division=0))
 
-            prop_metrics["roc_auc"] = float(np.mean(aucs)) if aucs else 0.0
-            prop_metrics["f1"] = float(np.mean(f1s)) if f1s else 0.0
+            prop_metrics["n_tasks_scored"] = len(aucs)
+            if aucs:
+                prop_metrics["roc_auc"] = float(np.mean(aucs))
+                prop_metrics["f1"] = float(np.mean(f1s))
+            else:
+                logger.warning("%s: AUC/F1 non calculables (aucune tâche avec deux classes)", prop_name)
 
         elif prop_name in ("efficacy",):
             # Classification binaire
@@ -196,11 +201,12 @@ def compute_phase3_metrics(predictions, targets):
             y = tgt[valid].flatten()
             p = probs[valid[:, 0] if valid.ndim > 1 else valid].flatten()
             if len(y) > 0 and len(np.unique(y)) > 1:
+                prop_metrics["n_tasks_scored"] = 1
                 prop_metrics["roc_auc"] = float(roc_auc_score(y, p))
                 prop_metrics["f1"] = float(f1_score(y, (p > 0.5).astype(int), zero_division=0))
             else:
-                prop_metrics["roc_auc"] = 0.0
-                prop_metrics["f1"] = 0.0
+                prop_metrics["n_tasks_scored"] = 0
+                logger.warning("%s: AUC/F1 non calculables (une seule classe)", prop_name)
 
         else:
             # Régression : RMSE + R²
@@ -209,11 +215,12 @@ def compute_phase3_metrics(predictions, targets):
             rmse = float(np.sqrt(np.mean((pred_valid - tgt_valid) ** 2)))
             ss_res = float(np.sum((tgt_valid - pred_valid) ** 2))
             ss_tot = float(np.sum((tgt_valid - tgt_valid.mean()) ** 2))
-            # R² indéfini si la cible est ~constante (ss_tot≈0) : on renvoie 0.0
-            # (neutre) plutôt que ss_res/1e-8 qui produit un R² délirant (-1e8…).
-            r2 = float(1 - ss_res / ss_tot) if ss_tot > 1e-8 else 0.0
+            # R² indéfini sur une cible constante : ne pas fabriquer un zéro.
             prop_metrics["rmse"] = rmse
-            prop_metrics["r2"] = r2
+            if ss_tot > 1e-8:
+                prop_metrics["r2"] = float(1 - ss_res / ss_tot)
+            else:
+                logger.warning("%s: R² non calculable (cible constante)", prop_name)
 
         metrics[prop_name] = prop_metrics
 
@@ -426,6 +433,22 @@ def main():
     from src.preprocessing.multi_property_loader import verify_global_split_integrity
     split_audit = verify_global_split_integrity(data_paths)
     print(f"✓ Partitions Phase 3 sans fuite de scaffold : {split_audit['counts']}")
+    manifest_path = Path(data_dir) / "split_manifest.json"
+    if not manifest_path.exists():
+        raise RuntimeError("Manifeste de partitions Phase 3 absent ; relancer avec --download")
+    split_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected_hashes = split_manifest.get("sha256_generated_splits", {})
+    actual_hashes = {f"{name}_{split}": hashlib.sha256(Path(path).read_bytes()).hexdigest()
+                     for name, paths in data_paths.items() for split, path in paths.items()}
+    if actual_hashes != expected_hashes:
+        raise RuntimeError("Empreintes des partitions Phase 3 différentes du manifeste ; relancer avec --download")
+    split_provenance = {"manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                        "split_sha256": actual_hashes,
+                        "audit": split_audit,
+                        "quarantined_compounds_by_dataset": {
+                            name: entry["quarantined_compounds"]
+                            for name, entry in split_manifest.get("duplicate_resolution", {}).items()
+                        }}
 
     # ── Étape 2 : Fusionner les datasets ─────────────────────────────
     print("\n🔀 Fusion des datasets...")
@@ -689,7 +712,12 @@ def main():
                 elif "r2" in prop_m:
                     score += max(prop_m["r2"], 0)
                     n_scores += 1
-        composite_score = score / max(n_scores, 1)
+        if n_scores == 0:
+            raise RuntimeError(
+                "Aucune métrique de validation calculable en Phase 3 ; "
+                "vérifier les classes, les cibles et les prédictions avant de sauvegarder"
+            )
+        composite_score = score / n_scores
 
         elapsed = time.time() - t0
         eta = timedelta(seconds=int((elapsed / epoch) * (args.epochs - epoch)))
@@ -777,6 +805,8 @@ def main():
             "history": history,
             "property_dims": train_ds.get_property_dims(),
             "regression_stats": train_ds.regression_stats,
+            "split_provenance": split_provenance,
+            "training_stage": "training",
             "config": {
                 "hidden_dim": HIDDEN_DIM,
                 "num_gnn_layers": NUM_GNN_LAYERS,
@@ -897,8 +927,9 @@ def main():
                     print(f"    {prop}: R²={m['r2']:.4f} RMSE={m.get('rmse', 0):.4f}")
         best_ckpt_eval["test_metrics"] = {k: v for k, v in test_m.items() if not k.startswith("_")}
     except Exception as e:
-        print(f"  ⚠ Test set non disponible ({e}) — lancez avec --download")
+        raise RuntimeError(f"Évaluation du jeu test Phase 3 impossible : {e}") from e
 
+    best_ckpt_eval["training_stage"] = "evaluated"
     torch.save(best_ckpt_eval, best_path)
 
     # ── Étape 7 : Entraîner le Raisonneur IA ─────────────────────────
@@ -1011,7 +1042,10 @@ def main():
     print(f"{'='*80}")
 
     # Recharger le meilleur checkpoint et ajouter le raisonneur
+    if not all(torch.isfinite(p).all() for p in reasoner.parameters()):
+        raise RuntimeError("Poids du raisonneur non finis ; checkpoint Phase 3 non finalisé")
     best_ckpt["reasoner_state_dict"] = reasoner.state_dict()
+    best_ckpt["training_stage"] = "complete"
     best_ckpt["reasoner_config"] = {
         "hidden_dim": PHASE3["reasoner_hidden_dim"],
         "num_heads": PHASE3["reasoner_num_heads"],
