@@ -250,7 +250,6 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
         frame["smiles"] = canonical
         # Une même clé canonique peut représenter des stéréoisomères dont le
         # SMILES ne précise pas la stéréochimie. Ne pas moyenner leurs labels.
-        regression = name in {"esol", "lipo"}
         resolved = []
         quarantined = []
         repeated = 0
@@ -258,22 +257,19 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
             if len(records) > 1:
                 repeated += 1
             row = {"smiles": key}
-            conflict = False
+            conflicting_columns = []
             for col in frame.columns.drop(["smiles", "source_smiles"]):
                 values = pd.to_numeric(records[col], errors="coerce").dropna()
                 if not np.isfinite(values.to_numpy(dtype=float)).all():
                     raise ValueError(f"{name}: valeur non finie pour {key}, colonne {col}")
                 unique = values.unique()
                 if len(unique) > 1:
-                    if not regression:
-                        raise ValueError(
-                            f"{name}: étiquettes discordantes pour {key}, colonne {col} "
-                            f"({len(unique)} valeurs)"
-                        )
-                    conflict = True
+                    conflicting_columns.append(col)
                 row[col] = values.iloc[0] if len(values) else np.nan
-            if conflict:
-                quarantined.append({"canonical_smiles": key, "observations": [
+            if conflicting_columns:
+                quarantined.append({"canonical_smiles": key,
+                                    "conflicting_columns": conflicting_columns,
+                                    "observations": [
                     {"source_smiles": str(record["source_smiles"]),
                      "labels": {col: (None if pd.isna(record[col]) else float(record[col]))
                                 for col in frame.columns.drop(["smiles", "source_smiles"])}}
@@ -285,7 +281,7 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
         datasets[name] = pd.DataFrame(resolved, columns=frame.columns.drop("source_smiles"))
         duplicate_audit[name] = {"repeated_compounds": repeated,
                                  "quarantined_compounds": len(quarantined),
-                                 "resolution": "quarantine_discordant" if regression else "identical_only",
+                                 "resolution": "quarantine_discordant",
                                  "conflicts": quarantined}
         if quarantined:
             print(f"  ⚠ {name}: {len(quarantined)} composés ambigus exclus des splits; observations dans split_manifest.json")

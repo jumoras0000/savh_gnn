@@ -88,12 +88,18 @@ def test_regression_duplicates_are_quarantined_and_audited(tmp_path, name):
     assert manifest["audit"]["unique_molecules"] == 11
 
 
-def test_classification_disagreement_still_fails(tmp_path):
+@pytest.mark.parametrize("name", ["bbbp", "clintox", "hiv", "tox21"])
+def test_classification_disagreement_is_quarantined_and_audited(tmp_path, name):
     molecules = ["C1" + "C" * (size - 1) + "1" for size in range(3, 15)]
-    paths = {"hiv": _paths(tmp_path, "hiv", molecules, [0] * 12)}
-    test_path = paths["hiv"]["test"]
+    paths = {name: _paths(tmp_path, name, molecules, [0] * 12)}
+    test_path = paths[name]["test"]
     test_frame = pd.read_csv(test_path)
     test_frame.loc[len(test_frame)] = [molecules[0], 1]
     test_frame.to_csv(test_path, index=False)
-    with pytest.raises(ValueError, match="étiquettes discordantes"):
-        repartition_global_scaffolds(paths, str(tmp_path))
+    manifest = repartition_global_scaffolds(paths, str(tmp_path))
+    audit = manifest["duplicate_resolution"][name]
+    assert audit["quarantined_compounds"] == 1
+    assert audit["conflicts"][0]["conflicting_columns"] == [f"{name}_label"]
+    assert [r["labels"][f"{name}_label"] for r in audit["conflicts"][0]["observations"]] == [0.0, 1.0]
+    rows = pd.concat([pd.read_csv(path) for path in paths[name].values()])
+    assert molecules[0] not in rows.smiles.tolist()
