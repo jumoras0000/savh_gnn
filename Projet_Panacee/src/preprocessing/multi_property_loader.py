@@ -75,10 +75,16 @@ def download_dataset(name: str, save_dir: str) -> dict:
     missing = set(["smiles", *task_columns]) - set(df.columns)
     if missing:
         raise ValueError(f"{name}: colonnes absentes du CSV : {sorted(missing)}")
+    # Conserver la ligne et l'identifiant de la source dans les fichiers
+    # intermédiaires pour pouvoir retracer chaque décision de quarantaine.
+    df["__source_row"] = df.index + 2  # ligne 1 = en-tête du CSV
+    source_id_col = next((col for col in ("Compound ID", "name", "num")
+                          if col in df.columns), None)
+    df["__source_id"] = df[source_id_col].astype("string") if source_id_col else pd.NA
     # Conserver aussi les SMILES strictement identiques : leurs labels peuvent
     # être discordants et doivent passer par l'audit de réconciliation global.
     missing_smiles = int(df["smiles"].isna().sum())
-    df = df[["smiles", *task_columns]].dropna(subset=["smiles"])
+    df = df[["smiles", *task_columns, "__source_row", "__source_id"]].dropna(subset=["smiles"])
     df = df.copy()
     df["smiles"] = df["smiles"].astype(str).str.strip()
     blank_smiles = int((df["smiles"] == "").sum())
@@ -248,6 +254,8 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
             scaffolds[key] = scaffold
         frame["source_smiles"] = frame["smiles"]
         frame["smiles"] = canonical
+        metadata_columns = {"smiles", "source_smiles", "__source_row", "__source_id"}
+        label_columns = [col for col in frame.columns if col not in metadata_columns]
         # Une même clé canonique peut représenter des stéréoisomères dont le
         # SMILES ne précise pas la stéréochimie. Ne pas moyenner leurs labels.
         resolved = []
@@ -258,7 +266,7 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
                 repeated += 1
             row = {"smiles": key}
             conflicting_columns = []
-            for col in frame.columns.drop(["smiles", "source_smiles"]):
+            for col in label_columns:
                 values = pd.to_numeric(records[col], errors="coerce").dropna()
                 if not np.isfinite(values.to_numpy(dtype=float)).all():
                     raise ValueError(f"{name}: valeur non finie pour {key}, colonne {col}")
@@ -271,14 +279,20 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
                                     "conflicting_columns": conflicting_columns,
                                     "observations": [
                     {"source_smiles": str(record["source_smiles"]),
+                     "source_row": (int(record["__source_row"])
+                                    if "__source_row" in records and pd.notna(record["__source_row"])
+                                    else None),
+                     "source_id": (str(record["__source_id"])
+                                   if "__source_id" in records and pd.notna(record["__source_id"])
+                                   else None),
                      "labels": {col: (None if pd.isna(record[col]) else float(record[col]))
-                                for col in frame.columns.drop(["smiles", "source_smiles"])}}
+                                for col in label_columns}}
                     for _, record in records.iterrows()
                 ]})
             else:
                 resolved.append(row)
                 groups.setdefault(scaffolds[key], set()).add(key)
-        datasets[name] = pd.DataFrame(resolved, columns=frame.columns.drop("source_smiles"))
+        datasets[name] = pd.DataFrame(resolved, columns=["smiles", *label_columns])
         duplicate_audit[name] = {"repeated_compounds": repeated,
                                  "quarantined_compounds": len(quarantined),
                                  "resolution": "quarantine_discordant",
@@ -316,6 +330,52 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
     (Path(base_dir) / "split_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return manifest
+
+
+def verify_phase3_source_provenance(manifest: dict, base_dir: str,
+                                    expected_datasets: tuple[str, ...] | None = None) -> dict:
+    """Vérifie que les conflits audités correspondent aux lignes CSV originales."""
+    raw_hashes = manifest.get("sha256_raw_datasets", {})
+    expected = expected_datasets or tuple(_DATASET_FILES)
+    if set(raw_hashes) != set(expected):
+        raise ValueError("Empreintes des six CSV sources absentes ; relancer avec --download")
+    checked = {}
+    for name in expected:
+        filename, _ = _DATASET_FILES[name]
+        raw_path = Path(base_dir) / name / filename
+        if not raw_path.is_file() or hashlib.sha256(raw_path.read_bytes()).hexdigest() != raw_hashes[name]:
+            raise ValueError(f"{name}: CSV brut absent ou différent du manifeste")
+        conflicts = manifest.get("duplicate_resolution", {}).get(name, {}).get("conflicts", [])
+        if not conflicts:
+            checked[name] = 0
+            continue
+        raw = pd.read_csv(raw_path)
+        n_observations = 0
+        for conflict in conflicts:
+            for observation in conflict["observations"]:
+                source_row = observation.get("source_row")
+                if not isinstance(source_row, int) or not 2 <= source_row <= len(raw) + 1:
+                    raise ValueError(f"{name}: ligne source de quarantaine invalide")
+                original = raw.iloc[source_row - 2]
+                if str(original["smiles"]).strip() != observation["source_smiles"]:
+                    raise ValueError(f"{name}: SMILES de quarantaine différent du CSV brut")
+                source_id_col = next((col for col in ("Compound ID", "name", "num")
+                                      if col in raw.columns), None)
+                expected_id = (str(original[source_id_col])
+                               if source_id_col and pd.notna(original[source_id_col]) else None)
+                if observation.get("source_id") != expected_id:
+                    raise ValueError(f"{name}: identifiant de quarantaine différent du CSV brut")
+                for column, value in observation["labels"].items():
+                    raw_column = column if name == "tox21" else column.removeprefix(f"{name}_")
+                    original_value = pd.to_numeric(original[raw_column], errors="coerce")
+                    if value is None:
+                        if pd.notna(original_value):
+                            raise ValueError(f"{name}: étiquette de quarantaine différente du CSV brut")
+                    elif not np.isclose(float(original_value), value, rtol=0, atol=1e-8):
+                        raise ValueError(f"{name}: étiquette de quarantaine différente du CSV brut")
+                n_observations += 1
+        checked[name] = n_observations
+    return checked
 
 
 # ══════════════════════════════════════════════════════════════════════

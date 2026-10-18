@@ -7,6 +7,7 @@ import pytest
 from src.preprocessing.multi_property_loader import (
     download_dataset,
     repartition_global_scaffolds,
+    verify_phase3_source_provenance,
     verify_global_split_integrity,
 )
 
@@ -15,7 +16,8 @@ def test_download_retains_exact_smiles_duplicates_for_audit(tmp_path):
     folder = tmp_path / "esol"
     folder.mkdir()
     molecules = ["C1" + "C" * (size - 1) + "1" for size in range(3, 15)]
-    pd.DataFrame({"smiles": molecules + [molecules[0]],
+    pd.DataFrame({"Compound ID": [f"mol_{i}" for i in range(12)] + ["repeat"],
+                  "smiles": molecules + [molecules[0]],
                   "measured log solubility in mols per litre": list(range(12)) + [4]}).to_csv(
         folder / "delaney-processed.csv", index=False)
     paths = download_dataset("esol", str(folder))
@@ -24,6 +26,14 @@ def test_download_retains_exact_smiles_duplicates_for_audit(tmp_path):
     assert (rows.smiles == molecules[0]).sum() == 2
     manifest = repartition_global_scaffolds({"esol": paths}, str(tmp_path))
     assert len(manifest["sha256_raw_datasets"]["esol"]) == 64
+    observations = manifest["duplicate_resolution"]["esol"]["conflicts"][0]["observations"]
+    assert {entry["source_id"] for entry in observations} == {"mol_0", "repeat"}
+    assert {entry["source_row"] for entry in observations} == {2, 14}
+    assert verify_phase3_source_provenance(manifest, str(tmp_path), ("esol",)) == {"esol": 2}
+    manifest["duplicate_resolution"]["esol"]["conflicts"][0]["observations"][0]["labels"][
+        "esol_measured log solubility in mols per litre"] = 99.0
+    with pytest.raises(ValueError, match="étiquette de quarantaine"):
+        verify_phase3_source_provenance(manifest, str(tmp_path), ("esol",))
 
 
 def test_download_rejects_nonnumeric_labels(tmp_path):

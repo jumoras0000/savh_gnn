@@ -442,9 +442,13 @@ def main():
                      for name, paths in data_paths.items() for split, path in paths.items()}
     if actual_hashes != expected_hashes:
         raise RuntimeError("Empreintes des partitions Phase 3 différentes du manifeste ; relancer avec --download")
+    from src.preprocessing.multi_property_loader import verify_phase3_source_provenance
+    source_audit = verify_phase3_source_provenance(split_manifest, data_dir)
+    print(f"✓ Provenance des observations en quarantaine vérifiée : {source_audit}")
     split_provenance = {"manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
                         "split_sha256": actual_hashes,
                         "audit": split_audit,
+                        "quarantine_source_rows_checked": source_audit,
                         "quarantined_compounds_by_dataset": {
                             name: entry["quarantined_compounds"]
                             for name, entry in split_manifest.get("duplicate_resolution", {}).items()
