@@ -221,6 +221,7 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
     """Recrée des partitions cohérentes entre les six jeux, puis les vérifie."""
     datasets = {}
     groups: dict[str, set[str]] = {}
+    duplicate_audit = {}
     for name, paths in data_paths.items():
         frame = pd.concat([pd.read_csv(paths[split]) for split in ("train", "val", "test")],
                           ignore_index=True)
@@ -230,13 +231,46 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
             canonical.append(key)
             groups.setdefault(scaffold, set()).add(key)
         frame["smiles"] = canonical
-        # Des mesures discordantes du même composé doivent être arbitrées,
-        # jamais éliminées silencieusement.
-        for _, records in frame.groupby("smiles", sort=False):
-            if len(records) > 1 and any(records[col].dropna().nunique() > 1
-                                        for col in frame.columns if col != "smiles"):
-                raise ValueError(f"{name}: étiquettes discordantes pour un composé canonique")
-        datasets[name] = frame.drop_duplicates("smiles").reset_index(drop=True)
+        # Les mesures continues répétées peuvent différer. Leur médiane est
+        # déterministe et l'écart est conservé dans le manifeste d'audit.
+        # Une contradiction sur une classe reste bloquante.
+        regression = name in {"esol", "lipo"}
+        resolved = []
+        examples = []
+        repeated = 0
+        differing = 0
+        for key, records in frame.groupby("smiles", sort=False):
+            if len(records) > 1:
+                repeated += 1
+            row = {"smiles": key}
+            for col in frame.columns.drop("smiles"):
+                values = pd.to_numeric(records[col], errors="coerce").dropna()
+                if not np.isfinite(values.to_numpy(dtype=float)).all():
+                    raise ValueError(f"{name}: valeur non finie pour {key}, colonne {col}")
+                unique = values.unique()
+                if len(unique) > 1:
+                    if not regression:
+                        raise ValueError(
+                            f"{name}: étiquettes discordantes pour {key}, colonne {col} "
+                            f"({len(unique)} valeurs)"
+                        )
+                    differing += 1
+                    if len(examples) < 20:
+                        examples.append({"smiles": key, "column": col,
+                                         "count": int(len(values)),
+                                         "min": float(values.min()),
+                                         "max": float(values.max())})
+                row[col] = float(values.median()) if regression and len(values) else (
+                    values.iloc[0] if len(values) else np.nan
+                )
+            resolved.append(row)
+        datasets[name] = pd.DataFrame(resolved, columns=frame.columns)
+        duplicate_audit[name] = {"repeated_compounds": repeated,
+                                 "discordant_regression_labels": differing,
+                                 "resolution": "median" if regression else "identical_only",
+                                 "examples": examples}
+        if differing:
+            print(f"  ⚠ {name}: {differing} mesures répétées discordantes; médiane utilisée (voir split_manifest.json)")
 
     assignment = _assign_global_scaffolds(groups)
     prepared = {}
@@ -255,6 +289,7 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
 
     audit = verify_global_split_integrity(data_paths)
     manifest = {"method": "global_canonical_murcko_v1", "audit": audit,
+                "duplicate_resolution": duplicate_audit,
                 "sha256_generated_splits": hashes,
                 "warning": "Provenance externe et validité biologique non vérifiées"}
     (Path(base_dir) / "split_manifest.json").write_text(

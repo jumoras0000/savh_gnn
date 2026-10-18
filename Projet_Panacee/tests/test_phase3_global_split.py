@@ -42,3 +42,34 @@ def test_integrity_detects_equivalent_smiles_across_splits(tmp_path):
                           list(range(12)))}
     with pytest.raises(ValueError, match="Fuite"):
         verify_global_split_integrity(paths)
+
+
+@pytest.mark.parametrize("name", ["esol", "lipo"])
+def test_regression_duplicates_use_median_and_are_audited(tmp_path, name):
+    molecules = ["C1" + "C" * (size - 1) + "1" for size in range(3, 15)]
+    paths = {name: _paths(tmp_path, name, molecules + [molecules[0]],
+                          list(range(12)) + [4])}
+    # The helper writes only twelve rows; put the equivalent structure in a
+    # separate partition so both observations reach canonical reconciliation.
+    test_path = paths[name]["test"]
+    test_frame = pd.read_csv(test_path)
+    test_frame.loc[len(test_frame)] = [molecules[0], 4]
+    test_frame.to_csv(test_path, index=False)
+    manifest = repartition_global_scaffolds(paths, str(tmp_path))
+    audit = manifest["duplicate_resolution"][name]
+    assert audit["repeated_compounds"] == 1
+    assert audit["discordant_regression_labels"] == 1
+    rows = pd.concat([pd.read_csv(path) for path in paths[name].values()])
+    assert rows.loc[rows.smiles == molecules[0], f"{name}_label"].tolist() == [2.0]
+    assert manifest["audit"]["unique_molecules"] == 12
+
+
+def test_classification_disagreement_still_fails(tmp_path):
+    molecules = ["C1" + "C" * (size - 1) + "1" for size in range(3, 15)]
+    paths = {"hiv": _paths(tmp_path, "hiv", molecules, [0] * 12)}
+    test_path = paths["hiv"]["test"]
+    test_frame = pd.read_csv(test_path)
+    test_frame.loc[len(test_frame)] = [molecules[0], 1]
+    test_frame.to_csv(test_path, index=False)
+    with pytest.raises(ValueError, match="étiquettes discordantes"):
+        repartition_global_scaffolds(paths, str(tmp_path))
