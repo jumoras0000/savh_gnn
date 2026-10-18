@@ -75,12 +75,24 @@ def download_dataset(name: str, save_dir: str) -> dict:
     missing = set(["smiles", *task_columns]) - set(df.columns)
     if missing:
         raise ValueError(f"{name}: colonnes absentes du CSV : {sorted(missing)}")
-    df = df[["smiles", *task_columns]].dropna(subset=["smiles"]).drop_duplicates("smiles")
+    # Conserver aussi les SMILES strictement identiques : leurs labels peuvent
+    # être discordants et doivent passer par l'audit de réconciliation global.
+    missing_smiles = int(df["smiles"].isna().sum())
+    df = df[["smiles", *task_columns]].dropna(subset=["smiles"])
     df = df.copy()
     df["smiles"] = df["smiles"].astype(str).str.strip()
+    blank_smiles = int((df["smiles"] == "").sum())
     df = df[df["smiles"] != ""].reset_index(drop=True)
     for task in task_columns:
-        df[task] = pd.to_numeric(df[task], errors="coerce")
+        numeric = pd.to_numeric(df[task], errors="coerce")
+        invalid = df[task].notna() & numeric.isna()
+        if invalid.any():
+            raise ValueError(f"{name}: {int(invalid.sum())} étiquettes non numériques dans {task}")
+        if not np.isfinite(numeric.dropna().to_numpy(dtype=float)).all():
+            raise ValueError(f"{name}: étiquettes infinies dans {task}")
+        df[task] = numeric
+    if missing_smiles or blank_smiles:
+        print(f"  ⚠ {name}: {missing_smiles} SMILES manquants et {blank_smiles} vides exclus")
 
     # Les molécules qui partagent un scaffold restent dans le même split.
     groups = {}
@@ -92,6 +104,9 @@ def download_dataset(name: str, save_dir: str) -> dict:
         scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False)
         groups.setdefault(scaffold, []).append(idx)
         valid_rows.append(idx)
+    invalid_smiles = len(df) - len(valid_rows)
+    if invalid_smiles:
+        print(f"  ⚠ {name}: {invalid_smiles} SMILES non analysables par RDKit exclus")
     if not valid_rows:
         raise ValueError(f"{name}: aucun SMILES valide")
 

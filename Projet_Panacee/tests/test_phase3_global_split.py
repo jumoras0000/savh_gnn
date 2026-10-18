@@ -5,9 +5,33 @@ import pandas as pd
 import pytest
 
 from src.preprocessing.multi_property_loader import (
+    download_dataset,
     repartition_global_scaffolds,
     verify_global_split_integrity,
 )
+
+
+def test_download_retains_exact_smiles_duplicates_for_audit(tmp_path):
+    folder = tmp_path / "esol"
+    folder.mkdir()
+    molecules = ["C1" + "C" * (size - 1) + "1" for size in range(3, 15)]
+    pd.DataFrame({"smiles": molecules + [molecules[0]],
+                  "measured log solubility in mols per litre": list(range(12)) + [4]}).to_csv(
+        folder / "delaney-processed.csv", index=False)
+    paths = download_dataset("esol", str(folder))
+    rows = pd.concat([pd.read_csv(path) for path in paths.values()])
+    assert len(rows) == 13
+    assert (rows.smiles == molecules[0]).sum() == 2
+
+
+def test_download_rejects_nonnumeric_labels(tmp_path):
+    folder = tmp_path / "esol"
+    folder.mkdir()
+    pd.DataFrame({"smiles": ["CCO"],
+                  "measured log solubility in mols per litre": ["unknown"]}).to_csv(
+        folder / "delaney-processed.csv", index=False)
+    with pytest.raises(ValueError, match="non numériques"):
+        download_dataset("esol", str(folder))
 
 
 def _paths(tmp_path, name, smiles, labels):
