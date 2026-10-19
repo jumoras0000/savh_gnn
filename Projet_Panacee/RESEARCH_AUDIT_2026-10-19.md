@@ -83,7 +83,9 @@ peut coexister avec le choix d'une époque antérieure. Ils ne prouvent pas qu'u
    baseline ESOL au RMSE 2,9482 du run actuel.
 2. Auditer l'exposition Phase 2 aux molécules Phase 3 de validation/test : le
    checkpoint Phase 2 utilisé ne porte pas la provenance suffisante pour le
-   prouver rétroactivement.
+   prouver rétroactivement. Les nouveaux checkpoints enregistrent cette
+   provenance et le chargement Phase 3 la vérifie ; voir
+   [UPSTREAM_AUDIT_2026-10-19.md](UPSTREAM_AUDIT_2026-10-19.md).
 3. Si un nouveau run est souhaité, employer un **nouveau dossier**, une
    politique de sélection annoncée avant lancement, et `--warm_start 0`.
    Comparer les politiques sur validation ; garder un jeu externe neuf pour

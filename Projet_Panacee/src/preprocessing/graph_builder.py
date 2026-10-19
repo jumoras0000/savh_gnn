@@ -125,7 +125,7 @@ def smiles_to_graph(smiles: str):
                 chirality=chirality, smiles=smiles)
 
 
-def mask_atoms(graph: Data, mask_prob: float = 0.15):
+def mask_atoms(graph: Data, mask_prob: float = 0.15, generator=None):
     """
     Masque aléatoirement des atomes (stratégie BERT-like pour graphes).
 
@@ -146,7 +146,7 @@ def mask_atoms(graph: Data, mask_prob: float = 0.15):
         raise ValueError("Graphe non vide et mask_prob dans ]0, 1] requis")
     num_masked = max(1, int(num_atoms * mask_prob))
 
-    perm = torch.randperm(num_atoms)[:num_masked]
+    perm = torch.randperm(num_atoms, generator=generator)[:num_masked]
     masked_features = graph.x[perm].clone()
 
     # Cible principale : type d'atome. feature[0] = numéro_atomique / 118.
@@ -159,11 +159,11 @@ def mask_atoms(graph: Data, mask_prob: float = 0.15):
     graph_masked = graph.clone()
 
     for idx in perm:
-        r = torch.rand(1).item()
+        r = torch.rand(1, generator=generator).item()
         if r < 0.8:
             graph_masked.x[idx] = 0.0                        # 80 % zéros
         elif r < 0.9:
-            graph_masked.x[idx] = torch.rand(ATOM_DIM)       # 10 % bruit
+            graph_masked.x[idx] = torch.rand(ATOM_DIM, generator=generator)
         # 10 % restants : inchangé
 
     return graph_masked, perm.tolist(), masked_features, masked_types

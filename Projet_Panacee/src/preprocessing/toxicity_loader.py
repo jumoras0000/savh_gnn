@@ -62,8 +62,10 @@ class ToxicityDataset(Dataset):
         # ── Trouver la colonne SMILES ─────────────────────────────────
         self.smiles_column = self._find_smiles_column(df, smiles_column)
 
-        if max_molecules:
-            df = df.head(max_molecules)
+        if max_molecules is not None:
+            if max_molecules < 1:
+                raise ValueError("max_molecules doit être positif")
+            df = df.sample(n=min(max_molecules, len(df)), random_state=42)
 
         # ── Trouver les colonnes de tâches ────────────────────────────
         self.task_columns = task_columns or self._detect_task_columns(df)
@@ -104,9 +106,13 @@ class ToxicityDataset(Dataset):
                 float("nan") if pd.isna(row[c]) else float(row[c])
                 for c in self.task_columns
             ]
+            if any(not np.isnan(value) and value not in (0.0, 1.0) for value in labels):
+                raise ValueError("Phase 2 : étiquette non binaire ou non finie")
             self.graphs.append(g)
             self.labels.append(labels)
 
+        if not self.graphs or not self.task_columns:
+            raise ValueError("Phase 2 : aucun graphe valide ou aucune tâche")
         self.labels = torch.tensor(self.labels, dtype=torch.float32)
         if invalid:
             print(f"  {invalid} SMILES invalides ignores")

@@ -70,8 +70,9 @@ class PretrainDataset(Dataset):
     """
 
     def __init__(self, smiles_list, mask_prob=0.15, cache_graphs=True, desc="graphes",
-                 for_parallel=False):
+                 for_parallel=False, fixed_mask_seed=None):
         self.mask_prob = mask_prob
+        self.fixed_mask_seed = fixed_mask_seed
         # for_parallel : mode multi-GPU (torch_geometric DataParallel) → __getitem__
         # renvoie un seul Data portant ses cibles, au lieu du tuple (graph, idx, types).
         self.for_parallel = for_parallel
@@ -106,8 +107,11 @@ class PretrainDataset(Dataset):
 
     def __getitem__(self, idx):
         # mask_atoms clone le graphe en interne → le cache n'est jamais muté.
+        generator = None
+        if self.fixed_mask_seed is not None:
+            generator = torch.Generator().manual_seed(self.fixed_mask_seed + idx)
         graph_masked, masked_idx, _masked_feat, masked_types = mask_atoms(
-            self._graph_at(idx), self.mask_prob)
+            self._graph_at(idx), self.mask_prob, generator=generator)
         if self.for_parallel:
             # Multi-GPU : tout porter DANS le Data pour qu'il soit dispatché avec
             # le graphe. La clé 'masked_node_index' contient « index » → PyG la
@@ -343,6 +347,10 @@ def main():
                    help="mgm = masked graph modeling | graphcl = contrastif")
     p.add_argument("--device", type=str, default=str(DEVICE))
     args = p.parse_args()
+    if args.epochs < 1 or args.batch_size < 1 or args.patience < 1:
+        p.error("epochs, batch_size et patience doivent être positifs")
+    if not 0 < args.mask_prob <= 1:
+        p.error("mask_prob doit être dans ]0, 1]")
 
     set_seed(42)
     device = torch.device(args.device)
@@ -352,9 +360,16 @@ def main():
 
     # -- Donnees --
     print("Chargement du dataset ...")
-    data = torch.load(args.data_path, weights_only=False)
+    data = torch.load(args.data_path, weights_only=True)
+    if not isinstance(data, dict) or not isinstance(data.get("smiles"), (list, tuple)):
+        raise ValueError("Dataset Phase 1 invalide : liste SMILES absente")
     smiles_list = data["smiles"]
-    if args.max_molecules:
+    rng = np.random.RandomState(42)
+    indices = rng.permutation(len(smiles_list))
+    smiles_list = [smiles_list[i] for i in indices]
+    if args.max_molecules is not None:
+        if args.max_molecules < 2:
+            raise ValueError("Phase 1 exige max_molecules >= 2")
         smiles_list = smiles_list[: args.max_molecules]
     print(f"  {len(smiles_list)} molecules | objectif = {args.objective}")
 
@@ -366,15 +381,16 @@ def main():
 
     multi_gpu = _multi_gpu_active(device)
 
-    # Shuffle avant split pour eviter biais si donnees ordonnees
-    rng = np.random.RandomState(42)
-    indices = rng.permutation(len(smiles_list))
-    smiles_shuffled = [smiles_list[i] for i in indices]
+    # Déjà mélangé AVANT le sous-échantillonnage optionnel : pas de biais de tête.
+    smiles_shuffled = smiles_list
     split = int(len(smiles_shuffled) * (1 - PHASE1["val_split"]))
+    if split < 1 or split >= len(smiles_shuffled):
+        raise ValueError("Phase 1 exige au moins une molécule train et val")
     train_ds = PretrainDataset(smiles_shuffled[:split], args.mask_prob,
                                desc="graphes (train)", for_parallel=multi_gpu)
     val_ds = PretrainDataset(smiles_shuffled[split:], args.mask_prob,
-                             desc="graphes (val)", for_parallel=multi_gpu)
+                             desc="graphes (val)", for_parallel=multi_gpu,
+                             fixed_mask_seed=42)
 
     # cuDNN benchmark : laisse cuDNN choisir les kernels les plus rapides.
     torch.backends.cudnn.benchmark = True

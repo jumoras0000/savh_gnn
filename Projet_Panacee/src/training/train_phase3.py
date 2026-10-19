@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.metrics import average_precision_score, f1_score, precision_recall_curve, precision_score, recall_score, roc_auc_score
 from torch.optim import AdamW
@@ -114,6 +115,38 @@ def validate_warm_start(checkpoint, split_provenance, regression_stats,
     if not all(torch.isfinite(v).all() for v in checkpoint["model_state_dict"].values()
                if torch.is_tensor(v)):
         raise ValueError("Warm-start contenant des poids non finis")
+
+
+def audit_phase2_exposure(checkpoint, data_paths):
+    """Reject known supervised upstream overlap with Phase 3 validation/test."""
+    exposure = checkpoint.get("phase2_exposure")
+    if exposure is None:
+        return {"status": "unverified", "reason": "legacy_checkpoint_without_exposure"}
+    if (not isinstance(exposure, dict) or
+            not isinstance(exposure.get("canonical_smiles"), list) or
+            not isinstance(exposure.get("scaffolds"), list) or
+            exposure.get("includes_validation_selection") is not True):
+        raise ValueError("Provenance Phase 2 incomplète ou invalide")
+    from src.preprocessing.multi_property_loader import _chemical_key
+
+    phase2_molecules = set(exposure["canonical_smiles"])
+    phase2_scaffolds = set(exposure["scaffolds"])
+    overlaps = {}
+    for split in ("val", "test"):
+        molecules, scaffolds = set(), set()
+        for paths in data_paths.values():
+            frame = pd.read_csv(paths[split], usecols=["smiles"])
+            for smiles in frame["smiles"]:
+                canonical, scaffold = _chemical_key(smiles)
+                molecules.add(canonical)
+                scaffolds.add(scaffold)
+        overlaps[split] = {"molecules": len(phase2_molecules & molecules),
+                           "scaffolds": len(phase2_scaffolds & scaffolds)}
+    if any(count for split in overlaps.values() for count in split.values()):
+        raise ValueError(f"Fuite supervisée Phase 2 vers Phase 3 : {overlaps}. "
+                         "Réentraîner la Phase 2 sur le train Phase 3 uniquement")
+    return {"status": "verified_no_supervised_overlap", "overlaps": overlaps,
+            "phase2_molecules": len(phase2_molecules)}
 
 
 class WarmupCosineScheduler:
@@ -691,9 +724,12 @@ def main():
     ckpt = torch.load(pretrained, map_location="cpu", weights_only=False)
     pretrained_provenance = {
         "checkpoint_sha256": hashlib.sha256(Path(pretrained).read_bytes()).hexdigest(),
-        "upstream_split_audit": "not_verified",
+        "upstream_split_audit": audit_phase2_exposure(ckpt, data_paths),
     }
-    logger.warning("Partitions Phase 3 vérifiées, mais exposition antérieure de l'encodeur Phase 2 aux données de validation/test non vérifiée")
+    if pretrained_provenance["upstream_split_audit"]["status"] == "unverified":
+        logger.warning("Partitions Phase 3 vérifiées, mais exposition antérieure de l'encodeur Phase 2 aux données de validation/test non vérifiée")
+    else:
+        print("  ✓ Aucune fuite supervisée Phase 2 détectée vers val/test Phase 3")
     if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
         sd = ckpt["model_state_dict"]
         encoder_sd = {k.replace("encoder.", ""): v for k, v in sd.items() if k.startswith("encoder.")}

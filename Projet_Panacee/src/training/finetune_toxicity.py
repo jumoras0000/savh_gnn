@@ -17,7 +17,6 @@ Conserve v2 :
 """
 import json
 import os
-import shutil
 import sys
 import time
 from datetime import datetime, timedelta
@@ -133,6 +132,7 @@ def compute_metrics(logits, targets):
             recs.append(recall_score(y, pred, zero_division=0))
 
     return {
+        "n_tasks_scored": len(aucs),
         "roc_auc": float(np.mean(aucs)) if aucs else 0.0,
         "f1": float(np.mean(f1s)) if f1s else 0.0,
         "precision": float(np.mean(precs)) if precs else 0.0,
@@ -149,7 +149,7 @@ def find_optimal_thresholds(logits, targets, num_tasks):
 
     for t in range(num_tasks):
         mask = valid[:, t]
-        if mask.sum() == 0:
+        if mask.sum() == 0 or len(np.unique(targets_np[mask, t])) < 2:
             thresholds.append(0.5)
             continue
         y = targets_np[mask, t]
@@ -280,8 +280,36 @@ def _pos_weight_from_labels(labels: torch.Tensor) -> torch.Tensor:
     return torch.tensor(pw, dtype=torch.float32)
 
 
+def phase2_exposure(train_ds, val_ds):
+    """Record every labelled compound/scaffold used for training or selection."""
+    from src.preprocessing.multi_property_loader import _chemical_key
+
+    compounds, scaffolds = set(), set()
+    for dataset in (train_ds, val_ds):
+        for index in range(len(dataset)):
+            graph, _ = dataset[index]
+            canonical, scaffold = _chemical_key(graph.smiles)
+            compounds.add(canonical)
+            scaffolds.add(scaffold)
+    return {"canonical_smiles": sorted(compounds), "scaffolds": sorted(scaffolds),
+            "includes_validation_selection": True}
+
+
+def validate_phase2_warm_start(checkpoint, exposure, task_names):
+    if checkpoint.get("phase2_exposure") != exposure or checkpoint.get("task_names") != task_names:
+        raise ValueError("Warm-start Phase 2 sur des données/tâches différentes ou non vérifiées ; "
+                         "utiliser --warm_start 0 et un nouveau save_dir")
+    return checkpoint["model_state_dict"]
+
+
+def phase2_epoch_eligible(epoch, freeze_epochs):
+    return epoch > freeze_epochs
+
+
 def _load_pretrained_encoder(encoder, path):
     """Charge les poids d'encodeur Phase 1 si dispo (sinon aleatoire)."""
+    if path and not os.path.exists(path):
+        raise FileNotFoundError(f"Checkpoint Phase 1 introuvable : {path}")
     if path and os.path.exists(path):
         ckpt = torch.load(path, map_location="cpu", weights_only=False)
         if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
@@ -289,12 +317,15 @@ def _load_pretrained_encoder(encoder, path):
             encoder_sd = {k.replace("encoder.", ""): v
                           for k, v in sd.items() if k.startswith("encoder.")}
             if encoder_sd:
-                encoder.load_state_dict(encoder_sd, strict=False)
+                if not all(torch.isfinite(v).all() for v in encoder_sd.values()
+                           if torch.is_tensor(v)):
+                    raise ValueError("Encodeur Phase 1 contenant des poids non finis")
+                encoder.load_state_dict(encoder_sd, strict=True)
                 print("  Encodeur pre-entraine charge (Phase 1)")
                 return
-            print("  WARN: pas de poids encoder dans le checkpoint, poids aleatoires")
+            raise ValueError("Checkpoint Phase 1 sans poids d'encodeur")
         else:
-            print("  WARN: format checkpoint non reconnu, poids aleatoires")
+            raise ValueError("Format checkpoint Phase 1 non reconnu")
     else:
         print("  Pas de checkpoint Phase 1 -> encodeur aleatoire (Phase 2 autonome)")
 
@@ -308,6 +339,7 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
     os.makedirs(save_dir, exist_ok=True)
     best_path = Path(save_dir) / "best_toxicity_model.pth"
     latest_path = Path(save_dir) / "checkpoint_latest.pth"
+    exposure = phase2_exposure(train_ds, val_ds)
     # Dossier des checkpoints par-epoch (gérables/supprimables depuis le dashboard).
     epochs_dir = Path(save_dir) / "epochs"
     save_epochs = bool(getattr(args, "save_epochs", 1))
@@ -315,14 +347,19 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
     # live_metrics.jsonl qui est lui aussi réinitialisé en tête de run).
     prev_best_state = None
     if getattr(args, "warm_start", 1) and best_path.exists():
-        # Warm-start : reprend le MEILLEUR modèle de l'entraînement précédent.
-        try:
-            prev_best_state = torch.load(best_path, map_location="cpu",
-                                         weights_only=False).get("model_state_dict")
-        except Exception:
-            prev_best_state = None
+        previous = torch.load(best_path, map_location="cpu", weights_only=False)
+        prev_best_state = validate_phase2_warm_start(previous, exposure, task_names)
+    archive_suffix = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    if best_path.exists():
+        archived_best = best_path.with_name(f"best_toxicity_previous_{archive_suffix}.pth")
+        best_path.rename(archived_best)
+        print(f"Ancien checkpoint Phase 2 préservé : {archived_best}")
     if epochs_dir.exists():
-        shutil.rmtree(epochs_dir, ignore_errors=True)
+        if epochs_dir.resolve().parent != Path(save_dir).resolve():
+            raise ValueError("Dossier des epochs Phase 2 hors du save_dir")
+        archived_epochs = epochs_dir.with_name(f"epochs_previous_{archive_suffix}")
+        epochs_dir.rename(archived_epochs)
+        print(f"Anciens checkpoints par époque préservés : {archived_epochs}")
     if save_epochs:
         epochs_dir.mkdir(parents=True, exist_ok=True)
     label = f"[{tag}] " if tag else ""
@@ -356,12 +393,9 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
 
     # Warm-start complet (encodeur + tête) depuis le meilleur modèle précédent.
     if prev_best_state is not None:
-        try:
-            model.load_state_dict(prev_best_state, strict=False)
-            print(f"{label}Warm-start : meilleur modèle précédent rechargé "
-                  f"(poursuite de l'entraînement).")
-        except Exception as e:
-            print(f"{label}WARN warm-start ignoré ({e})")
+        model.load_state_dict(prev_best_state, strict=True)
+        print(f"{label}Warm-start : meilleur modèle précédent rechargé "
+              f"(poursuite de l'entraînement).")
 
     criterion = MultiTaskBCELoss(pos_weight=pos_weight.to(device))
     # LR mis à l'échelle pour le batch effectif (règle racine carrée) : compense
@@ -418,6 +452,8 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
             ema.store(model)
             ema.copy_to(model)
         val_m, val_logits, val_targets = evaluate(model, val_loader, criterion, device)
+        if val_m["n_tasks_scored"] == 0:
+            raise RuntimeError("Phase 2 : aucune tâche binaire évaluable sur la validation")
         if ema is not None:
             ema.restore(model)
 
@@ -432,19 +468,14 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
         history.append({"epoch": epoch, "train": train_m, "val": val_m,
                         "lr_encoder": lr_enc, "lr_head": lr_head})
 
-        # Métriques cliniques (sécurité : FNR / sensibilité / dangers) + score de
-        # supervision. Ne doit jamais casser l'entraînement.
-        agg, per_task = {}, {}
-        try:
-            import torch as _torch
-            clin = clinical_summarize(
-                _torch.sigmoid(val_logits).cpu().numpy(),
-                val_targets.cpu().numpy(), task_names=task_names,
-            )
-            agg = clin["aggregate"]
-            per_task = {t["task"]: t["roc_auc"] for t in clin["tasks"]}
-        except Exception:
-            agg = {}
+        # Métriques descriptives Tox21 et proxy de sélection. Elles ne sont
+        # ni des observations cliniques ni une preuve de sécurité humaine.
+        clin = clinical_summarize(
+            torch.sigmoid(val_logits).cpu().numpy(),
+            val_targets.cpu().numpy(), task_names=task_names,
+        )
+        agg = clin["aggregate"]
+        per_task = {t["task"]: t["roc_auc"] for t in clin["tasks"]}
 
         clin_score = clinical_score_fn(
             val_m["roc_auc"], agg.get("macro_sensitivity"),
@@ -460,6 +491,15 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
         else:
             state_to_save = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
+        eligible = phase2_epoch_eligible(epoch, freeze_epochs)
+        is_best = eligible and np.isfinite(clin_score) and clin_score > best_score
+        if is_best:
+            best_score = clin_score
+            best_auc = val_m["roc_auc"]
+            no_improve = 0
+        elif eligible:
+            no_improve += 1
+
         ckpt_data = {
             "epoch": epoch,
             "model_state_dict": state_to_save,
@@ -469,6 +509,10 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
             "history": history,
             "num_tasks": num_tasks,
             "task_names": task_names,
+            "phase2_exposure": exposure,
+            "selection_eligible": phase2_epoch_eligible(epoch, freeze_epochs),
+            "is_best": is_best,
+            "selection_score": clin_score,
             "config": {
                 "hidden_dim": HIDDEN_DIM, "num_layers": NUM_GNN_LAYERS,
                 "output_dim": OUTPUT_DIM, "conv_type": CONV_TYPE,
@@ -486,18 +530,11 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
             torch.save(slim, ep_path)
             ckpt_rel = f"epochs/epoch_{epoch:03d}.pth"
 
-        # Supervision : la MEILLEURE epoch est celle au meilleur score clinique
-        # (AUC + sensibilité + faible FNR − dangers), pas le seul AUC.
-        is_best = clin_score > best_score
+        # Score heuristique Tox21, sans validité clinique démontrée.
         if is_best:
-            best_score = clin_score
-            best_auc = max(best_auc, val_m["roc_auc"])
-            no_improve = 0
             torch.save(ckpt_data, best_path)
-            print(f"{label}  -> Nouvelle meilleure epoch (score clinique="
+            print(f"{label}  -> Nouvelle meilleure epoch (proxy Tox21="
                   f"{clin_score:.4f}, AUC={val_m['roc_auc']:.4f}) sauvegardee")
-        else:
-            no_improve += 1
 
         # Point temps réel pour le dashboard (après calcul is_best / ckpt_rel)
         try:
@@ -506,6 +543,7 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
                 "train_auc": train_m["roc_auc"], "val_auc": val_m["roc_auc"],
                 "val_f1": val_m["f1"], "lr_enc": lr_enc, "lr_head": lr_head,
                 "best_auc": best_auc, "clinical_score": clin_score, "is_best": is_best,
+                "selection_eligible": eligible,
                 "ckpt": ckpt_rel,
                 "macro_sensitivity": agg.get("macro_sensitivity"),
                 "macro_specificity": agg.get("macro_specificity"),
@@ -561,6 +599,11 @@ def main():
                    help="1=sauvegarde un checkpoint par epoch (gerable depuis le dashboard)")
     p.add_argument("--device", type=str, default=str(DEVICE))
     args = p.parse_args()
+
+    if args.epochs <= PHASE2["freeze_encoder_epochs"]:
+        p.error("epochs doit dépasser freeze_encoder_epochs pour entraîner l'encodeur")
+    if args.batch_size < 2 or args.patience < 1:
+        p.error("batch_size doit être >=2 et patience >=1")
 
     set_seed(42)
     device = torch.device(args.device)
