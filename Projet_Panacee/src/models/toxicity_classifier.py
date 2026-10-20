@@ -78,33 +78,38 @@ class ToxicityClassifier(nn.Module):
         Dégèle progressivement l'encodeur couche par couche.
         Epoch 0→freeze_epochs : tête seule.
         Epoch freeze_epochs+i : dégèle couche -(i+1).
+
+        Fix B3 (audit 2026-10-20) : atom_embedding, pool_gate, virtual_node,
+        chirality_embedding dégelés DÈS le premier dégel partiel — sinon ces
+        sous-modules d'entrée/sortie restent figés à vie et dégradent le
+        transfer learning. Même correctif que MultiPropertyPredictor.
         """
         n_layers = self.encoder.num_layers
         if epoch <= total_freeze_epochs:
             self._freeze_encoder()
-        else:
-            layers_to_unfreeze = min(epoch - total_freeze_epochs, n_layers)
-            # D'abord tout geler
-            self._freeze_encoder()
-            # Puis dégeler les N dernières couches (les plus proches de la sortie)
-            for i in range(n_layers - layers_to_unfreeze, n_layers):
-                for p in self.encoder.convs[i].parameters():
-                    p.requires_grad = True
-                for p in self.encoder.norms[i].parameters():
-                    p.requires_grad = True
-            # Toujours dégeler la projection finale
-            for p in self.encoder.projection.parameters():
+            return
+
+        layers_to_unfreeze = min(epoch - total_freeze_epochs, n_layers)
+        self._freeze_encoder()
+        for i in range(n_layers - layers_to_unfreeze, n_layers):
+            for p in self.encoder.convs[i].parameters():
                 p.requires_grad = True
-            # Au dégel complet, dégeler aussi l'embedding d'entrée et le gating
-            # du pooling (sinon ces sous-modules ne s'entraînent JAMAIS).
-            if layers_to_unfreeze >= n_layers:
-                for p in self.encoder.atom_embedding.parameters():
-                    p.requires_grad = True
-                for p in self.encoder.pool_gate.parameters():
-                    p.requires_grad = True
-                if hasattr(self.encoder, "virtual_node"):
-                    for p in self.encoder.virtual_node.parameters():
-                        p.requires_grad = True
+            for p in self.encoder.norms[i].parameters():
+                p.requires_grad = True
+
+        # Projection + modules d'E/S : TOUJOURS dégelés dès 1er dégel partiel.
+        for p in self.encoder.projection.parameters():
+            p.requires_grad = True
+        for p in self.encoder.atom_embedding.parameters():
+            p.requires_grad = True
+        for p in self.encoder.pool_gate.parameters():
+            p.requires_grad = True
+        if hasattr(self.encoder, "virtual_node") and self.encoder.virtual_node is not None:
+            for p in self.encoder.virtual_node.parameters():
+                p.requires_grad = True
+        if getattr(self.encoder, "use_chirality", False) and hasattr(self.encoder, "chirality_embedding"):
+            for p in self.encoder.chirality_embedding.parameters():
+                p.requires_grad = True
 
     # ──────────────────────────────────────────────────────────────────
     def forward(self, batch):

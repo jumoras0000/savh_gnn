@@ -393,7 +393,12 @@ def main():
                              fixed_mask_seed=42)
 
     # cuDNN benchmark : laisse cuDNN choisir les kernels les plus rapides.
-    torch.backends.cudnn.benchmark = True
+    # Fix B1 (audit 2026-10-20) : cudnn.benchmark=True annule le déterminisme
+    # posé par set_seed/H10. Pour préserver la reproductibilité, on garde la
+    # politique déterministe. Activer via env PANACEE_CUDNN_BENCHMARK=1 si perf prime.
+    if os.environ.get("PANACEE_CUDNN_BENCHMARK") == "1":
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
 
     if multi_gpu:
         # DataListLoader : renvoie une LISTE de Data (DataParallel la dispatche).

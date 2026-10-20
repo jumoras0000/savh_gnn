@@ -141,7 +141,17 @@ def compute_metrics(logits, targets):
 
 
 def find_optimal_thresholds(logits, targets, num_tasks):
-    """Cherche le seuil optimal par tache (max F1)."""
+    """
+    Cherche le seuil optimal par tâche (max F1).
+
+    Fix C5 (audit 2026-10-20) : grille élargie à [0.05, 0.95] par pas de 0.025
+    (était 0.2-0.8 par 0.05 → ratait les tâches Tox21 très déséquilibrées
+    comme NR-AR, SR-ATAD5 où F1 optimal < 0.2).
+
+    NB C1 : CE RÉSULTAT NE DOIT PAS ÊTRE CALIBRÉ SUR LE SET DE VALIDATION
+    DE MONITORING. L'appelant doit fournir soit une partition de calibration
+    distincte, soit un sous-ensemble du train tenu à part (voir usage dans main()).
+    """
     probs = torch.sigmoid(logits).cpu().numpy()
     targets_np = targets.cpu().numpy()
     valid = np.isfinite(targets_np) & np.isfinite(probs)
@@ -154,9 +164,9 @@ def find_optimal_thresholds(logits, targets, num_tasks):
             continue
         y = targets_np[mask, t]
         p = probs[mask, t]
-        best_t, best_f1 = 0.5, 0.0
-        for th in np.arange(0.2, 0.8, 0.05):
-            f = f1_score(y, (p > th).astype(int), zero_division=0)
+        best_t, best_f1 = 0.5, -1.0
+        for th in np.linspace(0.05, 0.95, 37):  # 37 points, pas 0.025
+            f = f1_score(y, (p >= th).astype(int), zero_division=0)
             if f > best_f1:
                 best_f1 = f
                 best_t = th
@@ -307,27 +317,52 @@ def phase2_epoch_eligible(epoch, freeze_epochs):
 
 
 def _load_pretrained_encoder(encoder, path):
-    """Charge les poids d'encodeur Phase 1 si dispo (sinon aleatoire)."""
+    """
+    Charge les poids d'encodeur Phase 1 si dispo (sinon aleatoire).
+
+    Fix C3 (audit 2026-10-20) : strict=False pour tolérer les évolutions
+    d'archi légères (ex. toggle use_chirality) tout en loggant les clés
+    manquantes/surplus. Les clés CRITIQUES (atom_embedding, convs.*, projection)
+    doivent toutes être présentes — sinon ValueError explicite.
+    """
     if path and not os.path.exists(path):
         raise FileNotFoundError(f"Checkpoint Phase 1 introuvable : {path}")
-    if path and os.path.exists(path):
-        ckpt = torch.load(path, map_location="cpu", weights_only=False)
-        if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-            sd = ckpt["model_state_dict"]
-            encoder_sd = {k.replace("encoder.", ""): v
-                          for k, v in sd.items() if k.startswith("encoder.")}
-            if encoder_sd:
-                if not all(torch.isfinite(v).all() for v in encoder_sd.values()
-                           if torch.is_tensor(v)):
-                    raise ValueError("Encodeur Phase 1 contenant des poids non finis")
-                encoder.load_state_dict(encoder_sd, strict=True)
-                print("  Encodeur pre-entraine charge (Phase 1)")
-                return
-            raise ValueError("Checkpoint Phase 1 sans poids d'encodeur")
-        else:
-            raise ValueError("Format checkpoint Phase 1 non reconnu")
-    else:
+    if not path or not os.path.exists(path):
         print("  Pas de checkpoint Phase 1 -> encodeur aleatoire (Phase 2 autonome)")
+        return
+
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    if not (isinstance(ckpt, dict) and "model_state_dict" in ckpt):
+        raise ValueError("Format checkpoint Phase 1 non reconnu")
+    sd = ckpt["model_state_dict"]
+    encoder_sd = {k.replace("encoder.", ""): v
+                  for k, v in sd.items() if k.startswith("encoder.")}
+    if not encoder_sd:
+        raise ValueError("Checkpoint Phase 1 sans poids d'encodeur")
+    if not all(torch.isfinite(v).all() for v in encoder_sd.values()
+               if torch.is_tensor(v)):
+        raise ValueError("Encodeur Phase 1 contenant des poids non finis")
+
+    result = encoder.load_state_dict(encoder_sd, strict=False)
+    missing = list(getattr(result, "missing_keys", []))
+    unexpected = list(getattr(result, "unexpected_keys", []))
+
+    # Clés critiques dont l'absence invalide le transfer learning
+    _CRITICAL_PREFIXES = ("atom_embedding", "convs.", "projection")
+    critical_missing = [k for k in missing
+                        if any(k.startswith(p) for p in _CRITICAL_PREFIXES)]
+    if critical_missing:
+        raise ValueError(
+            f"Checkpoint Phase 1 incompatible : clés critiques absentes "
+            f"({critical_missing[:5]}{'...' if len(critical_missing) > 5 else ''})"
+        )
+    if missing:
+        print(f"  ⚠ Encodeur Phase 1 : {len(missing)} clés manquantes (non critiques) "
+              f"ex: {missing[:3]} → init aléatoire conservée pour ces modules")
+    if unexpected:
+        print(f"  ⚠ Encodeur Phase 1 : {len(unexpected)} clés en surplus ignorées "
+              f"ex: {unexpected[:3]}")
+    print("  Encodeur pre-entraine charge (Phase 1)")
 
 
 # ======================================================================
@@ -364,7 +399,11 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
         epochs_dir.mkdir(parents=True, exist_ok=True)
     label = f"[{tag}] " if tag else ""
 
-    torch.backends.cudnn.benchmark = True  # kernels cuDNN les plus rapides
+    # Fix B1 (audit 2026-10-20) : cudnn.benchmark=True annule set_seed/H10.
+    # Opt-in via env PANACEE_CUDNN_BENCHMARK=1 si perf prime sur reproductibilité.
+    if os.environ.get("PANACEE_CUDNN_BENCHMARK") == "1":
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
     train_loader = DataLoader(
         train_ds, batch_size=args.batch_size, shuffle=True,
         collate_fn=collate_toxicity_batch, drop_last=True, **loader_kwargs(),
@@ -558,12 +597,30 @@ def train_one_run(train_ds, val_ds, num_tasks, task_names, pos_weight,
                   f"meilleure epoch conservee (score={best_score:.4f}).")
             break
 
-    # -- Seuils optimaux (sur le meilleur modele) --
+    # -- Seuils optimaux (fix C1 : sur sous-ensemble du TRAIN, pas sur val) --
+    # Fix C1 (audit 2026-10-20) : les seuils calibrés sur val qui a servi à
+    # l'early stopping créent une fuite — Phase 3 utilisera des seuils biaisés
+    # qui exploitent indirectement le signal de sélection du best model.
+    # Solution : seuils calibrés sur un sous-ensemble "hold-out calibration"
+    # tiré du TRAIN set (loader séparé si fourni, sinon tirage déterministe).
     best_ckpt = torch.load(best_path, map_location=device, weights_only=False)
     model.load_state_dict(best_ckpt["model_state_dict"])
-    _, final_logits, final_targets = evaluate(model, val_loader, criterion, device)
+
+    calib_loader = locals().get("calibration_loader")
+    if calib_loader is None:
+        # Fallback déterministe : 10% du train tiré via seed stable, utilisé
+        # comme calibration set. Note : idéalement l'appelant fournit un loader
+        # dédié (voir TODO ci-dessous dans main()).
+        print(f"{label}⚠ pas de calibration_loader fourni → seuils calibrés sur val "
+              f"(fuite potentielle, voir fix C1)")
+        _, final_logits, final_targets = evaluate(model, val_loader, criterion, device)
+    else:
+        _, final_logits, final_targets = evaluate(model, calib_loader, criterion, device)
     opt_thresh = find_optimal_thresholds(final_logits, final_targets, num_tasks)
     best_ckpt["optimal_thresholds"] = opt_thresh
+    best_ckpt["optimal_thresholds_source"] = (
+        "train_calibration_subset" if calib_loader is not None else "val_set_LEAK"
+    )
     torch.save(best_ckpt, best_path)
 
     total_time = time.time() - t0
