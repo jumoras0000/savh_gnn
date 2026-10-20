@@ -122,6 +122,15 @@ def per_task_metrics(probs, targets, task_names=None, thresholds=None):
     """
     probs = np.asarray(probs, dtype=float)
     targets = np.asarray(targets, dtype=float)
+    if probs.ndim != 2 or targets.shape != probs.shape:
+        raise ValueError("Prédictions et cibles doivent avoir la même forme [N, T]")
+    observed = np.isfinite(targets)
+    if not np.isfinite(probs[observed]).all():
+        raise ValueError("Prédiction non finie pour une cible observée")
+    if not np.isin(targets[observed], (0.0, 1.0)).all():
+        raise ValueError("Cible de classification non binaire")
+    if ((probs[observed] < 0) | (probs[observed] > 1)).any():
+        raise ValueError("Prédiction hors intervalle [0, 1]")
     n_tasks = probs.shape[1]
     if task_names is None:
         task_names = (TOX21_TASKS[:n_tasks] if n_tasks <= len(TOX21_TASKS)
@@ -132,7 +141,7 @@ def per_task_metrics(probs, targets, task_names=None, thresholds=None):
     out = []
     for t in range(n_tasks):
         col_t = targets[:, t]
-        valid = np.isfinite(col_t) & np.isfinite(probs[:, t])
+        valid = np.isfinite(col_t)
         y = col_t[valid].astype(int)
         p = probs[valid, t]
         thr = thresholds[t] if t < len(thresholds) else 0.5
@@ -269,7 +278,11 @@ def evaluate_checkpoint(checkpoint_path, val_csv, smiles_column="smiles",
     )
     model = ToxicityClassifier(encoder=encoder, num_tasks=num_tasks,
                                hidden_dim=cfg.get("hidden_dim", HIDDEN_DIM))
-    model.load_state_dict(ckpt["model_state_dict"], strict=False)
+    if task_names is not None and len(task_names) != num_tasks:
+        raise ValueError("Checkpoint Phase 2 : nombre de tâches incohérent")
+    if thresholds is not None and len(thresholds) != num_tasks:
+        raise ValueError("Checkpoint Phase 2 : nombre de seuils incohérent")
+    model.load_state_dict(ckpt["model_state_dict"], strict=True)
     model.to(dev).eval()
 
     ds = ToxicityDataset(val_csv, smiles_column=smiles_column,

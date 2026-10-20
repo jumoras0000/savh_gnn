@@ -112,32 +112,45 @@ class MultiPropertyPredictor(nn.Module):
             p.requires_grad = True
 
     def gradual_unfreeze(self, epoch: int, total_freeze_epochs: int = 5):
+        """
+        Dégel progressif de l'encodeur depuis les couches les plus hautes.
+
+        Fix B3 (audit 2026-10-20) : atom_embedding, pool_gate, virtual_node ET
+        chirality_embedding sont des sous-modules "d'entrée/sortie du graphe"
+        indispensables à toute propagation signée — ils doivent être dégelés
+        DÈS LE PREMIER dégel partiel. Les laisser figés sur leur init Phase 2
+        (ou aléatoire si Phase 1 absente) crée un goulot d'étranglement constant
+        et rend inutile l'entraînement des couches intermédiaires.
+        """
         n_layers = self.encoder.num_layers
         if epoch <= total_freeze_epochs:
             self._freeze_encoder()
-        else:
-            layers_to_unfreeze = min(epoch - total_freeze_epochs, n_layers)
-            self._freeze_encoder()
-            for i in range(n_layers - layers_to_unfreeze, n_layers):
-                for p in self.encoder.convs[i].parameters():
-                    p.requires_grad = True
-                for p in self.encoder.norms[i].parameters():
-                    p.requires_grad = True
-            for p in self.encoder.projection.parameters():
+            return
+
+        layers_to_unfreeze = min(epoch - total_freeze_epochs, n_layers)
+        self._freeze_encoder()
+
+        # Dégeler les N dernières couches de conv + leurs normes
+        for i in range(n_layers - layers_to_unfreeze, n_layers):
+            for p in self.encoder.convs[i].parameters():
                 p.requires_grad = True
-            if getattr(self.encoder, "use_chirality", False):
-                for p in self.encoder.chirality_embedding.parameters():
-                    p.requires_grad = True
-            # Au dégel complet, dégeler aussi l'embedding d'entrée et le gating
-            # du pooling (sinon ces sous-modules ne s'entraînent JAMAIS).
-            if layers_to_unfreeze >= n_layers:
-                for p in self.encoder.atom_embedding.parameters():
-                    p.requires_grad = True
-                for p in self.encoder.pool_gate.parameters():
-                    p.requires_grad = True
-                if hasattr(self.encoder, "virtual_node"):
-                    for p in self.encoder.virtual_node.parameters():
-                        p.requires_grad = True
+            for p in self.encoder.norms[i].parameters():
+                p.requires_grad = True
+
+        # Projection finale + modules d'E/S du graphe : TOUJOURS dégelés dès
+        # le premier dégel partiel (sinon figés à vie, cf. fix B3).
+        for p in self.encoder.projection.parameters():
+            p.requires_grad = True
+        for p in self.encoder.atom_embedding.parameters():
+            p.requires_grad = True
+        for p in self.encoder.pool_gate.parameters():
+            p.requires_grad = True
+        if hasattr(self.encoder, "virtual_node") and self.encoder.virtual_node is not None:
+            for p in self.encoder.virtual_node.parameters():
+                p.requires_grad = True
+        if getattr(self.encoder, "use_chirality", False):
+            for p in self.encoder.chirality_embedding.parameters():
+                p.requires_grad = True
 
     def encode(self, batch):
         """Retourne l'embedding moléculaire."""

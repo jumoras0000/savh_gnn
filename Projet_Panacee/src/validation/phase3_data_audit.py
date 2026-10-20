@@ -66,6 +66,10 @@ def audit_phase3_data(data_paths):
         if name not in CLASSIFICATION_DATASETS:
             train = pd.read_csv(paths["train"])
             test = pd.read_csv(paths["test"])
+            # Fix H8 (audit 2026-10-20) : clé par colonne pour conserver tous
+            # les labels d'un dataset de régression multi-colonne. Avant → seule
+            # la dernière colonne survivait (écrasement silencieux).
+            dataset_baselines: dict = {}
             for column in result["datasets"][name]["train"]["labels"]:
                 y_train = pd.to_numeric(train[column], errors="coerce").to_numpy(dtype=float)
                 y_test = pd.to_numeric(test[column], errors="coerce").to_numpy(dtype=float)
@@ -75,12 +79,13 @@ def audit_phase3_data(data_paths):
                 baseline = float(y_train.mean())
                 mse = float(np.mean((y_test - baseline) ** 2))
                 test_variance = float(np.var(y_test))
-                result["regression_baselines"][name] = {
-                    "column": column,
+                dataset_baselines[column] = {
                     "train_mean_test_rmse": float(np.sqrt(mse)),
                     "train_mean_test_r2": (float(1 - mse / test_variance)
                                            if test_variance > 1e-12 else None),
                 }
+            if dataset_baselines:
+                result["regression_baselines"][name] = dataset_baselines
     return result
 
 

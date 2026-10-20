@@ -35,15 +35,19 @@ class MetricResult:
     ci_upper: float = 0.0
 
     def __post_init__(self):
+        # Fix H6 (audit 2026-10-20) : ddof=1 (écart-type d'ÉCHANTILLON) requis
+        # pour la formule t-Student. np.std par défaut utilise ddof=0 (pop)
+        # → IC95 sous-estimé d'un facteur sqrt((n-1)/n).
         if self.values:
-            self.mean = np.mean(self.values)
-            self.std = np.std(self.values)
+            self.mean = float(np.mean(self.values))
             if len(self.values) > 1:
+                self.std = float(np.std(self.values, ddof=1))
                 se = self.std / np.sqrt(len(self.values))
                 t_crit = stats.t.ppf(0.975, len(self.values) - 1)
                 self.ci_lower = self.mean - t_crit * se
                 self.ci_upper = self.mean + t_crit * se
             else:
+                self.std = 0.0
                 self.ci_lower = self.ci_upper = self.mean
 
     def __str__(self):
@@ -121,7 +125,19 @@ class CrossValidator:
         Returns:
             Dictionnaire {metric_name: MetricResult}
         """
-        if self.stratified and len(np.unique(y)) < len(y):
+        # Fix H9 (audit 2026-10-20) : la stratification exige des labels discrets
+        # avec >= 2 classes et chaque classe doit apparaître >= n_splits fois.
+        # L'ancienne condition `len(unique) < len(y)` était vraie pour toute
+        # régression contenant 2 valeurs identiques → crash sklearn.
+        y_arr = np.asarray(y)
+        uniques = np.unique(y_arr[~np.isnan(y_arr)] if y_arr.dtype.kind == "f" else y_arr)
+        is_binary_or_small_discrete = (
+            self.stratified
+            and y_arr.dtype.kind in "iub"  # int / uint / bool
+            and 2 <= len(uniques) <= 50
+            and all(np.sum(y_arr == u) >= self.n_splits for u in uniques)
+        )
+        if is_binary_or_small_discrete:
             splitter = StratifiedKFold(
                 n_splits=self.n_splits,
                 shuffle=True,

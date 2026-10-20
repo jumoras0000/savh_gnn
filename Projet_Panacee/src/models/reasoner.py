@@ -331,13 +331,23 @@ class ReasonerLoss(nn.Module):
                 total_loss = total_loss + 2.0 * suc_loss
                 details["success"] = suc_loss.item()
 
-        # Regularisation : penaliser la sur-confiance (maximiser l'entropie)
-        conf = predictions["confidence"]
-        entropy = -(conf * torch.log(conf + 1e-8) +
-                    (1 - conf) * torch.log(1 - conf + 1e-8))
-        conf_reg = -torch.mean(entropy)
-        total_loss = total_loss + 0.1 * conf_reg
-        details["confidence_entropy"] = -conf_reg.item()
+        # Fix H5 (audit 2026-10-20) : la régularisation d'entropie ne s'applique
+        # QUE si la confidence a reçu une supervision calibrée (confidence_labels).
+        # Sans supervision, la confidence est libre de dériver et récompenser
+        # l'entropie pousse mécaniquement vers 0.5 → signal corrompu.
+        if "confidence_labels" in targets:
+            conf = predictions["confidence"].clamp(1e-7, 1 - 1e-7)
+            conf_true = targets["confidence_labels"]
+            valid = ~torch.isnan(conf_true)
+            if valid.sum() > 0:
+                conf_loss = F.binary_cross_entropy(conf[valid], conf_true[valid])
+                total_loss = total_loss + conf_loss
+                details["confidence"] = conf_loss.item()
+                # Entropy reg : seulement quand supervisé, poids réduit
+                entropy = -(conf * torch.log(conf) + (1 - conf) * torch.log(1 - conf))
+                conf_reg = -torch.mean(entropy)
+                total_loss = total_loss + 0.05 * conf_reg
+                details["confidence_entropy"] = -conf_reg.item()
 
         details["total"] = total_loss.item()
         return total_loss, details

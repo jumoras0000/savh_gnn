@@ -132,6 +132,8 @@ def run_baseline(data_dir: str, output_path: str | None = None):
             print(f"  {group_name}: AUC={np.mean(aucs):.4f} F1={np.mean(f1s):.4f} ({len(aucs)} tasks)")
 
     # Regression baselines
+    # Fix H8 (audit 2026-10-20) : clé = (group_name, col) pour éviter
+    # l'écrasement quand plusieurs colonnes-labels existent dans le groupe.
     for group_name, cols in regression_tasks.items():
         found_cols = [c for c in cols if c in train_df_valid.columns]
         if not found_cols:
@@ -155,12 +157,14 @@ def run_baseline(data_dir: str, output_path: str | None = None):
 
             rmse = float(np.sqrt(mean_squared_error(y_test[test_mask], pred)))
             r2 = float(r2_score(y_test[test_mask], pred))
-            results[group_name] = {
+            key = group_name if len(found_cols) == 1 else f"{group_name}:{col}"
+            results[key] = {
                 "type": "regression",
+                "column": col,
                 "rmse": rmse,
                 "r2": r2,
             }
-            print(f"  {group_name}: R²={r2:.4f} RMSE={rmse:.4f}")
+            print(f"  {key}: R²={r2:.4f} RMSE={rmse:.4f}")
 
     # Sauvegarder
     if output_path is None:

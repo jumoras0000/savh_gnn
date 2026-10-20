@@ -34,6 +34,11 @@ class GraphConvolution(MessagePassing):
     def __init__(self, hidden_dim: int, edge_dim: int, dropout: float = 0.0):
         super().__init__(aggr="add")
         self.hidden_dim = hidden_dim
+        # Fix H1 (audit 2026-10-20) : dropout stocké en nn.Dropout pour qu'il
+        # soit activé par enable_mc_dropout(). Avant → paramètre ignoré,
+        # MC-Dropout totalement inactif sous CONV_TYPE="mpnn".
+        self.dropout = dropout
+        self.dropout_layer = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
         self.message_mlp = nn.Sequential(
             nn.Linear(2 * hidden_dim + edge_dim, hidden_dim),
@@ -55,7 +60,7 @@ class GraphConvolution(MessagePassing):
 
     def update(self, aggr_out, x):
         inp = torch.cat([x, aggr_out], dim=-1)
-        return self.update_mlp(inp)
+        return self.dropout_layer(self.update_mlp(inp))
 
 
 class EdgeAttentionConv(MessagePassing):

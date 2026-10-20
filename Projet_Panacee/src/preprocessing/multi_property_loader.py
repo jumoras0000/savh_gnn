@@ -176,15 +176,24 @@ def download_all_phase3_data(base_dir: str | None = None) -> dict:
 
 
 def _chemical_key(smiles: str) -> tuple[str, str]:
-    """Identité canonique et scaffold utilisés pour tous les jeux Phase 3."""
+    """
+    Identité canonique et scaffold utilisés pour tous les jeux Phase 3.
+
+    Fix H3 (audit 2026-10-20) : scaffold Murcko vide pour acycliques → fallback
+    sur SMILES canonique préfixé "acyclic:" pour éviter de regrouper toutes
+    les molécules sans scaffold dans le même split.
+    """
     from rdkit import Chem
     from rdkit.Chem.Scaffolds import MurckoScaffold
 
     mol = Chem.MolFromSmiles(str(smiles))
     if mol is None:
         raise ValueError(f"SMILES invalide dans les partitions Phase 3 : {str(smiles)[:80]}")
-    return (Chem.MolToSmiles(mol, isomericSmiles=True),
-            MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False))
+    canonical = Chem.MolToSmiles(mol, isomericSmiles=True)
+    scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False)
+    if not scaffold:
+        scaffold = f"acyclic:{canonical}"
+    return (canonical, scaffold)
 
 
 def verify_global_split_integrity(data_paths: dict) -> dict:
@@ -267,7 +276,11 @@ def repartition_global_scaffolds(data_paths: dict, base_dir: str) -> dict:
             row = {"smiles": key}
             conflicting_columns = []
             for col in label_columns:
-                values = pd.to_numeric(records[col], errors="coerce").dropna()
+                numeric = pd.to_numeric(records[col], errors="coerce")
+                invalid = records[col].notna() & numeric.isna()
+                if invalid.any():
+                    raise ValueError(f"{name}: étiquette non numérique pour {key}, colonne {col}")
+                values = numeric.dropna()
                 if not np.isfinite(values.to_numpy(dtype=float)).all():
                     raise ValueError(f"{name}: valeur non finie pour {key}, colonne {col}")
                 unique = values.unique()
@@ -398,12 +411,11 @@ def merge_datasets(data_paths: dict, split: str = "train") -> pd.DataFrame:
 
     for name, paths in data_paths.items():
         if paths is None or split not in paths:
-            continue
+            raise ValueError(f"{name}: partition {split} absente")
 
         csv_path = paths[split]
         if not os.path.exists(csv_path):
-            print(f"  WARN: {csv_path} introuvable, ignoré")
-            continue
+            raise FileNotFoundError(f"{name}: partition {split} introuvable : {csv_path}")
 
         df = pd.read_csv(csv_path)
 
@@ -415,8 +427,7 @@ def merge_datasets(data_paths: dict, split: str = "train") -> pd.DataFrame:
                 break
 
         if smiles_col is None:
-            print(f"  WARN: pas de colonne SMILES dans {csv_path}")
-            continue
+            raise ValueError(f"{name}: colonne SMILES absente dans {csv_path}")
 
         df = df.rename(columns={smiles_col: "smiles"})
 
@@ -491,12 +502,30 @@ class MultiPropertyDataset(Dataset):
             if found_cols:
                 self.available_props[group_name] = found_cols
 
+        for group_name, columns in self.available_props.items():
+            for column in columns:
+                numeric = pd.to_numeric(self.df[column], errors="coerce")
+                if (self.df[column].notna() & numeric.isna()).any():
+                    raise ValueError(f"{column}: étiquette non numérique")
+                observed = numeric.dropna().to_numpy(dtype=float)
+                if not np.isfinite(observed).all():
+                    raise ValueError(f"{column}: étiquette non finie")
+                if group_name not in self.REGRESSION_GROUPS and not np.isin(observed, (0, 1)).all():
+                    raise ValueError(f"{column}: étiquette de classification non binaire")
+                self.df[column] = numeric
+
         print("  Propriétés disponibles :")
         for group, cols in self.available_props.items():
             print(f"    {group}: {len(cols)} colonnes")
 
         # Normalisation z-score des targets de régression
         if regression_stats is not None:
+            for group_name in self.REGRESSION_GROUPS & self.available_props.keys():
+                stats = regression_stats.get(group_name)
+                if stats is None:
+                    raise ValueError(f"{group_name}: statistiques de normalisation absentes")
+                if not np.isfinite(stats["mean"]) or not np.isfinite(stats["std"]) or stats["std"] <= 0:
+                    raise ValueError(f"{group_name}: statistiques de normalisation invalides")
             self.regression_stats = regression_stats
         else:
             self.regression_stats = self._compute_regression_stats()

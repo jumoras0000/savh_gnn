@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import os
 
-MODEL = "claude-opus-4-8"
+MODEL = os.environ.get("PANACEE_CLAUDE_MODEL", "claude-opus-4-7")
 
 SYSTEM_PROMPT = (
     "Tu es « Panacée Copilot », un assistant de découverte de médicaments adossé à "

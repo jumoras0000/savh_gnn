@@ -122,18 +122,40 @@ class CalibrationAnalyzer:
         y_proba: np.ndarray,
     ) -> float:
         """
-        Static Calibration Error (SCE).
+        Static Calibration Error (SCE) — Nixon et al. 2019 (Measuring Calibration
+        in Deep Learning, arXiv:1904.01685).
 
-        Version pondérée par la disparité des confiances.
+        Fix H7 (audit 2026-10-20) : l'ancienne implé calculait `mean(|p − y|)`
+        sur les prédictions ERRONÉES — ce n'est PAS la SCE, c'est juste la
+        confiance moyenne des erreurs. Vrai SCE = ECE class-conditional pondéré
+        par bin :
+            SCE = (1/K) · Σ_k Σ_b (n_{b,k}/N) · |acc_{b,k} − conf_{b,k}|
+        où k = classe, b = bin de confiance.
+        Pour K=2 (binaire) ça se réduit à moyenner l'ECE sur positifs/négatifs.
         """
         y_true, y_proba = self._validate(y_true, y_proba)
-        predictions = (y_proba > 0.5).astype(int)
-        overconfident = y_proba[predictions != y_true]
-
-        if len(overconfident) == 0:
+        n = len(y_true)
+        if n == 0:
             return 0.0
 
-        return float(np.mean(np.abs(overconfident - y_true[predictions != y_true])))
+        bin_boundaries = np.linspace(0, 1, self.n_bins + 1)
+        sce_sum = 0.0
+        for cls in [0, 1]:
+            # Pour classe 0 : probabilité "d'être 0" = 1 - y_proba, label = (y_true==0)
+            class_probs = y_proba if cls == 1 else (1.0 - y_proba)
+            class_labels = (y_true == cls).astype(float)
+            for i in range(self.n_bins):
+                lo, hi = bin_boundaries[i], bin_boundaries[i + 1]
+                in_bin = (class_probs > lo) & (class_probs <= hi) if i > 0 else \
+                         (class_probs >= lo) & (class_probs <= hi)
+                n_bin = int(in_bin.sum())
+                if n_bin == 0:
+                    continue
+                bin_conf = float(class_probs[in_bin].mean())
+                bin_acc = float(class_labels[in_bin].mean())
+                sce_sum += (n_bin / n) * abs(bin_acc - bin_conf)
+
+        return float(sce_sum / 2.0)  # moyenne sur K=2 classes
 
     def calibration_report(
         self,

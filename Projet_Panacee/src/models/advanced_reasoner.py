@@ -514,28 +514,32 @@ class EnsembleConfidence(nn.Module):
     @staticmethod
     def mc_dropout_predict(model: nn.Module, x, n_forward: int = 10) -> Dict[str, torch.Tensor]:
         """
-        Monte Carlo Dropout : multiples passes en mode train
-        pour estimer l'incertitude.
+        Monte Carlo Dropout : multiples passes avec dropout actif.
 
-        Args:
-            model: modèle avec dropout
-            x: entrée
-            n_forward: nombre de passes
-
-        Returns:
-            mean, std des prédictions
+        Fix B8 (audit 2026-10-20) : `model.train()` global réactive aussi
+        BatchNorm — pollue running_mean/running_var pendant l'inférence et
+        laisse l'encodeur BN dans un état incohérent après la boucle.
+        Utilise `enable_mc_dropout` qui n'active que `nn.Dropout` et laisse
+        BN/LN en eval — comportement MC-Dropout correct (Gal & Ghahramani 2016).
         """
-        model.train()  # Active le dropout
-        predictions = []
+        from src.utils.uncertainty import enable_mc_dropout
 
-        with torch.no_grad():
-            for _ in range(n_forward):
-                out = model(x)
-                if isinstance(out, dict):
-                    out = out.get("success_score", out.get("confidence"))
-                predictions.append(out)
-
+        was_training = model.training
         model.eval()
+        enable_mc_dropout(model)
+        predictions = []
+        try:
+            with torch.no_grad():
+                for _ in range(n_forward):
+                    out = model(x)
+                    if isinstance(out, dict):
+                        out = out.get("success_score", out.get("confidence"))
+                    predictions.append(out)
+        finally:
+            if was_training:
+                model.train()
+            else:
+                model.eval()
 
         preds = torch.stack(predictions)
         return {

@@ -281,10 +281,9 @@ def compute_phase3_metrics(predictions, targets, thresholds=None, regression_sta
         pred = predictions[prop_name].detach().cpu()
         tgt = targets[prop_name].detach().cpu().numpy()
         pred_np = pred.numpy()
-        valid = np.isfinite(tgt) & np.isfinite(pred_np)
-        skipped = int((np.isfinite(tgt) & ~np.isfinite(pred_np)).sum())
-        if skipped:
-            logger.warning("%s: %d prédictions non finies exclues des métriques", prop_name, skipped)
+        valid = np.isfinite(tgt)
+        if (valid & ~np.isfinite(pred_np)).any():
+            raise ValueError(f"{prop_name}: prédiction non finie pour une cible observée")
 
         if valid.sum() == 0:
             continue

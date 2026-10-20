@@ -211,11 +211,21 @@ class PanaceeAnalyzer:
                 if task in ens_std and task in self.regression_stats:
                     ens_std[task] = ens_std[task] * self.regression_stats[task]["std"]
             self._mc_uncertainties = ens_std
-            mc_samples = len(self.ensemble.models)  # active le bloc uncertainty
+            # Fix B5 (audit 2026-10-20) : marquer que l'incertitude vient de
+            # l'ensemble (épistémique inter-modèles), PAS de MC-Dropout. Avant
+            # on écrasait silencieusement mc_samples utilisateur avec len(models)
+            # → confusion sémantique.
+            self._uncertainty_source = "deep_ensemble"
+            self._n_uncertainty_samples = len(self.ensemble.models)
+            use_uncertainty_block = True
         elif mc_samples > 0:
             predictions = self._mc_dropout_predict(batch, mc_samples)
+            self._uncertainty_source = "mc_dropout"
+            self._n_uncertainty_samples = mc_samples
+            use_uncertainty_block = True
         else:
             predictions = self.model(batch)
+            use_uncertainty_block = False
 
         # Temperature scaling (calibration post-hoc)
         predictions = calibrated_logits(predictions, self.temperatures)
@@ -301,14 +311,20 @@ class PanaceeAnalyzer:
         drug_score = self._compute_drug_likeness(result)
         result["drug_likeness"] = drug_score
 
-        # ── Incertitude MC Dropout ──
-        if mc_samples > 0 and hasattr(self, "_mc_uncertainties"):
+        # ── Incertitude (ensemble OU MC-Dropout) ──
+        # Fix B5 : utilise les flags explicites set par la branche active,
+        # pas une inférence silencieuse sur mc_samples.
+        if locals().get("use_uncertainty_block") and hasattr(self, "_mc_uncertainties"):
             unc = self._mc_uncertainties
-            method = (f"Deep Ensemble ({mc_samples} models)"
-                      if self.ensemble is not None
-                      else f"MC Dropout ({mc_samples} samples)")
+            source = getattr(self, "_uncertainty_source", "unknown")
+            n_samp = getattr(self, "_n_uncertainty_samples", mc_samples)
+            method = (f"Deep Ensemble ({n_samp} models)"
+                      if source == "deep_ensemble"
+                      else f"MC Dropout ({n_samp} samples)")
             result["uncertainty"] = {
                 "method": method,
+                "source": source,
+                "n_samples": n_samp,
                 "toxicity_std": float(unc.get("toxicity", torch.tensor(0)).mean()),
                 "efficacy_std": float(unc.get("efficacy", torch.tensor(0)).mean()),
                 "solubility_std": float(unc.get("solubility", torch.tensor(0)).mean()),
@@ -316,14 +332,16 @@ class PanaceeAnalyzer:
                 "bbb_std": float(unc.get("bbb_penetration", torch.tensor(0)).mean()),
                 "clinical_tox_std": float(unc.get("clinical_toxicity", torch.tensor(0)).mean()),
             }
-            # Confidence thresholds apply to probability dispersion, not a mix
-            # of LogS/LogP units and probabilities.
+            # Confidence thresholds apply to probability dispersion only (classif).
             avg_std = max(result["uncertainty"][name] for name in
                           ("toxicity_std", "efficacy_std", "bbb_std", "clinical_tox_std"))
             result["uncertainty"]["confidence_level"] = (
                 "high" if avg_std < 0.1 else "medium" if avg_std < 0.3 else "low"
             )
             del self._mc_uncertainties
+            for attr in ("_uncertainty_source", "_n_uncertainty_samples"):
+                if hasattr(self, attr):
+                    delattr(self, attr)
 
         return result
 
@@ -483,7 +501,13 @@ class PanaceeAnalyzer:
         # Aucune tête de dose n'est supervisée par le pipeline actuel.
         dose_recommendations = []
 
-        # Sécurité combinée
+        # Sécurité combinée : probabilité conjointe de non-toxicité sous
+        # HYPOTHÈSE D'INDÉPENDANCE DES ÉVÉNEMENTS DE TOXICITÉ.
+        # NB : ce N'EST PAS la formule de Bliss (qui s'applique aux EFFETS
+        # d'efficacité, pas aux événements de sécurité). Interprétation
+        # correcte : P(aucune toxicité_i parmi les k molécules) = Π P(no_tox_i).
+        # Limite : indépendance stricte (voies métaboliques distinctes) peu
+        # réaliste pour hépatotoxicité où CYP450 est commun.
         safety_scores = [r["safety_score"] for r in individual_results]
         combined_safety = float(np.prod(np.asarray(safety_scores) / 100.0) * 100.0)
 

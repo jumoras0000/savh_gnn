@@ -19,24 +19,39 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 
 
 def generate_scaffold(smiles: str, include_chirality: bool = False) -> str:
-    """Squelette de Bemis-Murcko d'un SMILES (chaîne vide si invalide)."""
+    """
+    Squelette de Bemis-Murcko d'un SMILES.
+
+    Fix H3 (audit 2026-10-20) : les molécules ACYCLIQUES ont un scaffold Murcko
+    vide. Les regrouper toutes sous la clé "" les force dans un même split
+    (test par ex.) alors qu'elles n'ont aucun lien chimique. Fallback :
+    SMILES canonique propre comme "pseudo-scaffold" unique (clé "acyclic:<smi>").
+    Les molécules invalides reçoivent un identifiant unique "invalid:<i>".
+    """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        return ""
+        return f"invalid:{abs(hash(smiles)) & 0xFFFFFF}"
     try:
         scaffold = MurckoScaffold.MurckoScaffoldSmiles(
             mol=mol, includeChirality=include_chirality
         )
     except Exception:
-        return ""
+        scaffold = ""
+    if not scaffold:
+        # Molécule acyclique → clé par SMILES canonique isomerique
+        try:
+            canon = Chem.MolToSmiles(mol, isomericSmiles=include_chirality)
+            return f"acyclic:{canon}"
+        except Exception:
+            return f"acyclic:{abs(hash(smiles)) & 0xFFFFFF}"
     return scaffold
 
 
-def _group_by_scaffold(smiles_list: List[str]):
+def _group_by_scaffold(smiles_list: List[str], include_chirality: bool = False):
     """Regroupe les indices par scaffold, triés par taille de groupe décroissante."""
     groups = defaultdict(list)
     for idx, smi in enumerate(smiles_list):
-        scaffold = generate_scaffold(smi)
+        scaffold = generate_scaffold(smi, include_chirality=include_chirality)
         groups[scaffold].append(idx)
     # Gros groupes d'abord → plus déterministe / équilibré
     return sorted(groups.values(), key=lambda x: (len(x), x[0]), reverse=True)

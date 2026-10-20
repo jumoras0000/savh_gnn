@@ -44,9 +44,26 @@ class DeepEnsemble(nn.Module):
             models.append(m)
         return cls(models)
 
+    # Têtes de classification (seuils "low/medium/high" calibrés sur probabilités)
+    _CLASSIF_HEADS = frozenset({
+        "toxicity", "efficacy", "bbb_penetration", "clinical_toxicity",
+    })
+
     @torch.no_grad()
-    def predict(self, batch, transform=None) -> tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
-        """Retourne (mean_preds, std_preds) par task group."""
+    def predict(
+        self, batch, transform=None, apply_sigmoid_to_classif: bool = True,
+    ) -> tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+        """
+        Retourne (mean_preds, std_preds) par task group.
+
+        Fix B4 (audit 2026-10-20) : les têtes de classification sortent des
+        LOGITS bruts. Comparer leur std à des seuils calibrés pour PROBABILITÉS
+        (0.05/0.15 dans predict_with_disagreement) donne un désaccord illisible.
+        Par défaut, applique sigmoid aux têtes classification AVANT stacking
+        pour que la std soit homogène sur l'échelle [0, 1].
+        Les têtes régression (solubility, lipophilicity) restent sur leur
+        échelle normalisée (z-score pendant training, dénormalisée hors ensemble).
+        """
         all_preds: Dict[str, List[torch.Tensor]] = {}
 
         for model in self.models:
@@ -54,6 +71,11 @@ class DeepEnsemble(nn.Module):
             preds = model(batch)
             if transform is not None:
                 preds = transform(preds)
+            if apply_sigmoid_to_classif:
+                preds = {
+                    k: (torch.sigmoid(v) if k in self._CLASSIF_HEADS else v)
+                    for k, v in preds.items()
+                }
             if any(not torch.isfinite(value).all() for value in preds.values()):
                 raise ValueError("Prédictions non finies dans l'ensemble")
             if all_preds and set(preds) != set(all_preds):
@@ -66,16 +88,26 @@ class DeepEnsemble(nn.Module):
         for k, tensors in all_preds.items():
             stacked = torch.stack(tensors, dim=0)  # [N_models, B, D]
             means[k] = stacked.mean(dim=0)
-            stds[k] = stacked.std(dim=0)
+            stds[k] = stacked.std(dim=0, unbiased=True)  # ddof=1 (fix H6)
 
         return means, stds
 
     @torch.no_grad()
     def predict_with_disagreement(self, batch) -> Dict:
-        """Prédiction + métrique de désaccord inter-modèles."""
-        means, stds = self.predict(batch)
+        """
+        Prédiction + métrique de désaccord inter-modèles.
 
-        avg_std = torch.stack([s.mean() for s in stds.values()]).mean().item()
+        Les seuils 0.05 / 0.15 sont calibrés pour la variance SUR PROBABILITÉS
+        des têtes classification (fix B4) — n'inclut PAS les têtes régression
+        dont l'échelle n'est pas comparable.
+        """
+        means, stds = self.predict(batch, apply_sigmoid_to_classif=True)
+
+        classif_stds = [s.mean() for k, s in stds.items() if k in self._CLASSIF_HEADS]
+        if classif_stds:
+            avg_std = torch.stack(classif_stds).mean().item()
+        else:
+            avg_std = torch.stack([s.mean() for s in stds.values()]).mean().item()
         disagreement = "low" if avg_std < 0.05 else "medium" if avg_std < 0.15 else "high"
 
         return {
@@ -84,4 +116,5 @@ class DeepEnsemble(nn.Module):
             "avg_disagreement": avg_std,
             "confidence": disagreement,
             "n_models": len(self.models),
+            "note": "std des têtes classif sur [0,1] (après sigmoid); régression sur échelle normalisée",
         }
