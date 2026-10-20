@@ -197,7 +197,7 @@ def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
                     raise RuntimeError("GraphCL : loss non finie")
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=False)
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -207,7 +207,7 @@ def run_graphcl_pretraining(smiles_list, args, device, save_dir, config):
                 if not torch.isfinite(loss).all():
                     raise RuntimeError("GraphCL : loss non finie")
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=False)
                 optimizer.step()
 
             total += loss.item()

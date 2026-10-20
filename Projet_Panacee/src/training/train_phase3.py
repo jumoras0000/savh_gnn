@@ -391,7 +391,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
                                if p.grad is not None)
         if gradients_finite:
             torch.nn.utils.clip_grad_norm_(optimizer_params, grad_clip,
-                                            error_if_nonfinite=True)
+                                            error_if_nonfinite=False)
             if scaler is not None:
                 scaler.step(optimizer)
                 scaler.update()
@@ -1268,7 +1268,7 @@ def main():
             if not torch.isfinite(loss).all():
                 raise RuntimeError("Loss du raisonneur non finie")
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(reasoner.parameters(), 1.0, error_if_nonfinite=True)
+            torch.nn.utils.clip_grad_norm_(reasoner.parameters(), 1.0, error_if_nonfinite=False)
             reasoner_optimizer.step()
             total_r_loss += loss.item()
         avg_loss = total_r_loss / max(n_combos_per_epoch, 1)

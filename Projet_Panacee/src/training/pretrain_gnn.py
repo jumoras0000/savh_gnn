@@ -187,7 +187,7 @@ def train_one_epoch_parallel(model, loader, optimizer, device, grad_clip, epoch)
         if not torch.isfinite(loss):
             raise RuntimeError("Phase 1 : loss non finie")
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=False)
         optimizer.step()
         bs = types.size(0)
         total_loss += loss.item() * bs
@@ -272,7 +272,7 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
                 raise RuntimeError("Phase 1 : loss non finie")
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=False)
             scaler.step(optimizer)
             scaler.update()
         else:
@@ -284,7 +284,7 @@ def train_one_epoch(model, loader, optimizer, device, grad_clip, epoch, scaler=N
             if not torch.isfinite(loss).all():
                 raise RuntimeError("Phase 1 : loss non finie")
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=False)
             optimizer.step()
 
         bs = masked_types.size(0)

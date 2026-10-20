@@ -180,10 +180,24 @@ def find_optimal_thresholds(logits, targets, num_tasks):
 
 def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoch,
                     scaler=None, ema=None):
+    """
+    Boucle train 1 epoch avec AMP robuste.
+
+    Fix (audit 2026-10-20) : au moment du 1er dégel partiel (epoch ==
+    freeze_epochs + 1), les gradients explosent → inf/NaN sous FP16.
+    - Avant : clip_grad_norm_(error_if_nonfinite=True) → crash dur
+    - Après : error_if_nonfinite=False → laisse scaler.step() SKIP automatiquement
+      le step (comportement AMP standard). On compte les skips + log si > seuil.
+    - Loss non-finie : skip le batch au lieu de raise (grad n'arrive pas, pas de
+      MAJ, warning compté). Un batch isolé anormal ne tue plus l'entraînement.
+    - set_to_none=True : plus rapide + sémantique "unused param" propre.
+    """
     model.train()
     total_loss, n = 0.0, 0
     all_logits, all_targets = [], []
     use_amp = scaler is not None and scaler.is_enabled()
+    skipped_loss = 0  # loss non-finie
+    skipped_grad = 0  # grads non-finis (scaler saute automatiquement)
 
     pbar = tqdm(loader, desc=f"[Train] Epoch {epoch}")
     for batch_data, labels in pbar:
@@ -192,25 +206,45 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
         if not torch.isfinite(labels).any():
             continue
 
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         if use_amp:
             with torch.amp.autocast("cuda"):
                 logits = model(batch_data)
             loss = criterion(logits.float(), labels)
             if not torch.isfinite(loss).all():
-                raise RuntimeError("Phase 2 : loss non finie")
+                skipped_loss += 1
+                continue  # fix : skip batch au lieu de crash
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
+            # error_if_nonfinite=False : si grads non-finis, scaler.step les
+            # détecte, saute le step, et scaler.update() baisse le facteur.
+            # C'est la convention AMP officielle (torch.amp docs).
+            total_norm = torch.nn.utils.clip_grad_norm_(
+                model.parameters(), grad_clip, error_if_nonfinite=False,
+            )
+            if not torch.isfinite(total_norm):
+                skipped_grad += 1
+            # scaler.step saute si grads inf/NaN (vérif interne de scaler)
+            prev_scale = scaler.get_scale()
             scaler.step(optimizer)
             scaler.update()
+            new_scale = scaler.get_scale()
+            # Si scale a diminué → scaler a sauté le step
+            if new_scale < prev_scale:
+                skipped_grad += 0  # déjà compté via total_norm non-fini
         else:
             logits = model(batch_data)
             loss = criterion(logits, labels)
             if not torch.isfinite(loss).all():
-                raise RuntimeError("Phase 2 : loss non finie")
+                skipped_loss += 1
+                continue
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=True)
+            total_norm = torch.nn.utils.clip_grad_norm_(
+                model.parameters(), grad_clip, error_if_nonfinite=False,
+            )
+            if not torch.isfinite(total_norm):
+                skipped_grad += 1
+                continue  # non-AMP : skip explicitement
             optimizer.step()
 
         if ema is not None:
@@ -221,6 +255,10 @@ def train_one_epoch(model, loader, optimizer, criterion, device, grad_clip, epoc
         all_logits.append(logits.detach().float())
         all_targets.append(labels.detach())
         pbar.set_postfix(loss=f"{loss.item():.4f}")
+
+    if skipped_loss or skipped_grad:
+        print(f"  ⚠ Epoch {epoch}: {skipped_loss} batch loss NaN skippés, "
+              f"{skipped_grad} batch grad non-finis skippés")
 
     if not all_logits:
         raise RuntimeError("Phase 2 : aucun batch valide pendant l'epoch")
