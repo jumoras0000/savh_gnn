@@ -197,25 +197,40 @@ def _chemical_key(smiles: str) -> tuple[str, str]:
 
 
 def verify_global_split_integrity(data_paths: dict) -> dict:
-    """Bloque toute fuite d'identité ou de scaffold entre jeux/splits."""
-    owner: dict[str, str] = {}
-    scaffold_owner: dict[str, str] = {}
+    """
+    Bloque toute fuite d'identité ou de scaffold entre jeux/splits.
+
+    Debug : trace l'origine (dataset+split) de chaque violation pour pouvoir
+    diagnostiquer sans re-grepper les CSVs.
+    """
+    owner: dict[str, tuple[str, str]] = {}  # canonical -> (dataset, split)
+    scaffold_owner: dict[str, tuple[str, str]] = {}
     counts = {"train": 0, "val": 0, "test": 0}
-    for paths in data_paths.values():
+    for dataset_name, paths in data_paths.items():
         if not paths:
-            raise ValueError("Dataset Phase 3 manquant")
+            raise ValueError(f"Dataset Phase 3 manquant : {dataset_name}")
         for split in counts:
             if split not in paths:
-                raise ValueError(f"Partition {split} manquante")
+                raise ValueError(f"Partition {split} manquante dans {dataset_name}")
             frame = pd.read_csv(paths[split], usecols=["smiles"])
             for smiles in frame["smiles"]:
                 canonical, scaffold = _chemical_key(smiles)
-                if canonical in owner and owner[canonical] != split:
-                    raise ValueError("Fuite de molécule canonique entre splits Phase 3")
-                if scaffold in scaffold_owner and scaffold_owner[scaffold] != split:
-                    raise ValueError("Fuite de scaffold entre splits Phase 3")
-                owner[canonical] = split
-                scaffold_owner[scaffold] = split
+                if canonical in owner and owner[canonical][1] != split:
+                    prev_dataset, prev_split = owner[canonical]
+                    raise ValueError(
+                        f"Fuite de molécule canonique entre splits Phase 3 : "
+                        f"'{canonical[:120]}' est dans {prev_dataset}/{prev_split} "
+                        f"ET dans {dataset_name}/{split}"
+                    )
+                if scaffold in scaffold_owner and scaffold_owner[scaffold][1] != split:
+                    prev_dataset, prev_split = scaffold_owner[scaffold]
+                    raise ValueError(
+                        f"Fuite de scaffold entre splits Phase 3 : "
+                        f"'{scaffold[:120]}' est dans {prev_dataset}/{prev_split} "
+                        f"ET dans {dataset_name}/{split} (SMILES: {smiles[:80]})"
+                    )
+                owner[canonical] = (dataset_name, split)
+                scaffold_owner[scaffold] = (dataset_name, split)
                 counts[split] += 1
     if any(n == 0 for n in counts.values()):
         raise ValueError("Partition Phase 3 vide")
