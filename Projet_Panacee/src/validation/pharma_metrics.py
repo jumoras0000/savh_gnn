@@ -74,38 +74,56 @@ def bedroc(
     """
     BEDROC (Boltzmann-Enhanced Discrimination of ROC) — Truchon & Bayly 2007.
 
-    Pondère les premiers hits exponentiellement — mesure early recognition.
-    α=20 → poids concentré sur ~top 8% (standard pharma pour HIV/ADMET).
-    α=320 → top 0.5% uniquement.
+    Implémentation CALQUÉE sur rdkit.ML.Scoring.Scoring.CalcBEDROC (code source
+    RDKit officiel), vérifiée via smoke test contre AUC extrêmes.
 
-    BEDROC ∈ [0, 1]. BEDROC=0.5 ≈ random pour α modéré.
+    Formule exacte :
+        RIE = (1/n_actives) * Σ exp(-α·r_i/N) * N * (e^(α/N) - 1) / (1 - e^(-α))
+        BEDROC = RIE * R_a * sinh(α/2) / (cosh(α/2) - cosh(α/2 - α·R_a))
+                 + 1 / (1 - exp(α(1 - R_a)))
+
+    BEDROC ∈ [0, 1]. 0.5 ≈ random (α modéré). 1.0 = tous actifs au top.
+    α=20 → top ~8% pondéré. α=80 → top ~2%.
     """
     y, s = _validate(y_true, y_score)
-    n = len(y)
+    big_n = len(y)
     n_actives = int(y.sum())
-    if n_actives == 0 or n_actives == n:
-        return None
+    if n_actives == 0:
+        return 0.0
+    if n_actives == big_n:
+        return 1.0
 
-    r_a = n_actives / n
-    order = np.argsort(-s)
+    r_a = n_actives / big_n
+    order = np.argsort(-s, kind="stable")
     y_sorted = y[order]
-    ranks = np.where(y_sorted == 1)[0] + 1  # 1-indexed
+    ranks = np.where(y_sorted > 0.5)[0] + 1  # 1-indexed
 
-    # Terme principal Truchon-Bayly
-    sum_exp = float(np.sum(np.exp(-alpha * ranks / n)))
+    sum_exp = float(np.sum(np.exp(-alpha * ranks / big_n)))
+    ri = sum_exp / n_actives
 
-    numerator = sum_exp * (1.0 - math.exp(-alpha)) / (
-        r_a * (1.0 - math.exp(-alpha * r_a)) * (math.exp(alpha / n) - 1.0)
-    )
+    # RIE Truchon-Bayly Eq. (6) : normalisation par expectation random
+    # expm1 pour précision numérique quand α/N est petit
+    rie = ri * big_n * math.expm1(alpha / big_n) / (1.0 - math.exp(-alpha))
 
-    # Facteur de normalisation
-    rie_max = (1.0 - math.exp(-alpha * r_a)) / (r_a * (1.0 - math.exp(-alpha)))
-    rie_min = (1.0 - math.exp(alpha * r_a)) / (r_a * (1.0 - math.exp(alpha)))
-
-    rie = numerator
-    if rie_max == rie_min:
+    # BEDROC Truchon-Bayly Eq. (36) : échelle en [0, 1]
+    sinh_a2 = math.sinh(alpha / 2.0)
+    cosh_a2 = math.cosh(alpha / 2.0)
+    cosh_dif = math.cosh(alpha / 2.0 - alpha * r_a)
+    if abs(cosh_a2 - cosh_dif) < 1e-15:
         return 0.5
-    bedroc_val = (rie - rie_min) / (rie_max - rie_min)
+
+    fac1 = r_a * sinh_a2 / (cosh_a2 - cosh_dif)
+    # Partie 2 : 1 / (1 - exp(α(1 - R_a)))
+    # Pour α(1-R_a) >> 1, exp(α(1-R_a)) est énorme → cette partie ≈ -exp(-α(1-R_a))
+    # qui est négligeable. Calcul stable :
+    exp_term = alpha * (1.0 - r_a)
+    if exp_term > 50:  # overflow protection
+        fac2 = 0.0
+    else:
+        denom = 1.0 - math.exp(exp_term)
+        fac2 = 1.0 / denom if abs(denom) > 1e-15 else 0.0
+
+    bedroc_val = rie * fac1 + fac2
     return float(np.clip(bedroc_val, 0.0, 1.0))
 
 
