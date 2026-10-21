@@ -207,7 +207,12 @@ def main():
         [p_ for p_ in model.parameters() if p_.requires_grad],
         lr=args.lr, weight_decay=1e-4,
     )
-    cycle_epochs = args.epochs // args.snapshots
+    # Fix (audit) : garde contre snapshots > epochs → cycle_epochs=0 → ZeroDivision
+    if args.snapshots < 1 or args.snapshots > args.epochs:
+        raise ValueError(
+            f"--snapshots ({args.snapshots}) doit être dans [1, epochs={args.epochs}]"
+        )
+    cycle_epochs = max(1, args.epochs // args.snapshots)
     scheduler = CosineRestartScheduler(
         optimizer, cycle_epochs=cycle_epochs, n_cycles=args.snapshots,
         lr_max=args.lr, lr_min=1e-6,
@@ -336,8 +341,12 @@ def _tta_evaluate(model, hiv_test, lbl_col, device, save_dir, model_name="model"
         auc_tta = roc_auc_score(y_true, scores_tta)
     except ValueError:
         auc_raw = auc_tta = None
-    print(f"  AUC raw : {auc_raw:.4f}")
-    print(f"  AUC TTA : {auc_tta:.4f} (Δ={auc_tta-auc_raw:+.4f})")
+    # Fix (audit) : le garde-fou except formatait None en :.4f → TypeError.
+    if auc_raw is not None and auc_tta is not None:
+        print(f"  AUC raw : {auc_raw:.4f}")
+        print(f"  AUC TTA : {auc_tta:.4f} (Δ={auc_tta-auc_raw:+.4f})")
+    else:
+        print("  AUC indéfini (une seule classe dans le test)")
 
     rpt = full_screening_report(y_true, scores_tta)
     out = save_dir / f"tta_eval_{model_name}.json"
@@ -382,7 +391,8 @@ def _ensemble_evaluate(snapshot_paths, hiv_test, lbl_col, device, save_dir, use_
         auc_ens = roc_auc_score(y_true, scores_ensemble)
     except ValueError:
         auc_ens = None
-    print(f"  AUC snapshot ensemble ({len(models)} models) : {auc_ens:.4f}")
+    _auc_str = f"{auc_ens:.4f}" if auc_ens is not None else "indéfini (classe unique)"
+    print(f"  AUC snapshot ensemble ({len(models)} models) : {_auc_str}")
     rpt = full_screening_report(y_true, scores_ensemble)
     out = save_dir / "snapshot_ensemble_eval.json"
     with open(out, "w") as f:

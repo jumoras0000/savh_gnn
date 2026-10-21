@@ -22,7 +22,6 @@ Usage :
     python finetune_hiv_chembl.py --epochs 100
     python finetune_hiv_chembl.py --epochs 100 --unfreeze_encoder  # dégel progressif
 """
-import json
 import os
 import sys
 import time
@@ -146,8 +145,11 @@ def build_chembl_dataset(
     decoys_smi, decoys_canon = [], set()
     n_overlap_zinc = 0
     if os.path.exists(zinc_path):
-        zinc = pd.read_csv(zinc_path).sample(n=min(200000, len(pd.read_csv(zinc_path))),
-                                              random_state=42)
+        # Fix (audit) : lire le CSV ZINC UNE seule fois (250k lignes).
+        zinc_full = pd.read_csv(zinc_path)
+        if "smiles" not in zinc_full.columns:
+            raise ValueError(f"ZINC CSV sans colonne 'smiles' : {zinc_path}")
+        zinc = zinc_full.sample(n=min(200000, len(zinc_full)), random_state=42)
         for raw_smi in zinc["smiles"].astype(str).str.strip():
             if len(decoys_smi) >= n_target:
                 break
@@ -174,6 +176,41 @@ def build_chembl_dataset(
         "actives_canonical": actives_canon_list,  # pour vérif downstream
     }
     return all_smi, all_lbl, audit
+
+
+def _predict_aligned(model, smiles_list, labels, device, batch_size: int = 128):
+    """
+    Prédit proba efficacy HIV en gardant SMILES + labels ALIGNÉS aux scores.
+
+    Garantit len(scores) == len(valid_smiles) == len(valid_labels) : seules les
+    molécules dont smiles_to_graph réussit sont incluses, dans le même ordre.
+    Évite le bug de mismatch de longueur quand un SMILES est invalide.
+    """
+    model.eval()
+    scores, valid_smiles, valid_labels = [], [], []
+    for i in range(0, len(smiles_list), batch_size):
+        chunk_smi = smiles_list[i:i + batch_size]
+        chunk_lbl = labels[i:i + batch_size]
+        graphs, keep = [], []
+        for smi, lbl in zip(chunk_smi, chunk_lbl, strict=True):
+            try:
+                g = smiles_to_graph(smi)
+            except Exception:
+                g = None
+            if g is not None:
+                graphs.append(g)
+                keep.append((smi, lbl))
+        if not graphs:
+            continue
+        batch = Batch.from_data_list(graphs).to(device)
+        with torch.no_grad():
+            p = torch.sigmoid(model(batch)["efficacy"]).cpu().numpy().ravel()
+        scores.append(p)
+        for smi, lbl in keep:
+            valid_smiles.append(smi)
+            valid_labels.append(lbl)
+    scores = np.concatenate(scores) if scores else np.array([])
+    return scores, valid_smiles, valid_labels
 
 
 def main():
@@ -387,18 +424,13 @@ def main():
     # ── Restaurer best + test ──
     if best_state is not None:
         model.load_state_dict(best_state)
-    model.eval()
-    test_logits, test_true = [], []
-    with torch.no_grad():
-        for batch in test_loader:
-            batch = batch.to(device)
-            preds = model(batch)
-            test_logits.append(preds["efficacy"].squeeze(-1).cpu().numpy())
-            test_true.append(batch.y.squeeze(-1).cpu().numpy())
-    test_logits = np.concatenate(test_logits)
-    test_true = np.concatenate(test_true)
-    test_proba = 1.0 / (1.0 + np.exp(-test_logits))
-    test_report = full_screening_report(test_true, test_proba)
+    # Fix HIGH (audit) : prédit en gardant SMILES alignés aux scores. Avant,
+    # test_proba (loader filtré) et test_smi (liste brute) divergeaient dès
+    # qu'un SMILES échouait à smiles_to_graph → ValueError longueurs DataFrame.
+    test_proba, test_smi_aligned, test_true = _predict_aligned(
+        model, test_smi, test_lbl, device,
+    )
+    test_report = full_screening_report(np.array(test_true), test_proba)
 
     print("\n═══ TEST (ChEMBL held-out scaffold split) ═══")
     for k, v in test_report.items():
@@ -409,22 +441,18 @@ def main():
     print("\n═══ Validation DrugBank 34 ARV sur modèle fine-tuné ═══")
     arvs = canonicalize_arv_smiles()
     arv_smi = [d["smiles_canonical"] for d in arvs]
-    arv_ds = SmilesDataset(arv_smi, [1] * len(arv_smi))
-    arv_loader = PyGDataLoader(arv_ds, batch_size=64, collate_fn=_collate)
-    arv_proba = []
-    with torch.no_grad():
-        for batch in arv_loader:
-            batch = batch.to(device)
-            preds = model(batch)
-            arv_proba.append(torch.sigmoid(preds["efficacy"]).cpu().numpy().ravel())
-    arv_proba = np.concatenate(arv_proba) if arv_proba else np.array([])
+    arv_proba, arv_smi_aligned, _ = _predict_aligned(
+        model, arv_smi, [1] * len(arv_smi), device,
+    )
     print(f"  {len(arv_proba)}/{len(arv_smi)} ARV prédits")
-    print(f"  Score HIV moyen ARV : {arv_proba.mean():.3f}")
+    if len(arv_proba):
+        print(f"  Score HIV moyen ARV : {arv_proba.mean():.3f}")
 
-    # Validation gate
-    combined_smi = arv_smi[:len(arv_proba)] + test_smi
-    combined_scores = np.concatenate([arv_proba, test_proba])
-    combined_df = pd.DataFrame({"smiles": combined_smi, "hiv_score": combined_scores})
+    # Validation gate — toutes listes alignées (même longueur garantie)
+    combined_df = pd.DataFrame({
+        "smiles": list(arv_smi_aligned) + list(test_smi_aligned),
+        "hiv_score": np.concatenate([arv_proba, test_proba]),
+    })
     gate = validate_model_recall(combined_df, min_recall=25, top_pct=0.10)
     print(f"  Verdict DrugBank : {gate['verdict']} ({gate['recall']}/{gate['total']})")
     print(f"  Trouvés  : {gate['found_arvs']}")

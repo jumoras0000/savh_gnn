@@ -85,7 +85,10 @@ def run_rf_baseline(data: dict) -> dict:
                                     training_actives=data["train"][
                                         data["train"][data["label_col"]] == 1
                                     ]["smiles"].tolist())
+    data_eval = {**data, "_test_smiles": list(test_smiles), "_test_proba": y_proba}
+    drugbank = validate_drugbank_baseline(rf, data_eval)
     return {"model": "RandomForest_ECFP4", "report": report,
+            "drugbank_gate": drugbank,
             "predictions": {"smiles": list(test_smiles),
                             "y_proba": y_proba.tolist(), "y_true": y_test.tolist()}}
 
@@ -93,7 +96,6 @@ def run_rf_baseline(data: dict) -> dict:
 def run_logreg_baseline(data: dict) -> dict:
     """Logistic Regression + ECFP4."""
     from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
     print("\n▶ Logistic Regression + ECFP4")
     X_train, m_train = smiles_to_ecfp4(data["train"]["smiles"].tolist())
     X_test, m_test = smiles_to_ecfp4(data["test"]["smiles"].tolist())
@@ -112,31 +114,35 @@ def run_logreg_baseline(data: dict) -> dict:
                                     training_actives=data["train"][
                                         data["train"][data["label_col"]] == 1
                                     ]["smiles"].tolist())
+    data_eval = {**data, "_test_smiles": list(test_smiles), "_test_proba": y_proba}
+    drugbank = validate_drugbank_baseline(lr, data_eval)
     return {"model": "LogReg_ECFP4", "report": report,
+            "drugbank_gate": drugbank,
             "predictions": {"smiles": list(test_smiles),
                             "y_proba": y_proba.tolist(), "y_true": y_test.tolist()}}
 
 
-def validate_drugbank(predictions: dict) -> dict:
-    """Appli validate_model_recall sur predictions d'un baseline."""
+def validate_drugbank_baseline(fitted_model, data: dict) -> dict:
+    """
+    Validation DrugBank HONNÊTE pour un baseline : featurise les ARV en ECFP4
+    et prédit via le modèle fitté (RF/LR), au lieu d'un score 0.5 arbitraire.
+    """
     arvs = canonicalize_arv_smiles()
     arv_smi = [d["smiles_canonical"] for d in arvs]
-    # Les baselines ne prédisent que sur HIV test → combiner avec ARV
-    # Note : les baselines n'ont PAS vu les ARV en training (pas dans HIV train)
-    # Mais certains ARV peuvent être dans HIV train → vérif explicite plus bas.
-    df_test = pd.DataFrame({
-        "smiles": predictions["smiles"],
-        "hiv_score": predictions["y_proba"],
+    X_arv, mask_arv = smiles_to_ecfp4(arv_smi)
+    arv_smi_valid = [s for s, m in zip(arv_smi, mask_arv, strict=True) if m]
+    if not arv_smi_valid:
+        return {"error": "aucun ARV featurisé"}
+    arv_proba = fitted_model.predict_proba(X_arv[mask_arv])[:, 1]
+
+    # HIV test predictions du baseline (depuis data stockée)
+    test_smiles = data["_test_smiles"]
+    test_proba = data["_test_proba"]
+    combined = pd.DataFrame({
+        "smiles": list(arv_smi_valid) + list(test_smiles),
+        "hiv_score": np.concatenate([arv_proba, test_proba]),
     })
-    # Score ARV via le baseline (naïf : on prend score=0.5 pour ARV car baseline
-    # n'a jamais vu ces molécules canoniques → fallback neutre)
-    # Pour un vrai gate, il faudrait prédire sur les ARV aussi, ce que RF/LR
-    # ne font pas sans re-fit. Alternative : juste reporter DrugBank present
-    # dans HIV test et calculer recall sur ceux-là.
-    df_arv = pd.DataFrame({"smiles": arv_smi, "hiv_score": [0.5] * len(arv_smi)})
-    df_combined = pd.concat([df_test, df_arv], ignore_index=True)
-    gate = validate_model_recall(df_combined, min_recall=25, top_pct=0.10)
-    return gate
+    return validate_model_recall(combined, min_recall=25, top_pct=0.10)
 
 
 def main():
@@ -166,10 +172,13 @@ def main():
             if isinstance(v, (int, float, type(None))):
                 print(f"    {k}: {v}")
 
-    # Sauvegarde (sans les grosses predictions pour un rapport lisible)
+    # Conserve les predictions (pour test DeLong dans rigorous_evaluation.py)
+    # + le report. Les predictions sont nécessaires à la comparaison AUC appariée.
     light = {}
     for k, v in reports.items():
-        light[k] = {"model": v["model"], "report": v["report"]}
+        light[k] = {"model": v["model"], "report": v["report"],
+                     "drugbank_gate": v.get("drugbank_gate"),
+                     "predictions": v["predictions"]}
 
     with open(args.save_report, "w", encoding="utf-8") as f:
         def _d(o):
@@ -184,9 +193,16 @@ def main():
     print("\n═══ Comparaison résumé ═══")
     for name, r in light.items():
         rpt = r["report"]
-        print(f"  {name:30s} AUC={rpt.get('roc_auc', 0):.4f} "
-              f"EF@1%={rpt.get('ef_1pct', 0):.2f} "
-              f"BEDROC_a20={rpt.get('bedroc_alpha20', 0):.4f}")
+        gate = r.get("drugbank_gate") or {}
+        _auc = rpt.get("roc_auc")
+        _ef = rpt.get("ef_1pct")
+        _bd = rpt.get("bedroc_alpha20")
+        print(f"  {name:30s} "
+              f"AUC={_auc:.4f} " if isinstance(_auc, float) else f"  {name:30s} AUC=N/A ",
+              end="")
+        print(f"EF@1%={_ef:.2f} " if isinstance(_ef, float) else "EF@1%=N/A ", end="")
+        print(f"BEDROC={_bd:.4f} " if isinstance(_bd, float) else "BEDROC=N/A ", end="")
+        print(f"DrugBank={gate.get('recall', '?')}/{gate.get('total', '?')}")
 
 
 if __name__ == "__main__":

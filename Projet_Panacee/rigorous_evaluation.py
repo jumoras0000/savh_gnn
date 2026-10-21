@@ -454,7 +454,15 @@ def main():
     print(f"\n▶ Prédictions HIV test ({len(hiv_test)} molécules)...")
     preds_test, valid_test = predict_all_tasks(model, hiv_test["smiles"].tolist(), device)
     y_proba = preds_test["efficacy"].ravel()
-    y_true = hiv_test[hiv_test["smiles"].isin(valid_test)][_hiv_label].values.astype(int)
+    # Fix MED (audit) : aligner y_true sur l'ORDRE de valid_test (ordre de
+    # traitement), pas sur l'ordre DataFrame filtré par isin (set → ordre
+    # d'origine, désaligné si doublons SMILES). Mapping SMILES → label.
+    _label_map = dict(zip(hiv_test["smiles"], hiv_test[_hiv_label]))
+    y_true = np.array([int(_label_map[s]) for s in valid_test])
+    if len(y_true) != len(y_proba):
+        raise RuntimeError(
+            f"Désalignement y_true ({len(y_true)}) vs y_proba ({len(y_proba)})"
+        )
 
     report = {
         "timestamp": stamp,
@@ -494,7 +502,12 @@ def main():
     print(f"\n▶ Permutation test ({args.n_permutation} shuffle)...")
     perm = permutation_test(y_true, y_proba, roc_auc_score, args.n_permutation)
     report["permutation_test_auc"] = perm
-    print(f"  AUC obs = {perm['observed']:.4f}, p-value = {perm['p_value']:.4e}")
+    _obs = perm.get("observed")
+    _pval = perm.get("p_value")
+    if _obs is not None and _pval is not None:
+        print(f"  AUC obs = {_obs:.4f}, p-value = {_pval:.4e}")
+    else:
+        print(f"  Permutation test indéterminé (observed={_obs}, p_value={_pval})")
 
     # ═══════════════════════════════════════════════════════════════
     # 3. RELIABILITY DIAGRAM + ECE
@@ -644,9 +657,10 @@ def main():
         fpr, tpr, _ = roc_curve(y_true, y_proba)
         prec, rec, _ = precision_recall_curve(y_true, y_proba)
         auc_val = metrics_boot["roc_auc"]["mean"]
+        _auc_lbl = f"AUC={auc_val:.3f}" if isinstance(auc_val, float) else "AUC=N/A"
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        ax1.plot(fpr, tpr, "steelblue", label=f"AUC={auc_val:.3f}")
+        ax1.plot(fpr, tpr, "steelblue", label=_auc_lbl)
         ax1.plot([0, 1], [0, 1], "k--", alpha=0.5)
         ax1.set_xlabel("FPR"); ax1.set_ylabel("TPR"); ax1.set_title("ROC HIV test")
         ax1.legend(); ax1.grid(alpha=0.3)
@@ -675,17 +689,34 @@ def main():
         print(f"\n▶ Test DeLong vs baseline : {args.compare_to_baseline}")
         with open(args.compare_to_baseline) as f:
             bl = json.load(f)
-        # Chercher les predictions dans le fichier baseline
+        # Fix MED (audit) : DeLong exige des échantillons APPARIÉS. On aligne
+        # GNN et baseline sur les SMILES COMMUNS (même len ne garantit pas
+        # mêmes molécules — chaque modèle filtre ses propres invalides).
+        gnn_map = dict(zip(valid_test, y_proba))  # SMILES → proba GNN
         for name, b in bl.items():
-            if "predictions" in b:
-                y_a = np.asarray(b["predictions"]["y_proba"])
-                y_t = np.asarray(b["predictions"]["y_true"], dtype=int)
-                if len(y_a) == len(y_true):
-                    delong = delong_test(y_t, y_a, y_proba)
-                    print(f"  {name}: delta_AUC={delong['delta_auc']:.4f}, "
-                          f"p={delong['p_value']:.4f}, "
-                          f"significant={delong['significant_05']}")
-                    report.setdefault("delong_tests", {})[name] = delong
+            if "predictions" not in b:
+                continue
+            bl_smiles = b["predictions"]["smiles"]
+            bl_proba = b["predictions"]["y_proba"]
+            bl_true = b["predictions"]["y_true"]
+            bl_map = {s: (p, t) for s, p, t in zip(bl_smiles, bl_proba, bl_true)}
+            common = [s for s in valid_test if s in bl_map]
+            if len(common) < 20:
+                print(f"  {name}: trop peu de SMILES communs ({len(common)}) → skip DeLong")
+                continue
+            y_gnn = np.array([gnn_map[s] for s in common])
+            y_base = np.array([bl_map[s][0] for s in common])
+            y_lbl = np.array([int(bl_map[s][1]) for s in common])
+            delong = delong_test(y_lbl, y_base, y_gnn)
+            _dauc = delong.get("delta_auc")
+            _p = delong.get("p_value")
+            if _dauc is not None and _p is not None:
+                print(f"  {name} (n={len(common)} communs): ΔAUC={_dauc:+.4f}, "
+                      f"p={_p:.4f}, significatif={delong.get('significant_05')}")
+            else:
+                print(f"  {name}: DeLong indéterminé ({delong.get('note', '')})")
+            report.setdefault("delong_tests", {})[name] = {
+                **delong, "n_common_smiles": len(common)}
 
     # ═══════════════════════════════════════════════════════════════
     # SAUVEGARDE
@@ -732,23 +763,27 @@ def _format_paper_markdown(r: dict) -> str:
     out.append(f"- p-value : {perm.get('p_value', 'N/A')}\n")
     out.append(f"- Significatif α=0.05 : {perm.get('significant_05', 'N/A')}\n")
 
+    # Helper : formate un float ou "N/A" si None/absent (évite TypeError sur :.4f)
+    def _f(x, nd=4):
+        return f"{x:.{nd}f}" if isinstance(x, (int, float)) else "N/A"
+
     out.append("\n## 3. Calibration (reliability diagram)\n\n")
     cal = r.get("calibration", {})
-    out.append(f"- **Expected Calibration Error (ECE)** : {cal.get('ece', 'N/A'):.4f}\n")
-    out.append(f"- **Maximum Calibration Error (MCE)** : {cal.get('mce', 'N/A'):.4f}\n")
+    out.append(f"- **Expected Calibration Error (ECE)** : {_f(cal.get('ece'))}\n")
+    out.append(f"- **Maximum Calibration Error (MCE)** : {_f(cal.get('mce'))}\n")
     out.append("- Diagramme : voir figures/\n")
 
     out.append("\n## 4. Multi-task ADMET\n\n")
     if "tox21_12task" in r:
         t = r["tox21_12task"]
-        out.append(f"- **Tox21 12 tâches** : AUC moyen = {t.get('mean_auc', 0):.4f} ± "
-                    f"{t.get('std_auc', 0):.4f} (min {t.get('min_auc', 0):.3f}, "
-                    f"max {t.get('max_auc', 0):.3f})\n")
+        out.append(f"- **Tox21 12 tâches** : AUC moyen = {_f(t.get('mean_auc'))} ± "
+                    f"{_f(t.get('std_auc'))} (min {_f(t.get('min_auc'), 3)}, "
+                    f"max {_f(t.get('max_auc'), 3)})\n")
     if "bbbp_test_auc" in r:
-        out.append(f"- **BBBP** : AUC = {r['bbbp_test_auc']:.4f}\n")
+        out.append(f"- **BBBP** : AUC = {_f(r['bbbp_test_auc'])}\n")
     for k in r:
         if k.startswith("clintox_"):
-            out.append(f"- **{k}** : AUC = {r[k]:.4f}\n")
+            out.append(f"- **{k}** : AUC = {_f(r[k])}\n")
 
     out.append("\n## 5. Recall@top-10% par classe mécanistique ARV\n\n")
     out.append("| Classe | Trouvés / Total | Taux |\n|---|---|---|\n")
