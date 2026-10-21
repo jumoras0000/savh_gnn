@@ -48,19 +48,42 @@ from src.validation.pharma_metrics import full_screening_report
 
 
 def load_model(checkpoint_path: str, device: torch.device) -> MultiPropertyPredictor:
-    """Charge le modèle Phase 3 depuis un checkpoint."""
+    """
+    Charge le modèle Phase 3 depuis un checkpoint.
+
+    Lit la config d'archi (use_chirality, hidden_dim) depuis le checkpoint
+    lui-même (`checkpoint['config']`) pour instancier EXACTEMENT la même
+    archi — sinon chargement partiel + perte info (fix post-session).
+    PHASE3 config.py sert de fallback si config absente du ckpt.
+    """
     ckpt = safe_load_checkpoint(checkpoint_path, trusted=True)
-    encoder = MolecularEncoder()
-    # Signature : MultiPropertyPredictor(encoder, hidden_dim=256, dropout=0.2, freeze_encoder=False)
-    # Les têtes sont codées en dur depuis PHASE3["property_heads"] en interne.
+    cfg = ckpt.get("config", {}) if isinstance(ckpt, dict) else {}
+    use_chirality = cfg.get("use_chirality", PHASE3.get("use_chirality", True))
+
+    encoder = MolecularEncoder(use_chirality=use_chirality)
     model = MultiPropertyPredictor(encoder, hidden_dim=256)
+
     result = model.load_state_dict(ckpt["model_state_dict"], strict=False)
     missing = list(getattr(result, "missing_keys", []))
     unexpected = list(getattr(result, "unexpected_keys", []))
+
+    # Clés CRITIQUES : encodeur convs + tête efficacy (HIV). Si ces clés
+    # manquent, le modèle est fondamentalement incompatible avec le ckpt.
+    _critical_patterns = ("encoder.convs", "encoder.atom_embedding",
+                          "encoder.projection", "efficacy_head")
+    critical_missing = [k for k in missing
+                        if any(p in k for p in _critical_patterns)]
+    if critical_missing:
+        raise RuntimeError(
+            f"Chargement impossible : clés critiques absentes = {critical_missing[:5]}. "
+            f"Vérifier use_chirality / hidden_dim / num_layers dans config.py "
+            f"vs le ckpt."
+        )
     if missing:
-        print(f"  ⚠ {len(missing)} clés manquantes (ex: {missing[:3]})")
+        print(f"  ⚠ {len(missing)} clés non critiques manquantes : {missing[:3]}")
     if unexpected:
-        print(f"  ⚠ {len(unexpected)} clés inattendues (ex: {unexpected[:3]})")
+        print(f"  ⚠ {len(unexpected)} clés en surplus ignorées : {unexpected[:3]}")
+    print(f"  ✓ Chargé avec use_chirality={use_chirality}")
     model.to(device).eval()
     return model
 
@@ -150,7 +173,15 @@ def main():
     hiv_train = pd.read_csv(data_paths["hiv"]["train"])
     hiv_val = pd.read_csv(data_paths["hiv"]["val"])
     hiv_test = pd.read_csv(data_paths["hiv"]["test"])
+    # Après repartition_global_scaffolds, les colonnes sont préfixées par
+    # le nom du dataset (sauf tox21 qui garde ses noms Tox21 originaux).
+    # Donc HIV_active devient hiv_HIV_active dans les CSV finaux.
+    _hiv_label = next(
+        c for c in ("hiv_HIV_active", "HIV_active", "activity")
+        if c in hiv_test.columns
+    )
     print(f"  HIV train/val/test : {len(hiv_train)}/{len(hiv_val)}/{len(hiv_test)}")
+    print(f"  Colonne label HIV : {_hiv_label}")
 
     report = {"checkpoint": ckpt_path, "device": str(device)}
 
@@ -162,13 +193,13 @@ def main():
         model, hiv_test["smiles"].tolist(), device,
     )
     hiv_proba_test = test_scores["efficacy"].ravel()
-    hiv_true_test = hiv_test[hiv_test["smiles"].isin(test_valid_smiles)]["HIV_active"].values
+    hiv_true_test = hiv_test[hiv_test["smiles"].isin(test_valid_smiles)][_hiv_label].values
 
     # ═══════════════════════════════════════════════════════════════
     # 2. MÉTRIQUES PHARMA (EF, BEDROC, hit rate)
     # ═══════════════════════════════════════════════════════════════
     print("\n═══ 2. Métriques pharma virtual screening ═══")
-    train_actives_smi = hiv_train[hiv_train["HIV_active"] == 1]["smiles"].tolist()
+    train_actives_smi = hiv_train[hiv_train[_hiv_label] == 1]["smiles"].tolist()
     pharma = full_screening_report(
         hiv_true_test, hiv_proba_test,
         smiles=test_valid_smiles,
@@ -220,7 +251,7 @@ def main():
         model, hiv_val["smiles"].tolist(), device,
     )
     hiv_proba_val = val_scores["efficacy"].ravel()
-    hiv_true_val = hiv_val[hiv_val["smiles"].isin(val_valid_smiles)]["HIV_active"].values
+    hiv_true_val = hiv_val[hiv_val["smiles"].isin(val_valid_smiles)][_hiv_label].values
 
     cp = ConformalClassifier(alpha=args.conformal_alpha, mondrian=True)
     cp.fit(hiv_proba_val, hiv_true_val)

@@ -122,12 +122,15 @@ def main():
         with open(paths_file) as f:
             data_paths = json.load(f)
         hiv_train = pd.read_csv(data_paths["hiv"]["train"])
-        hiv_actives = hiv_train[hiv_train["HIV_active"] == 1]["smiles"].tolist()[:args.max_per_group]
+        # Colonne CSV peut être préfixée par nom dataset après repartition
+        _hiv_label = next(c for c in ("hiv_HIV_active", "HIV_active", "activity")
+                           if c in hiv_train.columns)
+        hiv_actives = hiv_train[hiv_train[_hiv_label] == 1]["smiles"].tolist()[:args.max_per_group]
         results["hiv_train_actives"] = summarize_group("HIV_train_actives",
                                                         hiv_actives, args.n_conformers)
 
         # Groupe 3 : HIV train inactives (contrôle)
-        hiv_inactives = hiv_train[hiv_train["HIV_active"] == 0]["smiles"].sample(
+        hiv_inactives = hiv_train[hiv_train[_hiv_label] == 0]["smiles"].sample(
             n=min(args.max_per_group, len(hiv_train) - len(hiv_actives)),
             random_state=42,
         ).tolist()

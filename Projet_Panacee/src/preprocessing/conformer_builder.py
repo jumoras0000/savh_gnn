@@ -66,10 +66,16 @@ def generate_conformers(
     if n_atoms < 2:
         return None
 
-    # ETKDGv3 : paramétrage robuste (Riniker 2020)
+    # ETKDGv3 : paramétrage robuste (Riniker 2020).
+    # Note : RDKit >= 2024.03 a renommé `maxAttempts` → `maxIterations`
+    # (vérifié via dir(ETKDGv3) = maxIterations, pas maxAttempts).
     params = AllChem.ETKDGv3()
     params.randomSeed = random_seed
-    params.maxAttempts = max_attempts
+    # Setattr défensif : support des 2 noms selon version RDKit
+    for attr_name in ("maxIterations", "maxAttempts"):
+        if hasattr(params, attr_name):
+            setattr(params, attr_name, max_attempts)
+            break
     params.pruneRmsThresh = 0.5  # élimine conformers trop proches
     params.useRandomCoords = True  # fallback pour mol flexibles
 

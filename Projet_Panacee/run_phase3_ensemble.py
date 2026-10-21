@@ -87,10 +87,12 @@ def evaluate_ensemble(checkpoint_paths: list[str], device_str: str = None):
         "cuda" if torch.cuda.is_available() else "cpu")
     print(f"\n═══ Évaluation ensemble ({len(checkpoint_paths)} modèles) sur {device} ═══")
 
+    use_chirality = PHASE3.get("use_chirality", True)
+
     def _factory():
-        encoder = MolecularEncoder()
-        # Signature correcte : MultiPropertyPredictor(encoder, hidden_dim=256, dropout=0.2)
-        # Les 6 têtes sont créées en interne depuis PHASE3["property_heads"].
+        # Encoder avec use_chirality aligné sur training Phase 3 (sinon
+        # mismatch clés chirality_embedding → chargement incomplet).
+        encoder = MolecularEncoder(use_chirality=use_chirality)
         return MultiPropertyPredictor(encoder, hidden_dim=256)
 
     # Charger ensemble
@@ -104,6 +106,8 @@ def evaluate_ensemble(checkpoint_paths: list[str], device_str: str = None):
         data_paths = json.load(f)
     hiv_test = pd.read_csv(data_paths["hiv"]["test"])
     hiv_train = pd.read_csv(data_paths["hiv"]["train"])
+    _hiv_label = next(c for c in ("hiv_HIV_active", "HIV_active", "activity")
+                       if c in hiv_test.columns)
 
     # Prédictions ensemble batch
     all_mean = []
@@ -135,7 +139,7 @@ def evaluate_ensemble(checkpoint_paths: list[str], device_str: str = None):
 
     y_proba = np.concatenate(all_mean)
     y_std = np.concatenate(all_std)
-    y_true = hiv_test[hiv_test["smiles"].isin(valid_smi)]["HIV_active"].values
+    y_true = hiv_test[hiv_test["smiles"].isin(valid_smi)][_hiv_label].values
 
     print(f"\n  Prédictions ensemble : {len(y_proba)} molécules HIV test")
     print(f"  Std épistémique moyenne : {y_std.mean():.4f}")
@@ -145,7 +149,7 @@ def evaluate_ensemble(checkpoint_paths: list[str], device_str: str = None):
     pharma = full_screening_report(
         y_true, y_proba,
         smiles=valid_smi,
-        training_actives=hiv_train[hiv_train["HIV_active"] == 1]["smiles"].tolist(),
+        training_actives=hiv_train[hiv_train[_hiv_label] == 1]["smiles"].tolist(),
     )
     print("\n  Métriques ensemble :")
     for k, v in pharma.items():
