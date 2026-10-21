@@ -166,15 +166,15 @@ class TanimotoApplicabilityDomain:
     def fit(self, train_smiles: Sequence[str]) -> "TanimotoApplicabilityDomain":
         try:
             from rdkit import Chem
-            from rdkit.Chem import AllChem
         except ImportError as e:
             raise RuntimeError("RDKit required for Tanimoto AD") from e
+        from src.utils.fingerprints import morgan_fp_bitvect
 
         fps = []
         for smi in train_smiles:
             mol = Chem.MolFromSmiles(str(smi))
             if mol is not None:
-                fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048))
+                fps.append(morgan_fp_bitvect(mol, 2, 2048))
         if not fps:
             raise ValueError("No valid training fingerprints")
         self._train_fps = fps
@@ -182,7 +182,8 @@ class TanimotoApplicabilityDomain:
 
     def classify(self, smiles: Sequence[str]) -> list[dict]:
         from rdkit import Chem
-        from rdkit.Chem import AllChem, DataStructs
+        from rdkit.Chem import DataStructs
+        from src.utils.fingerprints import morgan_fp_bitvect
 
         if self._train_fps is None:
             raise RuntimeError("Appelle .fit() avant .classify()")
@@ -193,7 +194,7 @@ class TanimotoApplicabilityDomain:
             if mol is None:
                 out.append({"max_sim": None, "ad_class": "invalid"})
                 continue
-            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+            fp = morgan_fp_bitvect(mol, 2, 2048)
             sims = DataStructs.BulkTanimotoSimilarity(fp, self._train_fps)
             max_sim = max(sims) if sims else 0.0
             if max_sim >= self.high_threshold:

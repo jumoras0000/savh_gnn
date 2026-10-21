@@ -651,8 +651,9 @@ def main():
         ax1.set_xlabel("FPR"); ax1.set_ylabel("TPR"); ax1.set_title("ROC HIV test")
         ax1.legend(); ax1.grid(alpha=0.3)
 
+        _trapz = getattr(np, "trapezoid", np.trapz)  # NumPy 2.0 renomme trapz
         ax2.plot(rec, prec, "crimson",
-                 label=f"PRC-AUC={np.trapz(prec, rec):.3f}")
+                 label=f"PRC-AUC={_trapz(prec, rec):.3f}")
         base = y_true.sum() / len(y_true)
         ax2.axhline(base, color="k", linestyle="--", alpha=0.5,
                     label=f"Random={base:.3f}")

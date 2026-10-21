@@ -24,7 +24,7 @@ from src.preprocessing.multi_property_loader import SMILES_COLUMN_CANDIDATES
 def compute_ecfp4(smiles_list, radius=2, n_bits=2048):
     """Calcule ECFP4 fingerprints pour une liste de SMILES."""
     from rdkit import Chem
-    from rdkit.Chem import AllChem
+    from src.utils.fingerprints import morgan_fp_bitvect
 
     fps = []
     valid_idx = []
@@ -32,7 +32,7 @@ def compute_ecfp4(smiles_list, radius=2, n_bits=2048):
         mol = Chem.MolFromSmiles(str(smi))
         if mol is None:
             continue
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=n_bits)
+        fp = morgan_fp_bitvect(mol, radius, n_bits)
         fps.append(np.array(fp))
         valid_idx.append(i)
     return np.array(fps), valid_idx

@@ -152,8 +152,12 @@ class GPUManager:
             torch.cuda.empty_cache()
         gc.collect()
 
-    def get_scaler(self) -> Optional[torch.cuda.amp.GradScaler]:
-        """Retourne un GradScaler pour mixed precision si supporté."""
+    def get_scaler(self) -> Optional["torch.amp.GradScaler"]:
+        """Retourne un GradScaler pour mixed precision si supporté.
+
+        Annotation mise à jour : torch.amp.GradScaler (torch.cuda.amp.GradScaler
+        déprécié depuis PyTorch 2.3). Le retour utilisait déjà la nouvelle API.
+        """
         if self._supports_fp16 and self.device.type == "cuda":
             return torch.amp.GradScaler("cuda")
         return None

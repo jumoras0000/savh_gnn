@@ -166,15 +166,16 @@ def novelty_vs_training(
     """
     try:
         from rdkit import Chem
-        from rdkit.Chem import AllChem, DataStructs
+        from rdkit.Chem import DataStructs
     except ImportError:
         return None
+    from src.utils.fingerprints import morgan_fp_bitvect
 
     def _fp(smi: str):
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
             return None
-        return AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+        return morgan_fp_bitvect(mol, 2, 2048)
 
     train_fps = [fp for fp in (_fp(s) for s in training_actives_smiles) if fp is not None]
     if not train_fps:

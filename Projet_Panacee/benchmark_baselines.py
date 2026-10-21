@@ -38,18 +38,8 @@ from src.validation.drugbank_antiretroviral import (
 
 def smiles_to_ecfp4(smiles_list, radius: int = 2, n_bits: int = 2048):
     """Convertit SMILES → bitvecteurs Morgan ECFP4 (array numpy [N, n_bits])."""
-    from rdkit import Chem
-    from rdkit.Chem import AllChem
-    X = np.zeros((len(smiles_list), n_bits), dtype=np.uint8)
-    valid_mask = np.zeros(len(smiles_list), dtype=bool)
-    for i, smi in enumerate(smiles_list):
-        mol = Chem.MolFromSmiles(str(smi))
-        if mol is None:
-            continue
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=radius, nBits=n_bits)
-        X[i] = np.array(fp)
-        valid_mask[i] = True
-    return X, valid_mask
+    from src.utils.fingerprints import smiles_to_morgan_array
+    return smiles_to_morgan_array(smiles_list, radius=radius, n_bits=n_bits)
 
 
 def load_hiv_data(data_dir: str) -> dict:

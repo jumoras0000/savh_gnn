@@ -178,17 +178,9 @@ _AD_THRESHOLD = 0.30  # Tanimoto (Morgan r2) : en-deçà → hors domaine
 
 
 def _morgan_fp(mol):
-    """Empreinte Morgan (rayon 2, 2048 bits) via l'API moderne, repli sinon."""
-    try:
-        from rdkit.Chem import rdFingerprintGenerator
-        gen = _AD_CACHE.get("gen")
-        if gen is None:
-            gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
-            _AD_CACHE["gen"] = gen
-        return gen.GetFingerprint(mol)
-    except Exception:
-        from rdkit.Chem import rdMolDescriptors
-        return rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+    """Empreinte Morgan (rayon 2, 2048 bits) via helper centralisé (API moderne)."""
+    from src.utils.fingerprints import morgan_fp_bitvect
+    return morgan_fp_bitvect(mol, 2, 2048)
 
 
 def _reference_fingerprints():
