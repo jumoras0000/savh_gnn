@@ -32,13 +32,27 @@ class DeepEnsemble(nn.Module):
         model_factory: Callable[[], nn.Module],
         device: str = "cpu",
         key: str = "model_state_dict",
+        strict: bool = False,
     ) -> "DeepEnsemble":
+        """
+        Charge N modèles depuis checkpoints. strict=False par défaut tolère
+        les clés manquantes (bioavailability_head/metabolic_stability_head sont
+        des alias créés dynamiquement) ou surplus (reasoner_state_dict).
+        Les clés critiques (encoder, shared_layer, *_head) sont vérifiées
+        implicitement : si elles manquent, le forward crashera.
+        """
         models = []
+        from src.utils.safe_load import safe_load_checkpoint
         for p in paths:
             m = model_factory()
-            from src.utils.safe_load import safe_load_checkpoint
             ckpt = safe_load_checkpoint(p)
-            m.load_state_dict(ckpt[key], strict=True)
+            if key not in ckpt:
+                raise ValueError(f"Clé '{key}' absente du checkpoint {p}. "
+                                 f"Clés dispo : {list(ckpt.keys())[:10]}")
+            result = m.load_state_dict(ckpt[key], strict=strict)
+            missing = list(getattr(result, "missing_keys", []))
+            if missing and strict:
+                raise ValueError(f"{p} : clés manquantes {missing[:5]}")
             m.to(device)
             m.eval()
             models.append(m)

@@ -29,32 +29,47 @@ import pandas as pd
 
 from src.config import EXTERNAL_DIR
 from src.preprocessing.conformer_builder import (
-    batch_conformers,
     conformer_derived_features,
+    generate_conformers,
 )
 from src.validation.drugbank_antiretroviral import canonicalize_arv_smiles
 
 
 def summarize_group(name: str, smiles_list: list[str], n_conformers: int = 5) -> dict:
-    """Génère conformers + features 3D agrégées pour un groupe de SMILES."""
+    """
+    Génère conformers + features 3D agrégées pour un groupe de SMILES.
+
+    Robuste aux SMILES problématiques : wrap chaque calcul individuel dans
+    try/except pour ne pas crasher le groupe entier sur une molécule difficile
+    (grands peptides, métaux, stéréochimie ambigüe, ETKDG qui échoue).
+    """
     print(f"\n▶ Groupe '{name}' : {len(smiles_list)} molécules")
-    confs = batch_conformers(
-        smiles_list, n_conformers=n_conformers, optimize=True, show_progress=True,
-    )
-    rgs, npr1s, npr2s, n_valid = [], [], [], 0
-    for c in confs:
-        if c is None:
-            continue
-        feat = conformer_derived_features(c)
-        if feat is None:
-            continue
-        n_valid += 1
-        if feat["rg_mean"] is not None:
-            rgs.append(feat["rg_mean"])
-        if feat["npr1_mean"] is not None:
-            npr1s.append(feat["npr1_mean"])
-        if feat["npr2_mean"] is not None:
-            npr2s.append(feat["npr2_mean"])
+    rgs, npr1s, npr2s, n_valid, n_failed = [], [], [], 0, 0
+
+    # Progress bar manuel pour éviter dépendance tqdm
+    for i, smi in enumerate(smiles_list):
+        if i % 10 == 0:
+            print(f"  [{i}/{len(smiles_list)}] traités...")
+        try:
+            c = generate_conformers(smi, n_conformers=n_conformers, optimize=True)
+            if c is None:
+                n_failed += 1
+                continue
+            feat = conformer_derived_features(c)
+            if feat is None:
+                n_failed += 1
+                continue
+            n_valid += 1
+            if feat.get("rg_mean") is not None:
+                rgs.append(feat["rg_mean"])
+            if feat.get("npr1_mean") is not None:
+                npr1s.append(feat["npr1_mean"])
+            if feat.get("npr2_mean") is not None:
+                npr2s.append(feat["npr2_mean"])
+        except Exception as e:
+            n_failed += 1
+            if n_failed <= 3:  # log quelques échecs pour debug
+                print(f"    ⚠ {smi[:60]}... → {type(e).__name__}: {str(e)[:80]}")
 
     def _stats(arr):
         if not arr:
@@ -69,10 +84,12 @@ def summarize_group(name: str, smiles_list: list[str], n_conformers: int = 5) ->
             "p75": float(np.percentile(a, 75)),
         }
 
+    print(f"  → {n_valid} valides, {n_failed} échecs sur {len(smiles_list)}")
     return {
         "group": name,
         "n_input": len(smiles_list),
         "n_valid_conformers": n_valid,
+        "n_failed": n_failed,
         "radius_of_gyration": _stats(rgs),
         "npr1_shape_rod": _stats(npr1s),
         "npr2_shape_disc": _stats(npr2s),

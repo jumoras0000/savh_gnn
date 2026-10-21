@@ -51,9 +51,16 @@ def load_model(checkpoint_path: str, device: torch.device) -> MultiPropertyPredi
     """Charge le modèle Phase 3 depuis un checkpoint."""
     ckpt = safe_load_checkpoint(checkpoint_path, trusted=True)
     encoder = MolecularEncoder()
-    heads_config = PHASE3["property_heads"]
-    model = MultiPropertyPredictor(encoder, heads_config, hidden_dim=256)
-    model.load_state_dict(ckpt["model_state_dict"], strict=False)
+    # Signature : MultiPropertyPredictor(encoder, hidden_dim=256, dropout=0.2, freeze_encoder=False)
+    # Les têtes sont codées en dur depuis PHASE3["property_heads"] en interne.
+    model = MultiPropertyPredictor(encoder, hidden_dim=256)
+    result = model.load_state_dict(ckpt["model_state_dict"], strict=False)
+    missing = list(getattr(result, "missing_keys", []))
+    unexpected = list(getattr(result, "unexpected_keys", []))
+    if missing:
+        print(f"  ⚠ {len(missing)} clés manquantes (ex: {missing[:3]})")
+    if unexpected:
+        print(f"  ⚠ {len(unexpected)} clés inattendues (ex: {unexpected[:3]})")
     model.to(device).eval()
     return model
 

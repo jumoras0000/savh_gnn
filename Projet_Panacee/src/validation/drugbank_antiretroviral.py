@@ -25,7 +25,7 @@ APPROVED_ANTIRETROVIRALS = [
     {"name": "Stavudine",      "class": "NRTI",  "smiles": "Cc1cn(C2OC(CO)C=C2)c(=O)[nH]c1=O", "drugbank": "DB00649", "chembl": "CHEMBL991", "approved": 1994},
     {"name": "Lamivudine",     "class": "NRTI",  "smiles": "Nc1ccn(C2CSC(CO)O2)c(=O)n1", "drugbank": "DB00709", "chembl": "CHEMBL141", "approved": 1995},
     {"name": "Abacavir",       "class": "NRTI",  "smiles": "Nc1nc(NC2CC2)c2ncn(C3C=CC(CO)C3)c2n1", "drugbank": "DB01048", "chembl": "CHEMBL1380", "approved": 1998},
-    {"name": "Tenofovir",      "class": "NtRTI", "smiles": "Cc(COP(=O)(O)O)n1cnc2c1ncnc2N", "drugbank": "DB00300", "chembl": "CHEMBL483", "approved": 2001},
+    {"name": "Tenofovir",      "class": "NtRTI", "smiles": "CC(COP(=O)(O)O)N1C=NC2=C1N=CN=C2N", "drugbank": "DB00300", "chembl": "CHEMBL483", "approved": 2001},
     {"name": "Emtricitabine",  "class": "NRTI",  "smiles": "Nc1nc(=O)n(C2CSC(CO)O2)cc1F", "drugbank": "DB00879", "chembl": "CHEMBL533", "approved": 2003},
     {"name": "Tenofovir_alafenamide", "class": "NtRTI", "smiles": "CC(COP(=O)(OC1=CC=CC=C1)NC(C)C(=O)OC(C)C)N2C=NC3=C2N=CN=C3N", "drugbank": "DB09299", "chembl": "CHEMBL2103840", "approved": 2015},
     {"name": "Islatravir",     "class": "NRTTI", "smiles": "C#CC1(O)C(O)CC(n2cnc3c(N)ncnc32)O1", "drugbank": "DB15345", "chembl": "CHEMBL4297185", "approved": 2023},  # EUA
@@ -61,7 +61,7 @@ APPROVED_ANTIRETROVIRALS = [
     {"name": "Enfuvirtide",    "class": "FUSION","smiles": "", "drugbank": "DB00109", "chembl": "CHEMBL1200800", "approved": 2003, "peptide": True},
     {"name": "Maraviroc",      "class": "CCR5",  "smiles": "CC(C)C(=O)Nc1cccc(C2CCN(CC3CCCCC3)CC2)n1", "drugbank": "DB04835", "chembl": "CHEMBL1201187", "approved": 2007},
     {"name": "Ibalizumab",     "class": "CD4",   "smiles": "", "drugbank": "DB06258", "chembl": "CHEMBL2109341", "approved": 2018, "antibody": True},
-    {"name": "Fostemsavir",    "class": "GP120", "smiles": "COc1cnc(C2(C(=O)N3CCN(C(=O)c4ccccn4)CC3)c3ccccn3COP(=O)(O)O)nc1C", "drugbank": "DB12411", "chembl": "CHEMBL4297509", "approved": 2020},
+    {"name": "Fostemsavir",    "class": "GP120", "smiles": "COc1cnn2c(C(=O)N3CCN(C(=O)c4cnccn4)CC3)c(C(=O)N(COP(=O)(O)O)c3cnccc3)cnc12", "drugbank": "DB12411", "chembl": "CHEMBL4297509", "approved": 2020},
 
     # ── Capsid inhibitor ──
     {"name": "Lenacapavir",    "class": "CAPSID","smiles": "CC(C)(C)OC(=O)N[C@@H](Cc1ccc(F)cc1)C(=O)N[C@@H](C(C)(C)C)C(=O)NC1(c2ccc(S(C)(=O)=O)cc2)CC1", "drugbank": "DB16691", "chembl": "CHEMBL4594434", "approved": 2022},
@@ -130,8 +130,12 @@ def validate_model_recall(
     min_recall: int = 25,
 ) -> dict:
     """
-    Validation gate : le modèle doit retrouver >= min_recall / 35 ARV
+    Validation gate : le modèle doit retrouver >= min_recall / N ARV small-molecule
     dans le top-X% de ses prédictions sur HIV MoleculeNet merged.
+
+    Note : N = 34 (après exclusion de Enfuvirtide peptide fusion inhibitor et
+    Ibalizumab anticorps monoclonal CD4, non prédictibles par GNN SMILES).
+    min_recall=25 → ~73% des ARV approuvés doivent être dans le top-10%.
 
     Args:
         predictions_df: pandas DataFrame avec colonnes [smiles, hiv_score]

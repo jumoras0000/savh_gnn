@@ -27,12 +27,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def train_seed(seed: int, epochs: int, batch_size: int, base_save_dir: Path):
-    """Lance un run Phase 3 avec un seed spécifique."""
+    """Lance un run Phase 3 avec un seed spécifique.
+
+    train_phase3.py accepte --seed (vérifié ligne 569 : add_argument '--seed').
+    Passage via CLI, pas env.
+    """
     save_dir = base_save_dir / f"seed_{seed}"
     save_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
-    env["PANACEE_SEED"] = str(seed)
     env["PYTHONUNBUFFERED"] = "1"
 
     cmd = [
@@ -41,6 +44,7 @@ def train_seed(seed: int, epochs: int, batch_size: int, base_save_dir: Path):
         "--batch_size", str(batch_size),
         "--skip_checks",
         "--save_dir", str(save_dir),
+        "--seed", str(seed),  # train_phase3.py accepte --seed
     ]
     print(f"\n═══ Seed {seed} ═══")
     print(f"  Commande : {' '.join(cmd)}")
@@ -85,7 +89,9 @@ def evaluate_ensemble(checkpoint_paths: list[str], device_str: str = None):
 
     def _factory():
         encoder = MolecularEncoder()
-        return MultiPropertyPredictor(encoder, PHASE3["property_heads"], hidden_dim=256)
+        # Signature correcte : MultiPropertyPredictor(encoder, hidden_dim=256, dropout=0.2)
+        # Les 6 têtes sont créées en interne depuis PHASE3["property_heads"].
+        return MultiPropertyPredictor(encoder, hidden_dim=256)
 
     # Charger ensemble
     ensemble = DeepEnsemble.from_checkpoints(
