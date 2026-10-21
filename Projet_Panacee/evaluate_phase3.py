@@ -307,12 +307,17 @@ def main():
         return str(o)
 
     report_path = args.save_report
+    # Fix : créer le dossier parent si un chemin type "reports/eval.json" est
+    # passé (sinon FileNotFoundError après tout le calcul d'évaluation).
+    _parent = os.path.dirname(os.path.abspath(report_path))
+    os.makedirs(_parent, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, default=_json_default, ensure_ascii=False)
     print(f"\n✅ Rapport JSON : {report_path}")
 
     # Markdown lisible
     md = _format_markdown_report(report)
+    os.makedirs(os.path.dirname(os.path.abspath(args.save_md)), exist_ok=True)
     with open(args.save_md, "w", encoding="utf-8") as f:
         f.write(md)
     print(f"✅ Rapport Markdown : {args.save_md}")

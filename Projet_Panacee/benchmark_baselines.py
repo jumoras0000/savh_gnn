@@ -180,6 +180,7 @@ def main():
                      "drugbank_gate": v.get("drugbank_gate"),
                      "predictions": v["predictions"]}
 
+    os.makedirs(os.path.dirname(os.path.abspath(args.save_report)), exist_ok=True)
     with open(args.save_report, "w", encoding="utf-8") as f:
         def _d(o):
             if isinstance(o, (np.integer, np.floating)):

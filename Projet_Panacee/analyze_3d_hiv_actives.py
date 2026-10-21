@@ -153,6 +153,7 @@ def main():
             print(f"  NPR2 disc: {npr2['mean']:.3f} ± {npr2['std']:.3f}")
 
     # Rapport
+    os.makedirs(os.path.dirname(os.path.abspath(args.save_report)), exist_ok=True)
     with open(args.save_report, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
     print(f"\n✅ Rapport 3D : {args.save_report}")
