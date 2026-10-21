@@ -1,41 +1,67 @@
-# Dependances Projet Panacee v3
-#
-# Installation (dans l'ordre) :
-#   1) PyTorch :
-#        GPU CUDA 12.1 : pip install torch --index-url https://download.pytorch.org/whl/cu121
-#        CPU           : pip install torch --index-url https://download.pytorch.org/whl/cpu
-#   2) PyTorch Geometric : pip install torch-geometric
-#   3) Le reste          : pip install -r requirements.txt
-#
-# NB Kaggle : torch + CUDA sont deja preinstalles, ne pas reinstaller torch.
+# Panacée GNN — Dépendances complètes (training + inference + webapp + validation)
+# Install : pip install -r requirements.txt
+# Testé Python 3.10, 3.11, 3.12, 3.13
 
-# Core
-torch>=2.0.0
-torch-geometric>=2.3.0
-numpy>=1.24.0
-scipy>=1.10.0
+# ─── Core PyTorch ─────────────────────────────────────────────────
+torch>=2.2
+torchvision
+torchaudio
+torch-geometric>=2.5
 
-# Chimie moleculaire (paquet officiel ; PAS rdkit-pypi qui est deprecie)
-rdkit>=2023.3.1
+# ─── Data / Stats ─────────────────────────────────────────────────
+pandas>=2.0
+numpy>=1.24
+scipy>=1.11
+scikit-learn>=1.3
+pyarrow>=14
+openpyxl
+tables
+statsmodels
 
-# ML / metriques
-scikit-learn>=1.3.0
-pandas>=2.0.0
+# ─── Chemistry ────────────────────────────────────────────────────
+rdkit>=2023.9
 
-# Datasets toxicite / multi-proprietes (Tox21, ESOL, Lipo, BBBP, ClinTox, HIV)
-deepchem>=2.7.0
+# ─── Progress / System ────────────────────────────────────────────
+tqdm
+psutil
 
-# Utilitaires
-tqdm>=4.65.0
-psutil>=5.9.0
-packaging>=23.0
-python-dotenv>=1.0.0
+# ─── HTTP / API clients ──────────────────────────────────────────
+requests
+httpx
+aiohttp
+lxml
 
-# Visualisation (optionnel)
-matplotlib>=3.7.0
+# ─── Biology / External sources ──────────────────────────────────
+biopython
 
-# Recherche web / connaissances (optionnel, Phase 3 avancee)
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
-biopython>=1.81
+# ─── Visualization ───────────────────────────────────────────────
+matplotlib
+seaborn
+plotly
+
+# ─── Classical ML baselines ──────────────────────────────────────
+xgboost
+lightgbm
+
+# ─── LLM / Chat ──────────────────────────────────────────────────
+anthropic
+
+# ─── Webapp (Starlette ASGI) ─────────────────────────────────────
+starlette
+uvicorn
+python-multipart
+itsdangerous
+authlib
+pydantic>=2
+
+# ─── Security / Keyring (SIWC) ───────────────────────────────────
+cryptography
+keyring
+
+# ─── Testing / Dev ───────────────────────────────────────────────
+pytest
+pytest-cov
+
+# NB: DeepChem/TensorFlow retirés — downloads MoleculeNet se font
+#     directement depuis S3 via urllib (voir toxicity_loader.py et
+#     multi_property_loader.py).
