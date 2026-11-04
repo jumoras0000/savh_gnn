@@ -98,6 +98,15 @@ def _collate(batch):
     return Batch.from_data_list([b for b in batch if b is not None])
 
 
+def _atomic_save(obj, path):
+    """Sauvegarde atomique : écrit un .tmp puis rename → jamais de fichier à
+    moitié écrit si le process est tué (SIGHUP) en plein torch.save."""
+    path = Path(path)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    torch.save(obj, tmp)
+    os.replace(tmp, path)  # rename atomique (POSIX + Windows)
+
+
 def load_hiv_data(data_dir: str) -> dict:
     paths_file = os.path.join(data_dir, "data_paths.json")
     with open(paths_file) as f:
@@ -132,6 +141,11 @@ def main():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--tta_eval", action="store_true",
                    help="Juste évaluation TTA sur ckpt existant")
+    p.add_argument("--resume", action="store_true",
+                   help="Reprendre depuis <save_dir>/resume_state.pth s'il existe "
+                        "(sinon départ de zéro). Robuste aux kills SIGHUP.")
+    p.add_argument("--checkpoint_every", type=int, default=5,
+                   help="Sauvegarde l'état resume tous les N epochs (défaut 5)")
     args = p.parse_args()
 
     set_seed(args.seed)
@@ -223,9 +237,34 @@ def main():
 
     snapshot_paths = []
     best_val_auc = -1.0
+    start_epoch = 0
+
+    # ── Reprise (resume) : recharge modèle + optimizer + scaler + RNG ──
+    resume_path = save_dir / "resume_state.pth"
+    if args.resume and resume_path.exists():
+        print(f"\n▶ Reprise depuis {resume_path}")
+        rs = safe_load_checkpoint(resume_path, map_location=str(device), trusted=True)
+        model.load_state_dict(rs["model_state_dict"], strict=False)
+        optimizer.load_state_dict(rs["optimizer_state_dict"])
+        scaler.load_state_dict(rs["scaler_state_dict"])
+        start_epoch = int(rs["epoch"]) + 1
+        best_val_auc = float(rs["best_val_auc"])
+        snapshot_paths = list(rs.get("snapshot_paths", []))
+        try:
+            torch.set_rng_state(rs["torch_rng_state"].cpu().to(torch.uint8))
+            np.random.set_state(rs["numpy_rng_state"])
+            if torch.cuda.is_available() and rs.get("cuda_rng_state") is not None:
+                torch.cuda.set_rng_state(rs["cuda_rng_state"].cpu().to(torch.uint8))
+        except Exception as e:
+            print(f"  ⚠ RNG non restauré ({e}) — training continue quand même")
+        print(f"  → reprise epoch {start_epoch}/{args.epochs} | "
+              f"best_val={best_val_auc:.4f} | {len(snapshot_paths)} snapshot(s) déjà sauvés")
+    elif args.resume:
+        print(f"\n▶ --resume demandé mais {resume_path} absent → départ de zéro (base Phase 2)")
+
     t0 = time.time()
 
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         scheduler.step(epoch)
         model.train()
         total_loss, n = 0.0, 0
@@ -291,6 +330,25 @@ def main():
                 "config": {"use_chirality": use_chirality,
                            "best_val_auc": val_auc, "epoch": epoch},
             }, save_dir / "best_val.pth")
+
+        # ── Checkpoint resume périodique (robustesse anti-kill SIGHUP) ──
+        # Sauve aussi aux epochs snapshot → snapshot_paths jamais désynchronisé.
+        if ((epoch + 1) % args.checkpoint_every == 0
+                or scheduler.is_snapshot_epoch(epoch)
+                or epoch == args.epochs - 1):
+            _atomic_save({
+                "model_state_dict": {k: v.cpu().clone()
+                                     for k, v in model.state_dict().items()},
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scaler_state_dict": scaler.state_dict(),
+                "epoch": epoch,
+                "best_val_auc": best_val_auc,
+                "snapshot_paths": snapshot_paths,
+                "torch_rng_state": torch.get_rng_state(),
+                "numpy_rng_state": np.random.get_state(),
+                "cuda_rng_state": (torch.cuda.get_rng_state()
+                                   if torch.cuda.is_available() else None),
+            }, resume_path)
 
     duration = time.time() - t0
     print(f"\n✅ Training terminé en {duration/60:.1f}min")
