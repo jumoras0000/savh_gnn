@@ -145,6 +145,39 @@ L'augmentation par actifs ChEMBL des classes OOD **franchit le gate honnêtement
 
 ---
 
+## 5bis. Comparaison statistique (test DeLong apparié, `rigorous_compare.py`)
+
+AUC sur le test held-out (3778 mol, 84 actifs) ; p-value DeLong de la différence appariée :
+
+| Comparaison | ΔAUC | p | Conclusion |
+|-------------|-----:|--:|------------|
+| A' vs A | −0.028 | 0.25 | AUC équivalente |
+| A' vs GNN seul | −0.067 | **0.015** | A' significativement sous le GNN en AUC |
+| A' vs RF-ECFP4 | +0.000 | 0.996 | AUC identique à RF |
+| A vs GNN | −0.039 | 0.11 | ns |
+| A vs RF | +0.028 | 0.12 | ns |
+
+**Trade-off quantifié** : le GNN seul maximise l'AUC globale (0.7194), mais A' maximise le recall des médicaments et l'enrichissement précoce (DrugBank 31/34). L'AUC n'est pas la métrique pertinente en criblage virtuel (Truchon-Bayly 2007 : la reconnaissance précoce prime) — pour l'objectif du projet, A' est le bon modèle, et le sacrifice d'AUC (~0,07) est documenté et assumé.
+
+---
+
+## 5ter. Phase 4 — criblage virtuel réel (`screen_library.py`)
+
+Application de Model A' à la librairie ZINC (**249 455 molécules**), suivie de la chaîne de filtres (ADMET, drug-likeness, domaine d'applicabilité Tanimoto, conformal).
+
+| Étape | Compte |
+|-------|-------:|
+| Molécules criblées | 249 455 |
+| Top annotés | 2 000 |
+| In-domain (AD) | 166 |
+| Drug-like (≥ 0,5) | 2 000 |
+| Sans alerte PAINS | 1 338 |
+| **Hits propres** (in-domain + drug-like + sans PAINS + conformal non-inactif) | **92** |
+
+**Interprétation honnête** : le top-2000 brut est majoritairement **hors domaine d'applicabilité** (166/2000 in-domain) — ZINC couvre un espace chimique différent de l'entraînement VIH, donc les scores de tête sont des extrapolations non fiables sans le filtre AD. Les **92 hits propres** sont le sous-ensemble fiable, chacun annoté (score anti-VIH, ADMET prédit, QED, similarité au train, décision conformal) → liste de candidats priorisés exploitable. Intégrité vérifiée (pandas : 92 lignes, 92 SMILES uniques).
+
+---
+
 ## 6. Limites assumées
 
 - Métriques = estimations ponctuelles confirmées par bootstrap IC95 % (percentile, approximation, pas BCa).
