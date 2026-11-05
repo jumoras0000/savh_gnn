@@ -195,6 +195,9 @@ def main():
         arv_valid &= ~np.isnan(sc[m]["arv"])
     print(f"\nTest valides (tous modèles): {int(te_valid.sum())}/{len(te)}")
     print(f"ARV valides (tous modèles): {int(arv_valid.sum())}/{len(arv_smi)}")
+    if int(arv_valid.sum()) < len(arv_smi):
+        print(f"  ⚠ {len(arv_smi) - int(arv_valid.sum())} ARV perdus (featurisation) "
+              f"→ gate évalué sur {int(arv_valid.sum())}, pas {len(arv_smi)}")
 
     y_te = te[lbl].values[te_valid].astype(float)
     smi_te = te["smiles"].values[te_valid].tolist()
@@ -215,7 +218,8 @@ def main():
         db = drugbank_recall(sc[m]["arv"], sc[m]["test"])
         diag[m] = {**pm, "drugbank": db}
         print(f"{m:<12}{pm['roc_auc']:>8.4f}{pm['ef_1pct']:>8.2f}"
-              f"{pm['bedroc_alpha20']:>9.4f}{pm['hit_rate_top_100']:>8.3f}{str(db)+'/34':>10}")
+              f"{pm['bedroc_alpha20']:>9.4f}{pm['hit_rate_top_100']:>8.3f}"
+              f"{str(db)+'/'+str(n_arv):>10}")
 
     # ── Ensembles ──
     # Pré-spécifié : rank-average des 5 modèles. Référence : 2-modèles GNN+ECFP4.
@@ -247,7 +251,7 @@ def main():
               f"EF@5%={pm['ef_5pct']:.2f} BEDROC={pm['bedroc_alpha20']:.4f}")
         print(f"  hit@100={pm['hit_rate_top_100']:.3f} recall@10%={pm['recall_top_10pct']:.3f} "
               f"PRC={pm['prc_auc']:.4f}")
-        print(f"  DrugBank={db}/34 → {verdict}")
+        print(f"  DrugBank={db}/{n_arv} (gate≥25) → {verdict}")
 
     # ── Bootstrap paired : full (5) vs ref (2) ──
     print("\n" + "═" * 74)
