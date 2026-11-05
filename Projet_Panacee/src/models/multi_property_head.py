@@ -64,17 +64,22 @@ class MultiPropertyPredictor(nn.Module):
         hidden_dim: int = 256,
         dropout: float = 0.2,
         freeze_encoder: bool = False,
+        morgan_dim: int = 0,
     ):
         super().__init__()
         self.encoder = encoder
         self.hidden_dim = hidden_dim
+        self.morgan_dim = morgan_dim
 
         if freeze_encoder:
             self._freeze_encoder()
 
         # Couche partagée pour enrichir la représentation
+        # Si morgan_dim > 0 : concatène le Morgan FP à l'embedding GNN avant
+        # cette couche → shared_layer fusionne les deux représentations.
+        _shared_input = getattr(encoder, "output_dim", hidden_dim) + morgan_dim
         self.shared_layer = nn.Sequential(
-            nn.Linear(getattr(encoder, "output_dim", hidden_dim), hidden_dim),
+            nn.Linear(_shared_input, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
             nn.SiLU(),
             nn.Dropout(dropout),
@@ -153,11 +158,16 @@ class MultiPropertyPredictor(nn.Module):
                 p.requires_grad = True
 
     def encode(self, batch):
-        """Retourne l'embedding moléculaire."""
+        """Retourne l'embedding moléculaire (post shared_layer)."""
         mol_emb = self.encoder(
             batch.x, batch.edge_index, batch.edge_attr, batch.batch,
             chirality=getattr(batch, "chirality", None),
         )
+        # Hybrid GNN+Morgan : si le batch contient des Morgan FP, concaténer
+        # avant shared_layer pour que la couche de fusion apprenne à combiner
+        # features apprises (GNN) + features explicites (Morgan ECFP4).
+        if self.morgan_dim > 0 and hasattr(batch, "morgan_fp"):
+            mol_emb = torch.cat([mol_emb, batch.morgan_fp], dim=-1)
         return self.shared_layer(mol_emb)
 
     def forward(self, batch):
