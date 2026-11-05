@@ -55,10 +55,17 @@ def canon_series(series):
     return out
 
 
-def rebuild_added(chembl_csv, arv_canon, va_canon, te_canon, tr_canon):
-    """Reconstruit EXACTEMENT le set ajouté (même filtrage que train_augmented_rf)."""
-    arv_scaffolds = {generate_scaffold(c) for c in arv_canon}
+def rebuild_added(chembl_csv, arv_canon, va_canon, te_canon, tr_canon,
+                  tanimoto_arv_max=0.80):
+    """Reconstruit EXACTEMENT le set ajouté (même filtrage que train_augmented_rf,
+    Y COMPRIS l'exclusion Tanimoto>seuil vs ARV). Déterministe → même set que A''."""
+    from rdkit import Chem
+    from rdkit.Chem import DataStructs
+    from src.utils.fingerprints import morgan_fp_bitvect
+
     eval_scaffolds = {generate_scaffold(s) for s in list(va_canon) + list(te_canon)}
+    arv_fps = [morgan_fp_bitvect(Chem.MolFromSmiles(c), 2, 2048)
+               for c in arv_canon if Chem.MolFromSmiles(c) is not None]
     chembl = pd.read_csv(chembl_csv)
     added, seen = [], set()
     for s in chembl["smiles"]:
@@ -72,6 +79,11 @@ def rebuild_added(chembl_csv, arv_canon, va_canon, te_canon, tr_canon):
             continue
         if c in tr_canon:
             continue
+        m = Chem.MolFromSmiles(c)
+        if m is not None and arv_fps:
+            if max(DataStructs.BulkTanimotoSimilarity(
+                    morgan_fp_bitvect(m, 2, 2048), arv_fps)) > tanimoto_arv_max:
+                continue
         seen.add(c)
         added.append(c)
     return added
@@ -105,15 +117,21 @@ def main():
     arv_smi = [d["smiles_canonical"] for d in arvs]
     te_smi = te["smiles"].tolist()
 
-    # ── Reconstruire le set ajouté ──
-    print("\n▶ Reconstruction du set ChEMBL ajouté (même filtrage)")
+    # ── Set ajouté : CHARGER la source de vérité, sinon reconstruire ──
     arv_canon = set(arv_smi)
-    va_canon = canon_series(va["smiles"])
-    te_canon = canon_series(te["smiles"])
-    tr_canon = canon_series(tr["smiles"])
-    added = rebuild_added(str(EXTERNAL_DIR / "chembl_hiv" / "chembl_hiv_merged.csv"),
-                          arv_canon, va_canon, te_canon, tr_canon)
-    print(f"  Actifs ajoutés reconstruits: {len(added)}")
+    added_file = CHECKPOINT_DIR / "model_A_prime_augmented" / "added_actives.json"
+    if added_file.exists():
+        with open(added_file, encoding="utf-8") as f:
+            added = json.load(f)
+        print(f"\n▶ Set ajouté CHARGÉ (source de vérité A''): {len(added)} actifs")
+    else:
+        print("\n▶ added_actives.json absent → reconstruction (avec filtre Tanimoto)")
+        va_canon = canon_series(va["smiles"])
+        te_canon = canon_series(te["smiles"])
+        tr_canon = canon_series(tr["smiles"])
+        added = rebuild_added(str(EXTERNAL_DIR / "chembl_hiv" / "chembl_hiv_merged.csv"),
+                              arv_canon, va_canon, te_canon, tr_canon)
+        print(f"  Actifs ajoutés reconstruits: {len(added)}")
 
     # ── Fingerprints des ajoutés ──
     print("▶ Fingerprints Morgan des ajoutés")

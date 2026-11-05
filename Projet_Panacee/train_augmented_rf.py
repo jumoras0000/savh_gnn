@@ -315,6 +315,13 @@ def main():
     with open(aprime_dir / "manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
+    # SOURCE DE VÉRITÉ : sauver la liste exacte des actifs ajoutés → les outils
+    # downstream (diagnose_gate_honesty) la CHARGENT au lieu de la reconstruire
+    # (évite le bug de dérive entre deux implémentations de filtrage).
+    with open(aprime_dir / "added_actives.json", "w", encoding="utf-8") as f:
+        json.dump(added, f, ensure_ascii=False)
+    print(f"  added_actives.json : {len(added)} SMILES sauvés")
+
     report = {
         "n_test": int(te_v.sum()), "n_arv": n_arv, "n_added_chembl": len(added),
         "anti_leakage": {"excluded_arv_canon": n_arv_excl,
