@@ -86,6 +86,9 @@ def main():
     ap.add_argument("--tanimoto_arv_max", type=float, default=0.80,
                     help="Exclut les actifs ChEMBL dont Tanimoto max vs un ARV > ce seuil "
                          "(ferme la faille stéréo/tautomère de l'exclusion canonique)")
+    ap.add_argument("--gnn_ckpt", type=str, default=None,
+                    help="Checkpoint GNN (défaut: phase3_improved/best_val.pth ; "
+                         "passer un GNN fine-tuné pour reconstruire A'')")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -164,8 +167,8 @@ def main():
     n_act_before = int((tr[lbl] == 1).sum())
     print(f"\n▶ Train augmenté: {len(aug_smiles)} mol | actifs {n_act_before}→{n_act_before+len(added)}")
 
-    # ── GNN partagé (inchangé, celui de Model A) ──
-    gnn_ckpt = str(CHECKPOINT_DIR / "phase3_improved" / "best_val.pth")
+    # ── GNN partagé (défaut : celui de Model A ; --gnn_ckpt pour un GNN fine-tuné) ──
+    gnn_ckpt = args.gnn_ckpt or str(CHECKPOINT_DIR / "phase3_improved" / "best_val.pth")
     print(f"\n▶ GNN (partagé A/A'): {gnn_ckpt}")
     gnn = load_gnn(gnn_ckpt, device)
     te_smi = te["smiles"].tolist()
