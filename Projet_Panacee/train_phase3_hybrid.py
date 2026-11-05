@@ -102,8 +102,13 @@ class HybridSmilesDataset(torch.utils.data.Dataset):
             g = smiles_to_graph("C")  # fallback minimal
 
         g.y = torch.tensor([float(lbl)], dtype=torch.float32)
-        # Attacher le Morgan FP au graphe → sera collated par Batch.from_data_list
-        g.morgan_fp = torch.tensor(self.morgan_fps[idx], dtype=torch.float32)
+        # Attacher le Morgan FP au graphe → sera collated par Batch.from_data_list.
+        # IMPORTANT : shape [1, 2048] (pas [2048]) car PyG concatène sur dim 0.
+        # [1, 2048] × B → cat dim 0 → [B, 2048] ✅
+        # [2048] × B → cat dim 0 → [B*2048] ❌ (1D, crash au torch.cat avec mol_emb)
+        g.morgan_fp = torch.tensor(
+            self.morgan_fps[idx], dtype=torch.float32,
+        ).unsqueeze(0)  # [1, 2048]
         return g
 
 
@@ -439,7 +444,7 @@ def _full_eval(model, hiv_test, lbl_col, morgan_test, device, save_dir,
             g = smiles_to_graph(smi)
             if g is None:
                 continue
-            g.morgan_fp = torch.tensor(morgan_test[i], dtype=torch.float32)
+            g.morgan_fp = torch.tensor(morgan_test[i], dtype=torch.float32).unsqueeze(0)
             batch = Batch.from_data_list([g]).to(device)
             with torch.no_grad():
                 logit = model(batch)["efficacy"].cpu().numpy().ravel()[0]
@@ -486,7 +491,7 @@ def _full_eval(model, hiv_test, lbl_col, morgan_test, device, save_dir,
                 g = smiles_to_graph(d["smiles_canonical"])
                 if g is None or not arv_mask[j]:
                     continue
-                g.morgan_fp = torch.tensor(arv_morgan[j], dtype=torch.float32)
+                g.morgan_fp = torch.tensor(arv_morgan[j], dtype=torch.float32).unsqueeze(0)
                 batch = Batch.from_data_list([g]).to(device)
                 with torch.no_grad():
                     logit = model(batch)["efficacy"].cpu().numpy().ravel()[0]
@@ -526,7 +531,7 @@ def _full_eval(model, hiv_test, lbl_col, morgan_test, device, save_dir,
                     g = smiles_to_graph(val_smiles[i])
                     if g is None:
                         continue
-                    g.morgan_fp = torch.tensor(morgan_val[i], dtype=torch.float32)
+                    g.morgan_fp = torch.tensor(morgan_val[i], dtype=torch.float32).unsqueeze(0)
                     batch = Batch.from_data_list([g]).to(device)
                     with torch.no_grad():
                         logit = model(batch)["efficacy"].cpu().numpy().ravel()[0]
