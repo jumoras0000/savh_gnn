@@ -83,6 +83,9 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--chembl_csv", type=str,
                     default=str(EXTERNAL_DIR / "chembl_hiv" / "chembl_hiv_merged.csv"))
+    ap.add_argument("--tanimoto_arv_max", type=float, default=0.80,
+                    help="Exclut les actifs ChEMBL dont Tanimoto max vs un ARV > ce seuil "
+                         "(ferme la faille stéréo/tautomère de l'exclusion canonique)")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -109,10 +112,24 @@ def main():
     print(f"  Scaffolds éval (val∪test): {len(eval_scaffolds)} | ARV: {len(arv_scaffolds)}")
     print(f"  train existant (canon): {len(tr_canon)}")
 
+    # FP Morgan des 34 ARV → exclusion par Tanimoto (ferme la faille stéréo/
+    # tautomère/sel que l'exclusion canonique exacte rate : Efavirenz sim=1.000
+    # au FP près malgré un SMILES canonique différent).
+    from rdkit import Chem
+    from rdkit.Chem import DataStructs
+    from src.utils.fingerprints import morgan_fp_bitvect
+    arv_fps = []
+    for c in arv_canon:
+        m = Chem.MolFromSmiles(c)
+        if m is not None:
+            arv_fps.append(morgan_fp_bitvect(m, 2, 2048))
+    tani_max = args.tanimoto_arv_max
+    print(f"  Seuil Tanimoto anti-fuite ARV : {tani_max} ({len(arv_fps)} FP ARV)")
+
     # ── ChEMBL actifs → nouveaux actifs (hors interdits, hors train existant) ──
     chembl = pd.read_csv(args.chembl_csv)
     added, seen = [], set()
-    n_arv_excl = n_evalleak_excl = n_dup_train = n_shares_arv_scaffold = 0
+    n_arv_excl = n_evalleak_excl = n_dup_train = n_shares_arv_scaffold = n_tani_excl = 0
     for s in chembl["smiles"]:
         c = _canon(s)
         if c is None or c in seen:
@@ -124,6 +141,12 @@ def main():
             n_evalleak_excl += 1; continue
         if c in tr_canon:
             n_dup_train += 1; continue
+        # Anti-fuite Tanimoto : exclut les quasi-copies d'ARV (faille canonique)
+        m = Chem.MolFromSmiles(c)
+        if m is not None and arv_fps:
+            fp = morgan_fp_bitvect(m, 2, 2048)
+            if max(DataStructs.BulkTanimotoSimilarity(fp, arv_fps)) > tani_max:
+                n_tani_excl += 1; continue
         if scaf in arv_scaffolds:           # transparence : aide potentielle au gate
             n_shares_arv_scaffold += 1
         seen.add(c)
@@ -131,6 +154,7 @@ def main():
     print(f"\n▶ ChEMBL filtré (anti-fuite) :")
     print(f"  exclus ARV gate (canon exact): {n_arv_excl}")
     print(f"  exclus val/test (scaffold analogue): {n_evalleak_excl}")
+    print(f"  exclus quasi-copie ARV (Tanimoto>{tani_max}): {n_tani_excl}")
     print(f"  déjà dans train: {n_dup_train} | NOUVEAUX actifs ajoutés: {len(added)}")
     print(f"  dont partagent un scaffold ARV (transfert, pas fuite): {n_shares_arv_scaffold}")
 
@@ -280,10 +304,13 @@ def main():
         "augmentation": {"chembl_csv": args.chembl_csv, "n_added_actives": len(added),
                          "excluded_arv_canon": n_arv_excl,
                          "excluded_evalleak_scaffold": n_evalleak_excl,
+                         "excluded_tanimoto_arv": n_tani_excl,
+                         "tanimoto_arv_max": args.tanimoto_arv_max,
                          "dup_train": n_dup_train,
                          "added_sharing_arv_scaffold": n_shares_arv_scaffold},
         "anti_leakage": "val/test exclus par SCAFFOLD (analogues) ; 34 ARV exclus "
-                        "par canonique exact ; scaffold-ARV compté (transparence)",
+                        "par canonique exact + Tanimoto>seuil (ferme faille stéréo/"
+                        "tautomère) ; scaffold-ARV compté (transparence)",
     }
     with open(aprime_dir / "manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
@@ -292,6 +319,8 @@ def main():
         "n_test": int(te_v.sum()), "n_arv": n_arv, "n_added_chembl": len(added),
         "anti_leakage": {"excluded_arv_canon": n_arv_excl,
                          "excluded_evalleak_scaffold": n_evalleak_excl,
+                         "excluded_tanimoto_arv": n_tani_excl,
+                         "tanimoto_arv_max": args.tanimoto_arv_max,
                          "dup_train": n_dup_train,
                          "added_sharing_arv_scaffold": n_shares_arv_scaffold},
         "model_A": {k: float(v) for k, v in results["A"].items()},
