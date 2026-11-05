@@ -94,10 +94,12 @@ Diagnostic des 10 ARV manqués (`diagnose_arv.py`, Tanimoto max vs actifs du tra
 
 Couverture directe des classes OOD manquées.
 
-**Protocole anti-fuite (3 exclusions des actifs ChEMBL ajoutés au train) :**
-1. Les 34 ARV du gate (sinon trivialisation).
-2. Tout canonique présent dans val/test MoleculeNet (sinon fuite dans l'évaluation).
+**Protocole anti-fuite des actifs ChEMBL ajoutés au train :**
+1. **Gate ARV** : exclusion des 34 ARV par SMILES canonique exact (les médicaments eux-mêmes). Apprendre d'autres composés actifs sur la même cible = transfert légitime de pharmacophore. Le nombre d'ajouts partageant un scaffold Bemis-Murcko avec un ARV est **compté et rapporté** (transparence sur l'aide au gate).
+2. **Éval** : exclusion par **scaffold de Bemis-Murcko** de tout ChEMBL partageant un squelette avec val/test (pas seulement canonique exact) → ferme la fuite d'**analogues**, cohérent avec le scaffold split du projet.
 3. Déduplication canonique vs train existant.
+
+Logique d'anti-fuite et de bootstrap testée par exécution (jeux jouets, réponses connues).
 
 **Plan :** ré-entraîner les RF sur le train augmenté (levier le moins coûteux ; les RF portent le DrugBank) → Model A'. Évaluation sur le **même** test held-out + **même** gate. Bootstrap paired A' vs A. GNN inchangé dans un premier temps ; fine-tune GNN (`finetune_hiv_chembl.py`, anti-fuite intégré) si insuffisant.
 

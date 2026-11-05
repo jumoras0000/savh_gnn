@@ -44,6 +44,7 @@ from src.validation.pharma_metrics import full_screening_report
 
 from stack_gnn_rf import gnn_scores_aligned, load_gnn, load_hiv_data
 from push_ensemble import FP_KINDS, featurize, train_rf, rank_avg, drugbank_recall
+from src.preprocessing.scaffold_split import generate_scaffold
 
 PHARMA_KEYS = ["roc_auc", "ef_1pct", "ef_5pct", "bedroc_alpha20",
                "hit_rate_top_100", "recall_top_10pct", "prc_auc"]
@@ -91,34 +92,47 @@ def main():
     tr, va, te, lbl = load_hiv_data(str(EXTERNAL_DIR / "phase3"))
     print(f"MoleculeNet train/val/test: {len(tr)}/{len(va)}/{len(te)}")
 
-    # ── Anti-fuite : ensembles canoniques à exclure des ajouts ChEMBL ──
-    print("\n▶ Canonicalisation val/test/train (anti-fuite)")
+    # ── Anti-fuite : ensembles canoniques + SCAFFOLDS à exclure ──
+    # Val/test : exclusion par SCAFFOLD Bemis-Murcko (pas juste canonique exact)
+    #   → ferme la fuite d'ANALOGUES (ChEMBL partageant un scaffold du test),
+    #     cohérent avec le scaffold split du projet.
+    # ARV gate : exclusion par canonique exact (les 34 médicaments). Apprendre
+    #   d'autres actifs de la même cible = transfert légitime. On COMPTE en plus
+    #   combien partagent un scaffold ARV (transparence sur l'aide au gate).
+    print("\n▶ Canonicalisation + scaffolds val/test/train (anti-fuite)")
     arv_canon = {d["smiles_canonical"] for d in canonicalize_arv_smiles()}
+    arv_scaffolds = {generate_scaffold(c) for c in arv_canon}
     va_canon = canon_series(va["smiles"])
     te_canon = canon_series(te["smiles"])
     tr_canon = canon_series(tr["smiles"])
-    forbidden = arv_canon | va_canon | te_canon  # jamais dans le train augmenté
-    print(f"  Interdits (ARV∪val∪test): {len(forbidden)} | train existant: {len(tr_canon)}")
+    eval_scaffolds = {generate_scaffold(s) for s in list(va_canon) + list(te_canon)}
+    print(f"  Scaffolds éval (val∪test): {len(eval_scaffolds)} | ARV: {len(arv_scaffolds)}")
+    print(f"  train existant (canon): {len(tr_canon)}")
 
     # ── ChEMBL actifs → nouveaux actifs (hors interdits, hors train existant) ──
     chembl = pd.read_csv(args.chembl_csv)
     added, seen = [], set()
-    n_arv_excl = n_evalleak_excl = n_dup_train = 0
+    n_arv_excl = n_evalleak_excl = n_dup_train = n_shares_arv_scaffold = 0
     for s in chembl["smiles"]:
         c = _canon(s)
         if c is None or c in seen:
             continue
         if c in arv_canon:
             n_arv_excl += 1; continue
-        if c in va_canon or c in te_canon:
+        scaf = generate_scaffold(c)
+        if scaf in eval_scaffolds:          # fuite d'analogue vers val/test
             n_evalleak_excl += 1; continue
         if c in tr_canon:
             n_dup_train += 1; continue
+        if scaf in arv_scaffolds:           # transparence : aide potentielle au gate
+            n_shares_arv_scaffold += 1
         seen.add(c)
         added.append(c)  # SMILES canonique comme représentation training
     print(f"\n▶ ChEMBL filtré (anti-fuite) :")
-    print(f"  exclus ARV gate: {n_arv_excl} | exclus val/test (fuite éval): {n_evalleak_excl}")
+    print(f"  exclus ARV gate (canon exact): {n_arv_excl}")
+    print(f"  exclus val/test (scaffold analogue): {n_evalleak_excl}")
     print(f"  déjà dans train: {n_dup_train} | NOUVEAUX actifs ajoutés: {len(added)}")
+    print(f"  dont partagent un scaffold ARV (transfert, pas fuite): {n_shares_arv_scaffold}")
 
     # ── Training augmenté = MoleculeNet (smiles,label) + ChEMBL nouveaux (label 1) ──
     aug_smiles = tr["smiles"].tolist() + added
@@ -264,15 +278,22 @@ def main():
         "base": "Model A + ChEMBL augmentation (RF seulement, GNN inchangé)",
         "gnn_ckpt": gnn_ckpt, "fp_kinds": FP_KINDS,
         "augmentation": {"chembl_csv": args.chembl_csv, "n_added_actives": len(added),
-                         "excluded_arv": n_arv_excl, "excluded_evalleak": n_evalleak_excl,
-                         "dup_train": n_dup_train},
-        "anti_leakage": "ARV∪val∪test exclus des actifs ChEMBL ajoutés",
+                         "excluded_arv_canon": n_arv_excl,
+                         "excluded_evalleak_scaffold": n_evalleak_excl,
+                         "dup_train": n_dup_train,
+                         "added_sharing_arv_scaffold": n_shares_arv_scaffold},
+        "anti_leakage": "val/test exclus par SCAFFOLD (analogues) ; 34 ARV exclus "
+                        "par canonique exact ; scaffold-ARV compté (transparence)",
     }
     with open(aprime_dir / "manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
     report = {
         "n_test": int(te_v.sum()), "n_arv": n_arv, "n_added_chembl": len(added),
+        "anti_leakage": {"excluded_arv_canon": n_arv_excl,
+                         "excluded_evalleak_scaffold": n_evalleak_excl,
+                         "dup_train": n_dup_train,
+                         "added_sharing_arv_scaffold": n_shares_arv_scaffold},
         "model_A": {k: float(v) for k, v in results["A"].items()},
         "model_A_prime": {k: float(v) for k, v in results["A_prime"].items()},
         "bootstrap_diff_Aprime_vs_A": out_diff, "n_boot": nv,
