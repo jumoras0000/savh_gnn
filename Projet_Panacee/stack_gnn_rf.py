@@ -299,6 +299,15 @@ def main():
         json.dump(out, f, indent=2, ensure_ascii=False)
     print(f"\n✅ Rapport: {out_path}")
 
+    # Scores par molécule → réutilisés par bootstrap_ci.py (pas de recalcul GNN/RF)
+    npz_path = save_dir / "stacking_scores.npz"
+    np.savez(
+        npz_path,
+        y_te=y_te, gnn_te=gnn_te, rf_te=rf_te, meta_te=meta_te,
+        gnn_arv=gnn_arv, rf_arv=rf_arv, meta_arv=meta_arv,
+    )
+    print(f"✅ Scores: {npz_path}")
+
 
 if __name__ == "__main__":
     main()
