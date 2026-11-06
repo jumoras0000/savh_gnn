@@ -29,7 +29,7 @@ from src.config import CHECKPOINT_DIR, EXTERNAL_DIR
 from model_a import load_model_a, score_model_a
 from evaluate_phase3 import load_model, predict_batch
 from src.preprocessing.graph_builder import smiles_to_graph
-from src.knowledge.medical_rules import compute_molecular_profile
+from rdkit.Chem import Descriptors, FilterCatalog, QED as RDKit_QED
 from src.validation.conformal_prediction import ConformalClassifier
 from stack_gnn_rf import load_hiv_data
 from rdkit import Chem
@@ -83,14 +83,27 @@ def main():
     admet, admet_valid = predict_batch(gnn, top_smiles, device)
     eff_proba = admet["efficacy"].ravel() if "efficacy" in admet else np.full(len(top_smiles), np.nan)
 
-    # 3. Drug-likeness
+    # 3. Drug-likeness (direct RDKit — contourne le bug wchar_t de compute_molecular_profile)
     print("\n▶ 3. Drug-likeness (Lipinski, PAINS, QED)")
+    _pains_catalog = FilterCatalog.FilterCatalog(
+        FilterCatalog.FilterCatalogParams(FilterCatalog.FilterCatalogParams.FilterCatalogs.PAINS))
+
     profiles = []
     for s in top_smiles:
         mol = Chem.MolFromSmiles(s)
         if mol:
-            p = compute_molecular_profile(mol)
-            profiles.append(p)
+            try:
+                qed = RDKit_QED.qed(mol)
+            except Exception:
+                qed = 0.0
+            mw = Descriptors.MolWt(mol)
+            logp = Descriptors.MolLogP(mol)
+            hbd = Descriptors.NumHDonors(mol)
+            hba = Descriptors.NumHAcceptors(mol)
+            lip_viol = sum([mw > 500, logp > 5, hbd > 5, hba > 10])
+            pains = _pains_catalog.GetMatches(mol)
+            n_pains = len(pains)
+            profiles.append({"qed": qed, "lipinski_violations": lip_viol, "pains_alerts": n_pains})
         else:
             profiles.append(None)
 
