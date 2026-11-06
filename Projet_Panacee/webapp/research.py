@@ -107,6 +107,8 @@ class _Phase2Predictor:
         self.task_names = ckpt.get("task_names") or TOX21_TASKS
         num_tasks = ckpt.get("num_tasks", len(self.task_names))
         self.thresholds = ckpt.get("optimal_thresholds") or [0.5] * num_tasks
+        if len(self.task_names) != num_tasks or len(self.thresholds) != num_tasks:
+            raise ValueError("Checkpoint Phase 2 : dimensions tâches/seuils incohérentes")
 
         encoder = MolecularEncoder(
             atom_dim=ATOM_FEATURE_DIM, hidden_dim=cfg.get("hidden_dim", HIDDEN_DIM),
@@ -117,7 +119,7 @@ class _Phase2Predictor:
         )
         self.model = ToxicityClassifier(encoder=encoder, num_tasks=num_tasks,
                                         hidden_dim=cfg.get("hidden_dim", HIDDEN_DIM))
-        self.model.load_state_dict(ckpt["model_state_dict"], strict=False)
+        self.model.load_state_dict(ckpt["model_state_dict"], strict=True)
         self.model.eval()
         self._torch = torch
 

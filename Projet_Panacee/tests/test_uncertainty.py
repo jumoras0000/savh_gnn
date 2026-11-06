@@ -102,3 +102,15 @@ def test_phase2_predictor_returns_uncertainty(tmp_path):
     # sans incertitude demandée : pas de champ confidence
     r0 = pred.predict_properties("CCO", n_uncertainty=0)
     assert "confidence" not in r0
+
+    missing_weights = dict(ckpt)
+    missing_weights["model_state_dict"] = dict(model.state_dict())
+    missing_weights["model_state_dict"].pop(next(iter(missing_weights["model_state_dict"])))
+    torch.save(missing_weights, path)
+    with pytest.raises(RuntimeError, match="Missing key"):
+        _Phase2Predictor(str(path))
+
+    wrong_tasks = dict(ckpt, num_tasks=3)
+    torch.save(wrong_tasks, path)
+    with pytest.raises(ValueError, match="dimensions"):
+        _Phase2Predictor(str(path))

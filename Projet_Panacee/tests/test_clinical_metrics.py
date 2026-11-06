@@ -2,6 +2,9 @@
 """Tests du score clinique de supervision et du verdict de sécurité."""
 from __future__ import annotations
 
+import numpy as np
+import pytest
+
 from webapp import service
 from webapp.service import clinical_verdict
 
@@ -74,3 +77,17 @@ def test_endpoint_without_positives_is_undefined_not_zero():
     agg = summarize(probs, targets, task_names=["t0", "t1"])["aggregate"]
     # la macro-sensibilité ne doit refléter que la tâche évaluable (t0), pas un 0 fictif
     assert agg["macro_sensitivity"] == tasks[0]["sensitivity"]
+
+
+@pytest.mark.parametrize("probs,targets", [
+    ([[float("nan")]], [[1.0]]),
+    ([[float("inf")]], [[0.0]]),
+    ([[1.2]], [[1.0]]),
+    ([[0.5]], [[2.0]]),
+    ([[0.5, 0.6]], [[1.0]]),
+])
+def test_clinical_metrics_refuse_invalid_observed_predictions(probs, targets):
+    from src.validation.clinical_metrics import per_task_metrics
+
+    with pytest.raises(ValueError):
+        per_task_metrics(np.asarray(probs), np.asarray(targets))

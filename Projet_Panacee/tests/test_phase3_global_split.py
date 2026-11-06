@@ -6,6 +6,7 @@ import pytest
 
 from src.preprocessing.multi_property_loader import (
     download_dataset,
+    merge_datasets,
     repartition_global_scaffolds,
     verify_phase3_source_provenance,
     verify_global_split_integrity,
@@ -44,6 +45,55 @@ def test_download_rejects_nonnumeric_labels(tmp_path):
         folder / "delaney-processed.csv", index=False)
     with pytest.raises(ValueError, match="non numériques"):
         download_dataset("esol", str(folder))
+
+
+def test_repartition_rejects_nonnumeric_intermediate_label(tmp_path):
+    molecules = ["C1" + "C" * (size - 1) + "1" for size in range(3, 15)]
+    paths = _paths(tmp_path, "esol", molecules, list(range(12)))
+    train = pd.read_csv(paths["train"])
+    train["esol_label"] = train["esol_label"].astype(object)
+    train.loc[0, "esol_label"] = "unknown"
+    train.to_csv(paths["train"], index=False)
+    with pytest.raises(ValueError, match="étiquette non numérique"):
+        repartition_global_scaffolds({"esol": paths}, str(tmp_path))
+
+
+@pytest.mark.parametrize("problem", ["missing_split", "missing_file", "missing_smiles"])
+def test_merge_rejects_incomplete_source_instead_of_silently_dropping_it(tmp_path, problem):
+    valid = tmp_path / "valid.csv"
+    pd.DataFrame({"smiles": ["CCO"], "a_label": [1]}).to_csv(valid, index=False)
+    bad = tmp_path / "bad.csv"
+    pd.DataFrame({"not_smiles": ["CCN"], "b_label": [0]}).to_csv(bad, index=False)
+    source = ({"val": str(bad)} if problem == "missing_split" else
+              {"train": str(tmp_path / "absent.csv")} if problem == "missing_file" else
+              {"train": str(bad)})
+    with pytest.raises((ValueError, FileNotFoundError)):
+        merge_datasets({"a": {"train": str(valid)}, "b": source}, "train")
+
+
+@pytest.mark.parametrize("column,value", [
+    ("hiv_HIV_active", "unknown"),
+    ("hiv_HIV_active", 2),
+    ("hiv_HIV_active", float("inf")),
+    ("esol_measured log solubility in mols per litre", "unknown"),
+    ("esol_measured log solubility in mols per litre", float("inf")),
+])
+def test_multi_property_dataset_rejects_invalid_observed_labels(column, value):
+    from src.preprocessing.multi_property_loader import MultiPropertyDataset
+
+    with pytest.raises(ValueError, match="étiquette"):
+        MultiPropertyDataset(pd.DataFrame({"smiles": ["CCO"], column: [value]}))
+
+
+def test_multi_property_dataset_rejects_missing_or_invalid_train_stats():
+    from src.preprocessing.multi_property_loader import MultiPropertyDataset
+
+    frame = pd.DataFrame({"smiles": ["CCO", "CCN"],
+                          "esol_measured log solubility in mols per litre": [-2.0, -3.0]})
+    with pytest.raises(ValueError, match="absentes"):
+        MultiPropertyDataset(frame, regression_stats={})
+    with pytest.raises(ValueError, match="invalides"):
+        MultiPropertyDataset(frame, regression_stats={"solubility": {"mean": 0.0, "std": 0.0}})
 
 
 def _paths(tmp_path, name, smiles, labels):

@@ -4,7 +4,19 @@ import torch
 from torch import nn
 
 from src.models.multi_property_head import MultiPropertyLoss, MultiPropertyPredictor
-from src.training.train_phase3 import evaluate, phase3_parameter_groups, train_one_epoch
+from src.training.train_phase3 import (
+    compute_phase3_metrics,
+    evaluate,
+    phase3_parameter_groups,
+    train_one_epoch,
+)
+
+
+def test_phase3_metrics_refuse_to_drop_nonfinite_observed_prediction():
+    predictions = {"efficacy": torch.tensor([[float("nan")], [0.2]])}
+    targets = {"efficacy": torch.tensor([[1.0], [0.0]])}
+    with pytest.raises(ValueError, match="prédiction non finie"):
+        compute_phase3_metrics(predictions, targets)
 
 
 class Batch:
