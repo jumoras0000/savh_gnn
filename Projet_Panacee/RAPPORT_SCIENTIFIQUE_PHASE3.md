@@ -1,10 +1,53 @@
-# Rapport scientifique — Panacée GNN anti-VIH, Phase 3
+# Panacée GNN : criblage virtuel anti-VIH par réseau de neurones sur graphes et ensemble multi-représentation
 
-**Objet :** criblage virtuel d'inhibiteurs anti-VIH par réseau de neurones sur graphes (GNN), optimisation du pouvoir de classement (ranking) pour la découverte de médicaments.
+**Auteur :** Junior Yong (ESIEA)
 **Dernière mise à jour :** 2026-11-06
-**Statut :** **Model A''_propre** (clean ftGNN + RF augmentés) = **modèle production** — DrugBank **32/34** avec anti-fuite Tanimoto total (GNN + RF). Model A (24/34) conservé comme repli.
+**Statut :** **Model A''_propre** = modèle production — DrugBank **32/34**, anti-fuite Tanimoto total.
+
+---
+
+## Abstract
+
+Nous présentons un pipeline de criblage virtuel pour la découverte d'inhibiteurs anti-VIH, combinant un réseau de neurones sur graphes à attention multi-têtes (GATv2 edge-aware, 256 dimensions) avec un ensemble de quatre forêts aléatoires sur empreintes moléculaires complémentaires (ECFP4, ECFP6, MACCS, RDKit). L'agrégation par rank-average (non-paramétrique, invariante d'échelle) produit un classement composite optimisé pour la reconnaissance précoce.
+
+**Problème :** le modèle de base (Model A, 24/34 ARV retrouvés) plafonne par manque de données d'entraînement sur les classes thérapeutiques récentes (inhibiteurs d'intégrase, antagonistes CCR5, inhibiteurs d'entrée).
+
+**Solution :** augmentation ciblée par 15 580 actifs ChEMBL confirmés (5 cibles anti-VIH, pChEMBL ≥ 5) avec protocole anti-fuite à 4 niveaux (exclusion exacte, scaffold, Tanimoto > 0,80, déduplication), suivi d'un fine-tuning GNN avec le même filtre.
+
+**Résultats :** le modèle production (A''_propre) atteint **32/34** au gate DrugBank (recall des ARV approuvés, +8 vs baseline), vérifié honnête (0 quasi-copie, 5/7 gains par transfert fort sim ≤ 0,40). Robustesse confirmée par k-fold scaffold CV (AUC 0,834 ± 0,028) et test DeLong apparié. Criblage prospectif : 124 hits ZINC drug-like + 6 candidats repurposing antiviraux (5 inhibiteurs polymérase HCV, 1 inhibiteur protéase SARS-CoV-2). Interprétabilité : les attention maps GNN montrent une focalisation sur les groupes fonctionnels polaires (O 40 %, F 13 %, Cl 10 %) plutôt que les scaffolds aromatiques, cohérent avec la pharmacologie anti-VIH.
+
+**Mots-clés :** GNN, criblage virtuel, anti-VIH, ensemble learning, empreintes moléculaires, drug repurposing, interprétabilité.
+
+---
 
 > Tous les chiffres de ce rapport proviennent des rapports JSON / logs bruts produits par les scripts d'évaluation, pas d'estimations. Les affirmations causales sont marquées *mesuré* ou *hypothèse*.
+
+---
+
+## Méthodes
+
+### Architecture du modèle
+
+- **Encodeur GNN** : MolecularEncoder (6 couches EdgeAttentionConv GATv2, 4 têtes d'attention, edge-aware, 256 dimensions, Virtual Node, skip connections, pooling triple mean+max+sum gated, chiralité CIP R/S).
+- **Têtes de prédiction** : MultiPropertyPredictor (efficacité, toxicité, BBB, ClinTox, solubilité, lipophilicité).
+- **Ensemble fingerprint** : 4 RF (500 arbres, min_samples_leaf=2, class_weight=balanced) sur ECFP4 (2048-bit), ECFP6 (2048-bit), MACCS (167 clés), RDKit (2048-bit).
+- **Fusion** : rank-average des 5 scores (GNN + 4 RF) — invariante d'échelle, optimale pour le ranking.
+
+### Protocole anti-fuite (4 niveaux)
+
+1. **Exclusion canonique exacte** : les 34 ARV du gate et les molécules val/test exclues du train augmenté par SMILES canonique.
+2. **Exclusion par scaffold** : tout ChEMBL partageant un squelette Bemis-Murcko avec val/test exclu (146 composés).
+3. **Exclusion Tanimoto** : tout ChEMBL avec Morgan Tanimoto > 0,80 vs un ARV exclu (36 quasi-copies).
+4. **Déduplication** : canonique vs train existant (77 doublons supprimés).
+
+### Évaluation
+
+- **Test held-out** : 3 778 molécules, 84 actifs (MoleculeNet HIV, scaffold split).
+- **Gate DrugBank** : 34 ARV approuvés, recall dans le top-10 % du pool (ARV + test). Seuil PASS : ≥ 25/34.
+- **Statistiques** : bootstrap paired (B=2 000, IC95 % percentile), test DeLong apparié (AUC).
+- **Robustesse** : k-fold scaffold CV (5 folds, ensemble fingerprint seul, GNN exclu pour honnêteté).
+- **Interprétabilité** : extraction des poids d'attention EdgeAttentionConv, agrégation par atome/liaison, visualisation SVG.
+- **Criblage prospectif** : ZINC 250k + 6 637 antiviraux multi-virus, filtres ADMET + drug-likeness + AD Tanimoto + conformal.
 
 ---
 
@@ -245,6 +288,27 @@ Extraction des poids d'attention (EdgeAttentionConv, GATv2 style) sur les **20 m
 
 ---
 
+## 5sexies. Phase 4b — Repurposing antiviraux (`screen_repurposing.py`)
+
+Criblage de **6 637 antiviraux connus** (HCV, HBV, Influenza, SARS-CoV-2, ChEMBL) avec A''_propre → identification de candidats repurposing anti-VIH.
+
+| Étape | Compte |
+|-------|-------:|
+| Antiviraux criblés | 6 637 |
+| Top annotés | 500 |
+| In-domain (AD) | 44 |
+| Drug-like | 103 |
+| Sans alerte PAINS | 471 |
+| **Hits propres** | **6** |
+
+**Répartition par virus source (hits propres) :**
+- **HCV** : 5 (inhibiteurs de polymérase) — cible analogue à la RT du VIH
+- **SARS-CoV-2** : 1 (inhibiteur de protéase) — partage structurel avec inhibiteurs protéase VIH
+
+**Interprétation** : le faible taux in-domain (44/500 = 8,8 %) est attendu — les antiviraux non-VIH couvrent un espace chimique différent. Les 6 hits sont des composés dont la structure est suffisamment proche de l'espace d'entraînement VIH pour être des prédictions fiables. L'axe HCV polymérase → VIH RT est un repurposing biologiquement plausible (polymérase virale ARN-dépendante dans les deux cas).
+
+---
+
 ## 6. Limites assumées
 
 - Métriques = estimations ponctuelles confirmées par bootstrap IC95 % (percentile, approximation, pas BCa).
@@ -259,4 +323,25 @@ Extraction des poids d'attention (EdgeAttentionConv, GATv2 style) sur les **20 m
 
 ## 7. Reproductibilité
 
-Scripts (seed=42 partout) : `benchmark_baselines.py`, `train_phase3_hybrid.py`, `stack_gnn_rf.py`, `bootstrap_ci.py`, `push_ensemble.py`, `diagnose_arv.py`, `check_arv_leakage.py`, `save_model_a.py`, `model_a.py`, `train_augmented_rf.py`, `diagnose_gate_honesty.py`, `finetune_hiv_chembl.py`, `rigorous_compare.py`, `kfold_scaffold_rf.py`, `screen_library.py`, `interpret_hits.py`. Rapports JSON dans `checkpoints/phase3_stacking/`. Artefacts : Model A `checkpoints/model_A_rank_avg_5/`, Model A''_propre `checkpoints/model_A_prime_augmented/` (clean ftGNN `checkpoints/phase3/panacee_phase3_hiv_chembl_clean.pth` + RF augmentés + manifeste + `added_actives.json`).
+Scripts (seed=42 partout) : `benchmark_baselines.py`, `train_phase3_hybrid.py`, `stack_gnn_rf.py`, `bootstrap_ci.py`, `push_ensemble.py`, `diagnose_arv.py`, `check_arv_leakage.py`, `save_model_a.py`, `model_a.py`, `train_augmented_rf.py`, `diagnose_gate_honesty.py`, `finetune_hiv_chembl.py`, `rigorous_compare.py`, `kfold_scaffold_rf.py`, `screen_library.py`, `interpret_hits.py`, `screen_repurposing.py`. Rapports JSON dans `checkpoints/phase3_stacking/`. Artefacts : Model A `checkpoints/model_A_rank_avg_5/`, Model A''_propre `checkpoints/model_A_prime_augmented/` (clean ftGNN + RF augmentés + manifeste + `added_actives.json`).
+
+---
+
+## 8. Conclusion et perspectives
+
+### 8.1 Bilan
+
+Le pipeline Panacée GNN v3 démontre qu'un ensemble GNN + fingerprints multi-représentation, augmenté par des actifs ChEMBL des classes thérapeutiques cibles, peut atteindre un recall de **32/34 ARV approuvés** (94,1 %) tout en maintenant un protocole anti-fuite rigoureux à 4 niveaux. Les résultats clés :
+
+1. **Le plafond de 24/34 était un problème de données, pas de modèle** — résolu par augmentation ciblée.
+2. **La fusion externe (rank-average) bat la fusion interne (concat)** — confirmé statistiquement.
+3. **L'interprétabilité montre une focalisation pharmacologiquement cohérente** — groupes fonctionnels polaires > scaffolds.
+4. **Le repurposing identifie des candidats plausibles** — axe HCV polymérase → VIH RT.
+
+### 8.2 Perspectives
+
+- **Validation expérimentale** : soumettre les 124 hits ZINC + 6 candidats repurposing à un essai de liaison *in vitro* (fluorescence polarization ou SPR) sur la RT et la protéase du VIH-1.
+- **Élargissement du domaine** : intégrer des librairies commerciales (Enamine REAL, MolPort) pour augmenter le pool de criblage.
+- **Multi-cible** : étendre le modèle aux cibles émergentes (capsid CA, maturation inhibitors).
+- **GNN explainability** : GNNExplainer par cible (RT vs protéase vs intégrase) pour différencier les pharmacophores par mécanisme.
+- **Webapp** : déploiement de l'ensemble A'' via l'interface web pour screening interactif (implémenté, objectif `efficacy_ensemble`).
