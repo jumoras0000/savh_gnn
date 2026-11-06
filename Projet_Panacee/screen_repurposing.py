@@ -124,7 +124,7 @@ def main():
     valid_mask = np.array([i for i, s in enumerate(va_smiles) if smiles_to_graph(s) is not None])
     if len(valid_mask) > 0:
         cp = ConformalClassifier(alpha=args.alpha)
-        cp.calibrate(y_val[valid_mask], val_proba[valid_mask])
+        cp.fit(val_proba[valid_mask], y_val[valid_mask])
     else:
         cp = None
 
