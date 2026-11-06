@@ -92,6 +92,7 @@ def build_chembl_dataset(
     exclude_smiles_canonical: set | None = None,
     zinc_decoys_ratio: float = 10.0,
     zinc_path: str | None = None,
+    tanimoto_arv_max: float = 0.80,
 ) -> tuple[list, list, dict]:
     """
     Construit dataset binaire ChEMBL actifs (1) + ZINC decoys (0) SANS FUITE.
@@ -131,7 +132,29 @@ def build_chembl_dataset(
             if c in exclude_smiles_canonical:
                 excluded_arv.append(c)
                 del canon_actives[c]
-    print(f"  Exclus ARV DrugBank (anti-fuite) : {len(excluded_arv)}")
+    print(f"  Exclus ARV DrugBank (canon exact) : {len(excluded_arv)}")
+
+    # 2bis) Anti-fuite Tanimoto : exclut les QUASI-COPIES d'ARV (stéréo/tautomère/
+    # sel/analogue proche) que l'exclusion canonique exacte rate. Aligne le fine-tune
+    # sur l'anti-fuite de train_augmented_rf (sinon gate assisté par analogues GNN).
+    n_tani_excl = 0
+    if exclude_smiles_canonical and tanimoto_arv_max is not None and tanimoto_arv_max < 1.0:
+        from rdkit.Chem import DataStructs
+        from src.utils.fingerprints import morgan_fp_bitvect
+        arv_fps = []
+        for c in exclude_smiles_canonical:
+            m = Chem.MolFromSmiles(c)
+            if m is not None:
+                arv_fps.append(morgan_fp_bitvect(m, 2, 2048))
+        for c in list(canon_actives.keys()):
+            m = Chem.MolFromSmiles(c)
+            if m is None or not arv_fps:
+                continue
+            fp = morgan_fp_bitvect(m, 2, 2048)
+            if max(DataStructs.BulkTanimotoSimilarity(fp, arv_fps)) > tanimoto_arv_max:
+                del canon_actives[c]
+                n_tani_excl += 1
+        print(f"  Exclus quasi-copie ARV (Tanimoto>{tanimoto_arv_max}) : {n_tani_excl}")
 
     actives_canon_set = set(canon_actives.keys())
     actives_smi = list(canon_actives.values())  # SMILES bruts conservés pour training
@@ -172,6 +195,7 @@ def build_chembl_dataset(
         "n_actives": len(actives_smi),
         "n_decoys": len(decoys_smi),
         "n_excluded_arv": len(excluded_arv),
+        "n_excluded_tanimoto_arv": n_tani_excl,
         "n_overlap_zinc_dropped": n_overlap_zinc,
         "actives_canonical": actives_canon_list,  # pour vérif downstream
     }
