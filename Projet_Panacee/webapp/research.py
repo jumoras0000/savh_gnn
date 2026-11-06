@@ -348,9 +348,42 @@ def combo(smiles_list: list[str], checkpoint: str | None = None) -> dict:
 
 _OBJECTIVES = {
     "efficacy": "Efficacité anti-VIH (Phase 3)",
+    "efficacy_ensemble": "Efficacité anti-VIH — Ensemble A'' (GNN + 4 RF, production)",
     "safety": "Sécurité (faible toxicité)",
     "drug_likeness": "Drug-likeness (QED, sans modèle)",
 }
+
+
+def _ensemble_default_dir() -> str:
+    from src.config import CHECKPOINT_DIR
+    return str(CHECKPOINT_DIR / "model_A_prime_augmented")
+
+
+def get_ensemble(model_dir: str | None = None):
+    """Charge le Model A'' (GNN + 4 RF rank-average). Mis en cache."""
+    import torch
+    mdir = model_dir or _ensemble_default_dir()
+    if not os.path.exists(mdir):
+        raise FileNotFoundError(
+            f"Model A'' introuvable : {mdir}. "
+            f"Lance train_augmented_rf.py pour le produire."
+        )
+    key = ("ensemble_hiv", mdir)
+    if key in _CACHE:
+        return _CACHE[key]
+    from model_a import load_model_a, score_model_a
+    device = torch.device("cpu")
+    bundle = load_model_a(Path(mdir), device)
+    _CACHE[key] = (bundle, device, score_model_a)
+    return _CACHE[key]
+
+
+def _score_ensemble(smiles_list: list[str], model_dir: str | None = None) -> list[float | None]:
+    """Score une liste de SMILES via l'ensemble A'' (rank-average 5 modèles)."""
+    import numpy as np
+    bundle, device, score_fn = get_ensemble(model_dir)
+    scores, valid = score_fn(bundle, smiles_list, device)
+    return [float(scores[i]) if valid[i] else None for i in range(len(smiles_list))]
 
 
 def screen(molecules: list, objective: str = "drug_likeness",
@@ -376,7 +409,12 @@ def screen(molecules: list, objective: str = "drug_likeness",
 
     # Modèle requis ?
     predictor, mode = None, "descriptors"
-    if objective in ("safety", "efficacy"):
+    ensemble_scores = None
+    if objective == "efficacy_ensemble":
+        mode = "ensemble_hiv"
+        all_smiles = [it["smiles"] for it in items]
+        ensemble_scores = _score_ensemble(all_smiles)
+    elif objective in ("safety", "efficacy"):
         mode, predictor = _resolve_model(checkpoint)
         if objective == "efficacy" and mode != "phase3":
             raise FileNotFoundError(
@@ -387,7 +425,7 @@ def screen(molecules: list, objective: str = "drug_likeness",
             raise FileNotFoundError("Le criblage par sécurité nécessite un modèle Phase 2 ou 3.")
 
     ranked, invalid = [], []
-    for it in items:
+    for idx, it in enumerate(items):
         desc = cheminfo.descriptors(it["smiles"])
         if not desc.get("valid"):
             invalid.append(it["smiles"])
@@ -398,6 +436,9 @@ def screen(molecules: list, objective: str = "drug_likeness",
         score = None
         if objective == "drug_likeness":
             score = round((desc["qed"] or 0) * 100, 1)
+        elif objective == "efficacy_ensemble":
+            es = ensemble_scores[idx] if ensemble_scores else None
+            score = round(es * 100, 1) if es is not None else 0.0
         else:
             pr = predictor.predict_properties(it["smiles"]) if predictor else None
             if pr:

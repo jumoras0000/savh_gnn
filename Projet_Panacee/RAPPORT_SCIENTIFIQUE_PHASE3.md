@@ -224,6 +224,27 @@ Jeu complet : 41 120 mol, 1 443 actifs (train + val + test MoleculeNet réunis).
 
 ---
 
+## 5quinquies. Interprétabilité — attention maps GNN (`interpret_hits.py`)
+
+Extraction des poids d'attention (EdgeAttentionConv, GATv2 style) sur les **20 meilleurs hits** du screening ZINC propre. Pour chaque hit : attention agrégée par atome et par liaison sur 6 couches × 4 têtes → importance normalisée [0,1] → SVG avec sous-structures surlignées.
+
+**Profil pharmacophorique des atomes les plus activants (top-3 par hit, 60 atomes) :**
+
+| Élément | Fréquence | Interprétation |
+|---------|----------:|----------------|
+| O | 40,0 % | Accepteurs/donneurs H → interactions polaires cible |
+| C | 33,3 % | Squelette carboné (attendu) |
+| F | 13,3 % | Liaison halogène + stabilité métabolique |
+| Cl | 10,0 % | Liaison halogène |
+| Br | 1,7 % | Halogène lourd |
+| N | 1,7 % | Azote basique/accepteur |
+
+- Seulement 5 % des atomes activants sont en cycle, 1,7 % aromatiques → le GNN focalise sur les **groupes fonctionnels périphériques** (substituants polaires, halogènes), pas sur les scaffolds aromatiques.
+- Cohérent avec la pharmacologie anti-VIH : les interactions clés (RT, protéase, intégrase) dépendent de groupes fonctionnels spécifiques (amides, CF₃, sulfonamides, hydroxyles) plutôt que du squelette seul.
+- 20 visualisations SVG dans `checkpoints/interpretability/hit_*_attention.svg`.
+
+---
+
 ## 6. Limites assumées
 
 - Métriques = estimations ponctuelles confirmées par bootstrap IC95 % (percentile, approximation, pas BCa).
@@ -238,4 +259,4 @@ Jeu complet : 41 120 mol, 1 443 actifs (train + val + test MoleculeNet réunis).
 
 ## 7. Reproductibilité
 
-Scripts (seed=42 partout) : `benchmark_baselines.py`, `train_phase3_hybrid.py`, `stack_gnn_rf.py`, `bootstrap_ci.py`, `push_ensemble.py`, `diagnose_arv.py`, `check_arv_leakage.py`, `save_model_a.py`, `model_a.py`, `train_augmented_rf.py`, `diagnose_gate_honesty.py`, `finetune_hiv_chembl.py`, `rigorous_compare.py`, `kfold_scaffold_rf.py`, `screen_library.py`. Rapports JSON dans `checkpoints/phase3_stacking/`. Artefacts : Model A `checkpoints/model_A_rank_avg_5/`, Model A''_propre `checkpoints/model_A_prime_augmented/` (clean ftGNN `checkpoints/phase3/panacee_phase3_hiv_chembl_clean.pth` + RF augmentés + manifeste + `added_actives.json`).
+Scripts (seed=42 partout) : `benchmark_baselines.py`, `train_phase3_hybrid.py`, `stack_gnn_rf.py`, `bootstrap_ci.py`, `push_ensemble.py`, `diagnose_arv.py`, `check_arv_leakage.py`, `save_model_a.py`, `model_a.py`, `train_augmented_rf.py`, `diagnose_gate_honesty.py`, `finetune_hiv_chembl.py`, `rigorous_compare.py`, `kfold_scaffold_rf.py`, `screen_library.py`, `interpret_hits.py`. Rapports JSON dans `checkpoints/phase3_stacking/`. Artefacts : Model A `checkpoints/model_A_rank_avg_5/`, Model A''_propre `checkpoints/model_A_prime_augmented/` (clean ftGNN `checkpoints/phase3/panacee_phase3_hiv_chembl_clean.pth` + RF augmentés + manifeste + `added_actives.json`).
