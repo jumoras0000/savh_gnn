@@ -22,14 +22,16 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 ZINC_TRANCHES_URLS = [
-    "https://zinc20.docking.org/tranches/download/AAML.smi.gz",
-    "https://zinc20.docking.org/tranches/download/ABML.smi.gz",
-    "https://zinc20.docking.org/tranches/download/ACML.smi.gz",
-    "https://zinc20.docking.org/tranches/download/ADML.smi.gz",
-    "https://zinc20.docking.org/tranches/download/AEML.smi.gz",
-    "https://zinc20.docking.org/tranches/download/BAML.smi.gz",
-    "https://zinc20.docking.org/tranches/download/BBML.smi.gz",
-    "https://zinc20.docking.org/tranches/download/BCML.smi.gz",
+    "https://zinc15.docking.org/tranches/download/AAENL.smi",
+    "https://zinc15.docking.org/tranches/download/ABENL.smi",
+    "https://zinc15.docking.org/tranches/download/ACENL.smi",
+    "https://zinc15.docking.org/tranches/download/ADENL.smi",
+    "https://zinc15.docking.org/tranches/download/AEENL.smi",
+    "https://zinc15.docking.org/tranches/download/BAENL.smi",
+    "https://zinc15.docking.org/tranches/download/BBENL.smi",
+    "https://zinc15.docking.org/tranches/download/BCENL.smi",
+    "https://zinc15.docking.org/tranches/download/BDENL.smi",
+    "https://zinc15.docking.org/tranches/download/BEENL.smi",
 ]
 
 

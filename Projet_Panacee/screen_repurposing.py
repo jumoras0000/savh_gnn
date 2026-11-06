@@ -30,7 +30,7 @@ from model_a import load_model_a, score_model_a
 from evaluate_phase3 import load_model, predict_batch
 from src.preprocessing.graph_builder import smiles_to_graph
 from src.knowledge.medical_rules import compute_molecular_profile
-from src.validation.conformal_prediction import ConformalPredictor
+from src.validation.conformal_prediction import ConformalClassifier
 from stack_gnn_rf import load_hiv_data
 from rdkit import Chem
 from rdkit.Chem import DataStructs
@@ -123,7 +123,7 @@ def main():
     y_val = va[lbl].values.astype(int)
     valid_mask = np.array([i for i, s in enumerate(va_smiles) if smiles_to_graph(s) is not None])
     if len(valid_mask) > 0:
-        cp = ConformalPredictor(alpha=args.alpha)
+        cp = ConformalClassifier(alpha=args.alpha)
         cp.calibrate(y_val[valid_mask], val_proba[valid_mask])
     else:
         cp = None
