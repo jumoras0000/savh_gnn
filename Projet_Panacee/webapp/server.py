@@ -87,10 +87,43 @@ async def _remote_sync_status(root: str) -> dict:
 # ──────────────────────────────────────────────────────────────────────
 
 async def index(request):
-    idx = STATIC_DIR / "index.html"
+    idx = STATIC_DIR / "studio.html"
     if not idx.exists():
-        return PlainTextResponse("Frontend manquant (static/index.html).", status_code=500)
+        return PlainTextResponse("Frontend manquant (static/studio.html).", status_code=500)
     return FileResponse(idx)
+
+
+async def legacy_index(request):
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+async def api_studio_overview(request):
+    from webapp import studio
+    return JSONResponse(await asyncio.to_thread(studio.overview, _ckpt_root()))
+
+
+async def api_studio_hits(request):
+    from webapp import studio
+    try:
+        result = await asyncio.to_thread(studio.hits, _ckpt_root(),
+                                         request.query_params.get("source", "zinc"))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse(result)
+
+
+async def api_studio_screen(request):
+    from webapp import studio
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("Requête JSON invalide")
+        result = await asyncio.to_thread(studio.screen, body.get("molecules"), _ckpt_root())
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except FileNotFoundError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    return JSONResponse(result)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1080,6 +1113,10 @@ async def api_stream(request):
 
 routes = [
     Route("/", index),
+    Route("/legacy", legacy_index),
+    Route("/api/studio/overview", api_studio_overview),
+    Route("/api/studio/hits", api_studio_hits),
+    Route("/api/studio/screen", api_studio_screen, methods=["POST"]),
     Route("/api/health", health),
     Route("/api/config", api_config),
     Route("/api/runs", api_runs),

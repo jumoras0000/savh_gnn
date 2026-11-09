@@ -1,4 +1,15 @@
-# 🧬 Panacée — Tableau de bord web (console de signes vitaux)
+# Panacée Studio v2
+
+La page d'accueil `http://127.0.0.1:8000/` est désormais un outil centré sur
+le modèle A'' validé : criblage d'un lot de SMILES, exploration des 124 hits
+ZINC et 6 hits de repurposing, validation et provenance du modèle. L'ancienne
+console d'entraînement reste accessible à `/legacy` mais n'est plus le parcours
+principal. Voir `docs/STUDIO_V2_DECISIONS.md` pour le raisonnement et les
+limites du modèle.
+
+## Ancienne console (conservée à /legacy)
+
+### 🧬 Panacée — Tableau de bord web (console de signes vitaux)
 
 Interface web **complète (front + backend)** pour suivre l'entraînement du GNN
 **avant / pendant / après**, avec des métriques cliniques sensibles et une

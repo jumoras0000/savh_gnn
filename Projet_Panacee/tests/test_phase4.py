@@ -1,10 +1,11 @@
 """Phase 4 : provenance et absence de conclusion thérapeutique automatique."""
 from __future__ import annotations
 
-import pytest
-import sys
 import json
+import sys
 from types import SimpleNamespace
+
+import pytest
 
 from webapp import phase4
 
@@ -66,7 +67,7 @@ def test_phase4_api_returns_report_without_inventing_score(client, monkeypatch):
 
 
 def test_phase4_three_way_review_is_bounded_and_unverified(monkeypatch):
-    from webapp import research, chatbot
+    from webapp import chatbot, research
 
     monkeypatch.setattr(research, "predict", lambda _: {"mode": "descriptors", "results": [
         {"descriptors": {"valid": True}, "risk": {"level": "OK"}}]})
@@ -153,7 +154,7 @@ def test_phase4_limits_hypotheses():
 
 
 def test_phase4_ui_and_status_expose_readiness_without_secrets(client):
-    page = client.get("/")
+    page = client.get("/legacy")
     assert page.status_code == 200
     assert 'id="p4Hypotheses"' in page.text
     assert 'id="p4ChatGPT"' in page.text

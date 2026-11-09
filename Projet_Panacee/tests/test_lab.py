@@ -94,7 +94,7 @@ def test_ensemble_score_is_relative_percentile_not_probability(monkeypatch):
                                       checkpoint="phase3.pth")
 
 
-def test_lab_ensemble_lower_rank_is_better(monkeypatch, tmp_path):
+def test_lab_ensemble_higher_rank_is_better(monkeypatch, tmp_path):
     import json
 
     from webapp import cheminfo
@@ -112,7 +112,7 @@ def test_lab_ensemble_lower_rank_is_better(monkeypatch, tmp_path):
     result = lab._panacee_evidence([
         {"name": "A", "smiles": "CCO"}, {"name": "B", "smiles": "CCN"},
     ], "ensemble_a_prime")
-    assert [row["prediction"]["relative_percentile"] for row in result["candidates"]] == [100, 0]
+    assert [row["prediction"]["relative_percentile"] for row in result["candidates"]] == [0, 100]
 
 
 def test_model_bundle_resolves_relocated_gnn(monkeypatch, tmp_path):
@@ -137,15 +137,15 @@ def test_model_bundle_resolves_relocated_gnn(monkeypatch, tmp_path):
 
 def test_proxy_assets_are_relative_to_jupyter_prefix(client):
     html = client.get("/").text
-    js = client.get("/static/app.js").text
-    assert 'href="static/style.css"' in html
-    assert 'src="static/app.js?v=20261109-model-metrics"' in html
-    assert 'fetchJSON("api/lab/models")' in js
+    js = client.get("/static/studio.js").text
+    assert 'href="static/studio.css?v=20261109-v2b"' in html
+    assert 'src="static/studio.js?v=20261109-v2b"' in html
+    assert 'api("api/studio/overview")' in js
     assert urljoin("https://jupyter.example/proxy/8080/", "api/lab/models") == (
         "https://jupyter.example/proxy/8080/api/lab/models")
     with TestClient(app, root_path="/proxy/8080", client=("127.0.0.1", 1234)) as proxied:
         assert proxied.get("/proxy/8080/").status_code == 200
-        assert proxied.get("/proxy/8080/static/app.js").status_code == 200
+        assert proxied.get("/proxy/8080/static/studio.js").status_code == 200
         assert proxied.get("/proxy/8080/api/lab/models").status_code == 200
 
 

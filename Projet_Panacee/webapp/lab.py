@@ -198,12 +198,12 @@ def _panacee_evidence(candidates: list[dict], selected: str) -> dict:
         out["checkpoint_sha256"] = out["artifact_sha256s"]["manifest.json"]
         scores = research._score_ensemble([c["smiles"] for c in candidates], str(model_dir))
         valid_scores = [s for s in scores if s is not None]
-        best = min(valid_scores) if valid_scores else None
-        worst = max(valid_scores) if valid_scores else None
+        best = max(valid_scores) if valid_scores else None
+        worst = min(valid_scores) if valid_scores else None
         out["score_semantics"] = "rang relatif au lot, non probabilité; comparaison requiert au moins 2 molécules"
         for row, score in zip(out["candidates"], scores):
-            row["prediction"] = {"relative_percentile": round((worst - score) / (worst - best) * 100, 1)
-                                 if score is not None and best is not None and worst > best else None,
+            row["prediction"] = {"relative_percentile": round((score - worst) / (best - worst) * 100, 1)
+                                 if score is not None and best is not None and best > worst else None,
                                  "raw_rank_average": score}
     elif selected in ("phase2", "phase3") or selected.startswith(("phase3_file:", "checkpoint:")):
         if out["status"] == "available":
