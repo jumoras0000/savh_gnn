@@ -109,12 +109,33 @@ async def api_config(request):
                          "offline": os.environ.get("PANACEE_OFFLINE") == "1"})
 
 
+def _current_runs(root):
+    from datetime import datetime, timezone
+
+    from webapp import phases
+    runs = service.list_runs(root)
+    latest = phases.model_inventory(root)["latest"]
+    historical_runs = []
+    if latest and latest.get("created"):
+        try:
+            cutoff = datetime.fromisoformat(latest["created"]).replace(
+                tzinfo=timezone.utc).timestamp()
+            historical_runs = [run for run in runs if run["last_update"] < cutoff]
+            runs = [run for run in runs if run["last_update"] >= cutoff]
+        except ValueError:
+            pass
+    return runs, latest, len(historical_runs)
+
+
 async def api_runs(request):
     from webapp import data_sync
     root = _ckpt_root()
     remote_sync = await _remote_sync_status(root)
     sync = await asyncio.to_thread(data_sync.sync, root)
-    return JSONResponse({"root": root, "runs": service.list_runs(root),
+    runs, latest, historical_count = _current_runs(root)
+    return JSONResponse({"root": root, "runs": runs,
+                         "historical_runs_count": historical_count,
+                         "latest_model": latest,
                          "sync": sync, "remote_sync": remote_sync})
 
 
@@ -172,7 +193,9 @@ async def api_epoch_delete(request):
 
 async def api_compare(request):
     root = _ckpt_root()
-    return JSONResponse({"runs": service.compare_runs(root)})
+    current_ids = {run["id"] for run in _current_runs(root)[0]}
+    return JSONResponse({"runs": [run for run in service.compare_runs(root)
+                                  if run["id"] in current_ids]})
 
 
 async def api_ingest(request):

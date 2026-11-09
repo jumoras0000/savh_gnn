@@ -77,8 +77,11 @@ réellement présents sur ce PC ; le laboratoire intègre les comptes et premier
 hits Phase 4 locaux dans chaque nouveau dossier.
 La section « Modèle VIH livré depuis Jupyter » affiche le manifeste du dernier
 ensemble **complet** disponible et sa date déclarée. Le sélecteur des runs et
-ses courbes montrent uniquement l'historique d'entraînement (Phase 1–3), pas
-la date ni la disponibilité du modèle A'' livré ensuite.
+ses courbes n'affichent par défaut que les entraînements postérieurs à ce
+modèle ; les anciens runs restent stockés sans apparaître dans l'interface.
+Le laboratoire ne propose par défaut que le dernier ensemble complet et RDKit
+sans modèle. `PANACEE_SHOW_HISTORICAL_MODELS=1` restaure les anciens choix pour
+une comparaison volontaire.
 Avec `PANACEE_JUPYTER_AUTO_SYNC=1`, le webapp vérifie le serveur toutes les cinq
 minutes en arrière-plan et importe automatiquement les nouveaux journaux et
 résultats Phase 4 dès

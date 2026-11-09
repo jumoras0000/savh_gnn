@@ -265,6 +265,7 @@ def test_cli_quota_is_reported_without_raw_cli_output(monkeypatch):
 def test_local_checkpoint_root_is_used(monkeypatch, tmp_path):
     import json
 
+    monkeypatch.setenv("PANACEE_SHOW_HISTORICAL_MODELS", "1")
     monkeypatch.setenv("PANACEE_CKPT_ROOT", str(tmp_path))
     from webapp import research
 

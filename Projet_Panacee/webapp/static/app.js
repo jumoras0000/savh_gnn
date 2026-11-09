@@ -681,8 +681,10 @@ async function loadRuns() {
   if (freshness) {
     const newest = runs[0];
     if (!newest) {
-      freshness.textContent = "Historique d'entraînement : aucun journal local. Le modèle livré est indiqué séparément.";
-      freshness.dataset.state = "stale";
+      freshness.textContent = data.historical_runs_count
+        ? `${data.historical_runs_count} ancien(s) entraînement(s) masqué(s) : seul le modèle récent est affiché.`
+        : "Aucun entraînement récent ; le modèle livré est indiqué séparément.";
+      freshness.dataset.state = "fresh";
     } else {
       const ageDays = Math.max(0, Math.floor((Date.now() / 1000 - newest.last_update) / 86400));
       const date = new Date(newest.last_update * 1000).toLocaleString("fr-FR");

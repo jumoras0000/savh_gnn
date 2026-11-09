@@ -1,5 +1,7 @@
 """Les quatre phases Jupyter restent distinctes des copies réellement locales."""
 import json
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from webapp import phases, server
@@ -59,3 +61,34 @@ def test_latest_deployed_model_is_distinct_from_training_history(tmp_path):
     js = (Path(__file__).resolve().parents[1] / "webapp/static/app.js").read_text(encoding="utf-8")
     assert "Historique d'entraînement (pas la date du modèle livré)" in js
     assert "Modèle VIH livré depuis Jupyter" in js
+
+
+def test_only_recent_model_and_runs_are_visible(client, monkeypatch, tmp_path):
+    from webapp import lab
+    root = tmp_path / "checkpoints"
+    gnn = root / "phase3" / "clean.pth"
+    gnn.parent.mkdir(parents=True)
+    gnn.write_bytes(b"gnn")
+    folder = root / "model_A_prime_augmented"
+    folder.mkdir()
+    (folder / "manifest.json").write_text(json.dumps({
+        "created": "2026-11-06", "gnn_ckpt": "checkpoints/phase3/clean.pth",
+        "fp_kinds": ["ecfp4", "ecfp6", "maccs", "rdkit"],
+    }), encoding="utf-8")
+    for kind in ("ecfp4", "ecfp6", "maccs", "rdkit"):
+        (folder / f"rf_{kind}.joblib").write_bytes(b"rf")
+    old = root / "phase3" / "live_metrics.jsonl"
+    old.write_text(json.dumps({"_type": "meta", "phase": "phase3"}) + "\n" +
+                   json.dumps({"_type": "epoch", "epoch": 1, "val_auc": 0.7}) + "\n",
+                   encoding="utf-8")
+    timestamp = datetime(2026, 10, 21, tzinfo=timezone.utc).timestamp()
+    os.utime(old, (timestamp, timestamp))
+    monkeypatch.setattr(server, "_ckpt_root", lambda: str(root))
+    monkeypatch.setenv("PANACEE_CKPT_ROOT", str(root))
+    monkeypatch.delenv("PANACEE_SHOW_HISTORICAL_MODELS", raising=False)
+    models = {m["id"] for m in lab.catalog()["panacee"]}
+    assert models == {"descriptors", "ensemble_a_prime"}
+    runs = client.get("/api/runs").json()
+    assert runs["runs"] == []
+    assert runs["historical_runs_count"] == 1
+    assert client.get("/api/compare").json()["runs"] == []

@@ -80,6 +80,15 @@ def catalog(allow_plan: bool = False) -> dict:
         rel = file.relative_to(checkpoint_dir).as_posix()
         panacee.append({"id": f"checkpoint:{rel}",
                         "label": f"Checkpoint local — {rel}", "available": True})
+    if os.environ.get("PANACEE_SHOW_HISTORICAL_MODELS") != "1":
+        from webapp import phases
+        latest = phases.model_inventory(checkpoint_dir)["latest"]
+        current_id = {
+            "model_A_prime_augmented": "ensemble_a_prime",
+            "model_A_rank_avg_5": "ensemble_a",
+        }.get(latest["id"]) if latest else None
+        panacee = [model for model in panacee
+                   if model["id"] == "descriptors" or model["id"] == current_id]
     local = lab_providers.catalog()
     offline = os.environ.get("PANACEE_OFFLINE") == "1"
     plan_models = []
