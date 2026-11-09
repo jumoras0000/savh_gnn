@@ -138,8 +138,8 @@ def test_model_bundle_resolves_relocated_gnn(monkeypatch, tmp_path):
 def test_proxy_assets_are_relative_to_jupyter_prefix(client):
     html = client.get("/").text
     js = client.get("/static/studio.js").text
-    assert 'href="static/studio.css?v=20261109-v4"' in html
-    assert 'src="static/studio.js?v=20261109-v4"' in html
+    assert 'href="static/studio.css?v=20261109-v5"' in html
+    assert 'src="static/studio.js?v=20261109-v5"' in html
     assert 'api("api/studio/overview")' in js
     assert urljoin("https://jupyter.example/proxy/8080/", "api/lab/models") == (
         "https://jupyter.example/proxy/8080/api/lab/models")

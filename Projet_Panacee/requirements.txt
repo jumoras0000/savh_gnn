@@ -36,6 +36,7 @@ biopython
 
 # ─── Visualization ───────────────────────────────────────────────
 matplotlib
+reportlab>=4.0
 seaborn
 plotly
 

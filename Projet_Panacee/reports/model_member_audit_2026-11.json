@@ -1,0 +1,59 @@
+{
+  "model_id": "model_A_prime_augmented",
+  "n_test": 3778,
+  "n_active": 84,
+  "prevalence": 0.02223398623610376,
+  "members": {
+    "gnn": {
+      "n": 3778,
+      "roc_auc": 0.5764689199989688,
+      "prc_auc": 0.07762342018983387,
+      "precision_at_100": 0.17,
+      "ef_at_1pct": 9.468671679197994,
+      "brier": 0.1395922864789306
+    },
+    "rf_ecfp4": {
+      "n": 3778,
+      "roc_auc": 0.5971378941397891,
+      "prc_auc": 0.10726500775441017,
+      "precision_at_100": 0.18,
+      "ef_at_1pct": 13.019423558897243,
+      "brier": 0.039083507456688635
+    },
+    "rf_ecfp6": {
+      "n": 3778,
+      "roc_auc": 0.5864352102508572,
+      "prc_auc": 0.09488805951914056,
+      "precision_at_100": 0.13,
+      "ef_at_1pct": 11.835839598997493,
+      "brier": 0.04019986144672369
+    },
+    "rf_maccs": {
+      "n": 3778,
+      "roc_auc": 0.671948719931936,
+      "prc_auc": 0.08779811845289222,
+      "precision_at_100": 0.12,
+      "ef_at_1pct": 8.285087719298245,
+      "brier": 0.052345951024872384
+    },
+    "rf_rdkit": {
+      "n": 3778,
+      "roc_auc": 0.6247357362002732,
+      "prc_auc": 0.05632280070253521,
+      "precision_at_100": 0.08,
+      "ef_at_1pct": 5.917919799498747,
+      "brier": 0.05813871645916113
+    }
+  },
+  "ensemble_rank_average": {
+    "n": 3778,
+    "roc_auc": 0.620132067445278,
+    "prc_auc": 0.15414706348697607,
+    "precision_at_100": 0.2,
+    "ef_at_1pct": 16.57017543859649,
+    "brier": null
+  },
+  "purpose": "diagnostic_only_test_already_used_for_model_choice",
+  "rule": "no tuning or promotion on this test",
+  "constant_prevalence_brier": 0.021739636092156508
+}

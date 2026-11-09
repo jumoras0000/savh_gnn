@@ -87,6 +87,15 @@ def test_hits_only_uses_clean_phase4_files(tmp_path):
     assert studio.hits(root, "repurposing")["status"] == "missing"
 
 
+def test_scientific_report_is_downloadable(client):
+    response = client.get("/api/studio/scientific-report")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.content.startswith(b"%PDF-")
+    assert b"Panacee_revue_scientifique_2026-11.pdf" in response.headers[
+        "content-disposition"].encode("ascii")
+
+
 def test_studio_api_local_contract(client, monkeypatch, tmp_path):
     from webapp import server, studio_support
 

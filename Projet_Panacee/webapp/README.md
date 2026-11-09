@@ -1,5 +1,16 @@
 # Panacée Studio v2
 
+## Revue scientifique des quatre phases
+
+La revue de novembre 2026 est disponible dans la section **Preuves** de `/` et
+par `GET /api/studio/scientific-report` (PDF téléchargeable). Elle contient huit
+figures issues des journaux, des rapports JSON, des CSV de criblage et de
+structures RDKit, ainsi qu'une analyse des échecs et des discordances entre
+versions. Le PDF est archivé dans `reports/`. Reproduction :
+`python scripts/build_scientific_review.py` après vérification des splits
+Jupyter locaux et des poids Git LFS. La génération refuse un registre A''
+discordant ou des comptes Phase 4 modifiés.
+
 ## Validation translationnelle
 
 Le parcours du classement A'' vers un candidat testable est documenté dans

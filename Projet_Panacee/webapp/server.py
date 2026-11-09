@@ -127,6 +127,14 @@ async def api_studio_package(request):
                         media_type="text/csv")
 
 
+async def api_studio_scientific_report(request):
+    file = PROJECT_ROOT / "reports" / "revue_scientifique_panacee_2026-11.pdf"
+    if not file.is_file():
+        return JSONResponse({"error": "Revue scientifique indisponible"}, status_code=404)
+    return FileResponse(file, filename="Panacee_revue_scientifique_2026-11.pdf",
+                        media_type="application/pdf")
+
+
 async def api_studio_assay_template(request):
     from webapp import translational
 
@@ -1192,6 +1200,7 @@ routes = [
     Route("/api/studio/overview", api_studio_overview),
     Route("/api/studio/hits", api_studio_hits),
     Route("/api/studio/package", api_studio_package),
+    Route("/api/studio/scientific-report", api_studio_scientific_report),
     Route("/api/studio/assay-template", api_studio_assay_template),
     Route("/api/studio/development", api_studio_development),
     Route("/api/studio/assays", api_studio_assay_upload, methods=["POST"]),

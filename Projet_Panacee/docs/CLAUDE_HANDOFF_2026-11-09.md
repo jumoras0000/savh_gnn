@@ -1,5 +1,12 @@
 # Handoff pour Claude — Panacée, 9 novembre 2026
 
+La revue scientifique consolidée, générée après ce handoff initial, se trouve
+dans `reports/revue_scientifique_panacee_2026-11.pdf`. Elle est téléchargeable
+depuis la section « Preuves » de Studio ou l'API
+`GET /api/studio/scientific-report`. Le générateur
+`scripts/build_scientific_review.py` crée huit figures fondées sur les données
+archivées et documente explicitement les versions incompatibles.
+
 ## Finalité et état réel
 
 L'utilisateur veut un outil local utile pour identifier un **candidat
