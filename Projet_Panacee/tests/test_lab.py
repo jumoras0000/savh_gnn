@@ -139,7 +139,7 @@ def test_proxy_assets_are_relative_to_jupyter_prefix(client):
     html = client.get("/").text
     js = client.get("/static/app.js").text
     assert 'href="static/style.css"' in html
-    assert 'src="static/app.js"' in html
+    assert 'src="static/app.js?v=20261109-latest-model"' in html
     assert 'fetchJSON("api/lab/models")' in js
     assert urljoin("https://jupyter.example/proxy/8080/", "api/lab/models") == (
         "https://jupyter.example/proxy/8080/api/lab/models")

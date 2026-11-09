@@ -714,7 +714,13 @@ async function loadRuns() {
   const delBtn = document.getElementById("deleteRunBtn");
   if (delBtn) delBtn.disabled = !runs.length;
   if (!runs.length) {
-    sel.innerHTML = `<option value="">aucun run</option>`;
+    const latest = data.latest_model;
+    sel.replaceChildren(new Option(latest
+      ? `🧬 Modèle actuel · ${latest.id} · ${latest.created || "date inconnue"}`
+      : "Aucun modèle récent disponible", ""));
+    sel.title = latest
+      ? "Modèle récent affiché ; les anciens entraînements sont masqués"
+      : "Aucun modèle récent disponible";
     resetRunState();
     return;
   }
