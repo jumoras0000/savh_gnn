@@ -66,7 +66,9 @@ def test_studio_api_local_contract(client, monkeypatch, tmp_path):
     _ready(root)
     monkeypatch.setattr(server, "_ckpt_root", lambda: str(root))
     assert client.get("/").status_code == 200
-    assert client.get("/legacy").status_code == 200
+    legacy = client.get("/legacy")
+    assert legacy.status_code == 200
+    assert '!location.pathname.endsWith("/legacy")' in legacy.text
     assert client.get("/api/studio/overview").json()["model"]["id"] == studio.MODEL_ID
     assert client.get("/api/studio/hits?source=unknown").status_code == 400
     assert client.post("/api/studio/screen", json={"molecules": []}).status_code == 400
