@@ -1,0 +1,319 @@
+{
+  "counts": {
+    "train_active": 2,
+    "train_inactive": 0,
+    "val": 0,
+    "test": 0,
+    "absent": 32
+  },
+  "arvs": [
+    {
+      "name": "Zidovudine",
+      "class": "NRTI",
+      "in_train": true,
+      "train_label": 1,
+      "in_val": false,
+      "in_test": false,
+      "statut": "⚠ FUITE TRAIN (actif)"
+    },
+    {
+      "name": "Didanosine",
+      "class": "NRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Zalcitabine",
+      "class": "NRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Stavudine",
+      "class": "NRTI",
+      "in_train": true,
+      "train_label": 1,
+      "in_val": false,
+      "in_test": false,
+      "statut": "⚠ FUITE TRAIN (actif)"
+    },
+    {
+      "name": "Lamivudine",
+      "class": "NRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Abacavir",
+      "class": "NRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Tenofovir",
+      "class": "NtRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Emtricitabine",
+      "class": "NRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Tenofovir_alafenamide",
+      "class": "NtRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Islatravir",
+      "class": "NRTTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Nevirapine",
+      "class": "NNRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Delavirdine",
+      "class": "NNRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Efavirenz",
+      "class": "NNRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Etravirine",
+      "class": "NNRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Rilpivirine",
+      "class": "NNRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Doravirine",
+      "class": "NNRTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Saquinavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Ritonavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Indinavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Nelfinavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Amprenavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Lopinavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Atazanavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Fosamprenavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Tipranavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Darunavir",
+      "class": "PI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Raltegravir",
+      "class": "INSTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Elvitegravir",
+      "class": "INSTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Dolutegravir",
+      "class": "INSTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Bictegravir",
+      "class": "INSTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Cabotegravir",
+      "class": "INSTI",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Maraviroc",
+      "class": "CCR5",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Fostemsavir",
+      "class": "GP120",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    },
+    {
+      "name": "Lenacapavir",
+      "class": "CAPSID",
+      "in_train": false,
+      "train_label": null,
+      "in_val": false,
+      "in_test": false,
+      "statut": "✓ absent (propre)"
+    }
+  ],
+  "n_arv": 34,
+  "leaked_train": 2
+}

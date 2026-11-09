@@ -1,0 +1,23 @@
+{
+  "model": "rank_avg_5_augmented",
+  "created": "2026-11-06",
+  "base": "Model A + ChEMBL augmentation (RF seulement, GNN inchangé)",
+  "gnn_ckpt": "checkpoints/phase3/panacee_phase3_hiv_chembl_clean.pth",
+  "fp_kinds": [
+    "ecfp4",
+    "ecfp6",
+    "maccs",
+    "rdkit"
+  ],
+  "augmentation": {
+    "chembl_csv": "/home/jovyan/panacee/Projet_Panacee/data/external/chembl_hiv/chembl_hiv_merged.csv",
+    "n_added_actives": 15580,
+    "excluded_arv_canon": 3,
+    "excluded_evalleak_scaffold": 146,
+    "excluded_tanimoto_arv": 36,
+    "tanimoto_arv_max": 0.8,
+    "dup_train": 77,
+    "added_sharing_arv_scaffold": 189
+  },
+  "anti_leakage": "val/test exclus par SCAFFOLD (analogues) ; 34 ARV exclus par canonique exact + Tanimoto>seuil (ferme faille stéréo/tautomère) ; scaffold-ARV compté (transparence)"
+}

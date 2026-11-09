@@ -1,0 +1,363 @@
+{
+  "n_arv": 34,
+  "n_found": 24,
+  "n_top": 381,
+  "n_pool": 3812,
+  "novelty_threshold": 0.4,
+  "arvs": [
+    {
+      "name": "Zidovudine",
+      "class": "NRTI",
+      "approved": 1987,
+      "position": 1,
+      "percentile": 0.03,
+      "found": true,
+      "max_sim_train_active": 1.0,
+      "ood": false
+    },
+    {
+      "name": "Stavudine",
+      "class": "NRTI",
+      "approved": 1994,
+      "position": 2,
+      "percentile": 0.05,
+      "found": true,
+      "max_sim_train_active": 1.0,
+      "ood": false
+    },
+    {
+      "name": "Zalcitabine",
+      "class": "NRTI",
+      "approved": 1992,
+      "position": 11,
+      "percentile": 0.29,
+      "found": true,
+      "max_sim_train_active": 0.585,
+      "ood": false
+    },
+    {
+      "name": "Didanosine",
+      "class": "NRTI",
+      "approved": 1991,
+      "position": 22,
+      "percentile": 0.58,
+      "found": true,
+      "max_sim_train_active": 0.612,
+      "ood": false
+    },
+    {
+      "name": "Amprenavir",
+      "class": "PI",
+      "approved": 1999,
+      "position": 32,
+      "percentile": 0.84,
+      "found": true,
+      "max_sim_train_active": 0.593,
+      "ood": false
+    },
+    {
+      "name": "Darunavir",
+      "class": "PI",
+      "approved": 2006,
+      "position": 39,
+      "percentile": 1.02,
+      "found": true,
+      "max_sim_train_active": 0.56,
+      "ood": false
+    },
+    {
+      "name": "Lamivudine",
+      "class": "NRTI",
+      "approved": 1995,
+      "position": 42,
+      "percentile": 1.1,
+      "found": true,
+      "max_sim_train_active": 0.56,
+      "ood": false
+    },
+    {
+      "name": "Emtricitabine",
+      "class": "NRTI",
+      "approved": 2003,
+      "position": 44,
+      "percentile": 1.15,
+      "found": true,
+      "max_sim_train_active": 0.455,
+      "ood": false
+    },
+    {
+      "name": "Fosamprenavir",
+      "class": "PI",
+      "approved": 2003,
+      "position": 45,
+      "percentile": 1.18,
+      "found": true,
+      "max_sim_train_active": 0.49,
+      "ood": false
+    },
+    {
+      "name": "Saquinavir",
+      "class": "PI",
+      "approved": 1995,
+      "position": 61,
+      "percentile": 1.6,
+      "found": true,
+      "max_sim_train_active": 0.474,
+      "ood": false
+    },
+    {
+      "name": "Nevirapine",
+      "class": "NNRTI",
+      "approved": 1996,
+      "position": 103,
+      "percentile": 2.7,
+      "found": true,
+      "max_sim_train_active": 0.64,
+      "ood": false
+    },
+    {
+      "name": "Abacavir",
+      "class": "NRTI",
+      "approved": 1998,
+      "position": 105,
+      "percentile": 2.75,
+      "found": true,
+      "max_sim_train_active": 0.686,
+      "ood": false
+    },
+    {
+      "name": "Lopinavir",
+      "class": "PI",
+      "approved": 2000,
+      "position": 118,
+      "percentile": 3.1,
+      "found": true,
+      "max_sim_train_active": 0.303,
+      "ood": true
+    },
+    {
+      "name": "Lenacapavir",
+      "class": "CAPSID",
+      "approved": 2022,
+      "position": 137,
+      "percentile": 3.59,
+      "found": true,
+      "max_sim_train_active": 0.38,
+      "ood": true
+    },
+    {
+      "name": "Nelfinavir",
+      "class": "PI",
+      "approved": 1997,
+      "position": 144,
+      "percentile": 3.78,
+      "found": true,
+      "max_sim_train_active": 0.265,
+      "ood": true
+    },
+    {
+      "name": "Ritonavir",
+      "class": "PI",
+      "approved": 1996,
+      "position": 162,
+      "percentile": 4.25,
+      "found": true,
+      "max_sim_train_active": 0.301,
+      "ood": true
+    },
+    {
+      "name": "Islatravir",
+      "class": "NRTTI",
+      "approved": 2023,
+      "position": 181,
+      "percentile": 4.75,
+      "found": true,
+      "max_sim_train_active": 0.45,
+      "ood": false
+    },
+    {
+      "name": "Atazanavir",
+      "class": "PI",
+      "approved": 2003,
+      "position": 186,
+      "percentile": 4.88,
+      "found": true,
+      "max_sim_train_active": 0.281,
+      "ood": true
+    },
+    {
+      "name": "Etravirine",
+      "class": "NNRTI",
+      "approved": 2008,
+      "position": 192,
+      "percentile": 5.04,
+      "found": true,
+      "max_sim_train_active": 0.375,
+      "ood": true
+    },
+    {
+      "name": "Delavirdine",
+      "class": "NNRTI",
+      "approved": 1997,
+      "position": 226,
+      "percentile": 5.93,
+      "found": true,
+      "max_sim_train_active": 0.226,
+      "ood": true
+    },
+    {
+      "name": "Tipranavir",
+      "class": "PI",
+      "approved": 2005,
+      "position": 236,
+      "percentile": 6.19,
+      "found": true,
+      "max_sim_train_active": 0.19,
+      "ood": true
+    },
+    {
+      "name": "Indinavir",
+      "class": "PI",
+      "approved": 1996,
+      "position": 246,
+      "percentile": 6.45,
+      "found": true,
+      "max_sim_train_active": 0.301,
+      "ood": true
+    },
+    {
+      "name": "Tenofovir_alafenamide",
+      "class": "NtRTI",
+      "approved": 2015,
+      "position": 266,
+      "percentile": 6.98,
+      "found": true,
+      "max_sim_train_active": 0.301,
+      "ood": true
+    },
+    {
+      "name": "Elvitegravir",
+      "class": "INSTI",
+      "approved": 2012,
+      "position": 330,
+      "percentile": 8.66,
+      "found": true,
+      "max_sim_train_active": 0.227,
+      "ood": true
+    },
+    {
+      "name": "Raltegravir",
+      "class": "INSTI",
+      "approved": 2007,
+      "position": 459,
+      "percentile": 12.04,
+      "found": false,
+      "max_sim_train_active": 0.25,
+      "ood": true
+    },
+    {
+      "name": "Fostemsavir",
+      "class": "GP120",
+      "approved": 2020,
+      "position": 570,
+      "percentile": 14.95,
+      "found": false,
+      "max_sim_train_active": 0.191,
+      "ood": true
+    },
+    {
+      "name": "Dolutegravir",
+      "class": "INSTI",
+      "approved": 2013,
+      "position": 622,
+      "percentile": 16.32,
+      "found": false,
+      "max_sim_train_active": 0.198,
+      "ood": true
+    },
+    {
+      "name": "Doravirine",
+      "class": "NNRTI",
+      "approved": 2018,
+      "position": 701,
+      "percentile": 18.39,
+      "found": false,
+      "max_sim_train_active": 0.205,
+      "ood": true
+    },
+    {
+      "name": "Rilpivirine",
+      "class": "NNRTI",
+      "approved": 2011,
+      "position": 1087,
+      "percentile": 28.52,
+      "found": false,
+      "max_sim_train_active": 0.218,
+      "ood": true
+    },
+    {
+      "name": "Bictegravir",
+      "class": "INSTI",
+      "approved": 2018,
+      "position": 1517,
+      "percentile": 39.8,
+      "found": false,
+      "max_sim_train_active": 0.194,
+      "ood": true
+    },
+    {
+      "name": "Efavirenz",
+      "class": "NNRTI",
+      "approved": 1998,
+      "position": 1753,
+      "percentile": 45.99,
+      "found": false,
+      "max_sim_train_active": 0.246,
+      "ood": true
+    },
+    {
+      "name": "Cabotegravir",
+      "class": "INSTI",
+      "approved": 2021,
+      "position": 1911,
+      "percentile": 50.13,
+      "found": false,
+      "max_sim_train_active": 0.205,
+      "ood": true
+    },
+    {
+      "name": "Tenofovir",
+      "class": "NtRTI",
+      "approved": 2001,
+      "position": 2236,
+      "percentile": 58.66,
+      "found": false,
+      "max_sim_train_active": 0.467,
+      "ood": false
+    },
+    {
+      "name": "Maraviroc",
+      "class": "CCR5",
+      "approved": 2007,
+      "position": 2630,
+      "percentile": 68.99,
+      "found": false,
+      "max_sim_train_active": 0.237,
+      "ood": true
+    }
+  ],
+  "missed_ood": [
+    "Raltegravir",
+    "Fostemsavir",
+    "Dolutegravir",
+    "Doravirine",
+    "Rilpivirine",
+    "Bictegravir",
+    "Efavirenz",
+    "Cabotegravir",
+    "Maraviroc"
+  ],
+  "missed_indomain": [
+    "Tenofovir"
+  ]
+}

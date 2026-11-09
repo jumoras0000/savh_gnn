@@ -1,0 +1,101 @@
+{
+  "checkpoint": "/home/jovyan/panacee/Projet_Panacee/checkpoints/phase3/panacee_phase3_complete.pth",
+  "device": "cuda",
+  "pharma_metrics_hiv_test": {
+    "n_total": 3778,
+    "n_actives": 84,
+    "actives_fraction": 0.02223398623610376,
+    "ef_1pct": 16.57017543859649,
+    "ef_5pct": 5.235323759133283,
+    "ef_10pct": 3.0936004031242126,
+    "bedroc_alpha20": 0.2979079225284481,
+    "bedroc_alpha80": 0.3401161483937916,
+    "hit_rate_top_100": 0.2,
+    "hit_rate_top_500": 0.06,
+    "hit_rate_top_1000": 0.038,
+    "recall_top_1pct": 0.16666666666666666,
+    "recall_top_5pct": 0.2619047619047619,
+    "recall_top_10pct": 0.30952380952380953,
+    "roc_auc": 0.6582070023461469,
+    "prc_auc": 0.16609265350440694,
+    "novelty": {
+      "novel_fraction": 0.9438856537850715,
+      "mean_max_sim": 0.2631365667479107,
+      "median_max_sim": 0.25,
+      "novelty_threshold": 0.4
+    }
+  },
+  "drugbank_validation": {
+    "recall": 15,
+    "total": 34,
+    "recall_rate": 0.4411764705882353,
+    "top_pct": 0.1,
+    "n_top": 381,
+    "n_total": 3812,
+    "found_arvs": [
+      "Stavudine",
+      "Amprenavir",
+      "Lenacapavir",
+      "Indinavir",
+      "Fosamprenavir",
+      "Emtricitabine",
+      "Zidovudine",
+      "Nevirapine",
+      "Doravirine",
+      "Lamivudine",
+      "Zalcitabine",
+      "Darunavir",
+      "Didanosine",
+      "Ritonavir",
+      "Saquinavir"
+    ],
+    "missing_arvs": [
+      "Nelfinavir",
+      "Raltegravir",
+      "Abacavir",
+      "Maraviroc",
+      "Atazanavir",
+      "Bictegravir",
+      "Rilpivirine",
+      "Cabotegravir",
+      "Etravirine",
+      "Tenofovir_alafenamide",
+      "Dolutegravir",
+      "Efavirenz",
+      "Elvitegravir",
+      "Fostemsavir",
+      "Islatravir",
+      "Tipranavir",
+      "Lopinavir",
+      "Tenofovir",
+      "Delavirdine"
+    ],
+    "verdict": "FAIL",
+    "min_recall_required": 25
+  },
+  "conformal_coverage": {
+    "empirical_coverage": 0.9163578613022764,
+    "target_coverage": 0.9,
+    "coverage_valid": true,
+    "avg_set_size": 1.6654314452091052,
+    "ambiguous_rate": 0.6654314452091054,
+    "reject_rate": 0.0,
+    "singleton_rate": 0.33456855479089465
+  },
+  "conformal_decisions": {
+    "inactive": 930,
+    "ambiguous": 2514,
+    "active": 334
+  },
+  "applicability_domain": {
+    "counts": {
+      "in_domain_high": 193,
+      "in_domain_moderate": 1782,
+      "out_of_domain": 1803,
+      "invalid": 0
+    },
+    "high_threshold": 0.7,
+    "low_threshold": 0.4,
+    "mean_max_sim": 0.43410782060935865
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "library": "/home/jovyan/panacee/Projet_Panacee/data/raw/250k_rndm_zinc_drugs_clean_3.csv",
+  "n_scored": 249455,
+  "n_annotated": 2000,
+  "n_clean_hits": 124,
+  "model": "A_prime (rank_avg_5 augmented)",
+  "alpha_conformal": 0.1
+}

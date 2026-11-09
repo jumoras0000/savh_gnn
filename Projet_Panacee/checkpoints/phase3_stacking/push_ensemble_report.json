@@ -1,0 +1,141 @@
+{
+  "n_test": 3778,
+  "n_arv": 34,
+  "n_actives": 84,
+  "n_boot": 2000,
+  "diagnostics": {
+    "gnn": {
+      "roc_auc": 0.7193647356072911,
+      "ef_1pct": 15.386591478696742,
+      "ef_5pct": 4.997354497354497,
+      "bedroc_alpha20": 0.2844695869022058,
+      "hit_rate_top_100": 0.16,
+      "recall_top_10pct": 0.36904761904761907,
+      "prc_auc": 0.113143915075049,
+      "drugbank": 17.0
+    },
+    "rf_ecfp4": {
+      "roc_auc": 0.652378696470467,
+      "ef_1pct": 17.75375939849624,
+      "ef_5pct": 6.187200806248425,
+      "bedroc_alpha20": 0.3281867523811929,
+      "hit_rate_top_100": 0.23,
+      "recall_top_10pct": 0.34523809523809523,
+      "prc_auc": 0.1567387439081451,
+      "drugbank": 20.0
+    },
+    "rf_ecfp6": {
+      "roc_auc": 0.6030387114239307,
+      "ef_1pct": 16.57017543859649,
+      "ef_5pct": 5.949231544469639,
+      "bedroc_alpha20": 0.32731160348377203,
+      "hit_rate_top_100": 0.23,
+      "recall_top_10pct": 0.35714285714285715,
+      "prc_auc": 0.14445083861636981,
+      "drugbank": 19.0
+    },
+    "rf_maccs": {
+      "roc_auc": 0.6778720963209323,
+      "ef_1pct": 16.57017543859649,
+      "ef_5pct": 5.7112622826908535,
+      "bedroc_alpha20": 0.31089206074903447,
+      "hit_rate_top_100": 0.2,
+      "recall_top_10pct": 0.34523809523809523,
+      "prc_auc": 0.17375728603617682,
+      "drugbank": 16.0
+    },
+    "rf_rdkit": {
+      "roc_auc": 0.6810561528347125,
+      "ef_1pct": 11.835839598997493,
+      "ef_5pct": 6.663139329805996,
+      "bedroc_alpha20": 0.327431270631459,
+      "hit_rate_top_100": 0.2,
+      "recall_top_10pct": 0.40476190476190477,
+      "prc_auc": 0.12707773518161436,
+      "drugbank": 17.0
+    }
+  },
+  "ensembles": {
+    "rank_avg_2 (ref)": {
+      "roc_auc": 0.7000493077577539,
+      "ef_1pct": 17.75375939849624,
+      "ef_5pct": 6.42517006802721,
+      "bedroc_alpha20": 0.33448673510779975,
+      "hit_rate_top_100": 0.22,
+      "recall_top_10pct": 0.35714285714285715,
+      "prc_auc": 0.1617937047985602,
+      "drugbank": 22.0,
+      "members": [
+        "gnn",
+        "rf_ecfp4"
+      ]
+    },
+    "rank_avg_5 (full)": {
+      "roc_auc": 0.6800812772320622,
+      "ef_1pct": 17.75375939849624,
+      "ef_5pct": 6.187200806248425,
+      "bedroc_alpha20": 0.34771086912882754,
+      "hit_rate_top_100": 0.24,
+      "recall_top_10pct": 0.38095238095238093,
+      "prc_auc": 0.17431144420637235,
+      "drugbank": 24.0,
+      "members": [
+        "gnn",
+        "rf_ecfp4",
+        "rf_ecfp6",
+        "rf_maccs",
+        "rf_rdkit"
+      ]
+    }
+  },
+  "bootstrap_diff_full_vs_ref": {
+    "roc_auc": {
+      "median": -0.020310941056525533,
+      "lo": -0.048633996271801885,
+      "hi": 0.007979433537903884,
+      "significant": false
+    },
+    "ef_1pct": {
+      "median": 0.0,
+      "lo": -3.5507518796992468,
+      "hi": 2.6879757010074186,
+      "significant": false
+    },
+    "ef_5pct": {
+      "median": -0.21727628249367337,
+      "lo": -0.7790646800985151,
+      "hi": 0.42987995676167756,
+      "significant": false
+    },
+    "bedroc_alpha20": {
+      "median": 0.01311821145916972,
+      "lo": -0.004827331958672692,
+      "hi": 0.030949165016230344,
+      "significant": false
+    },
+    "hit_rate_top_100": {
+      "median": 0.020000000000000018,
+      "lo": 0.0,
+      "hi": 0.06,
+      "significant": false
+    },
+    "recall_top_10pct": {
+      "median": 0.01315789473684209,
+      "lo": -0.04761904761904756,
+      "hi": 0.07578671328671312,
+      "significant": false
+    },
+    "prc_auc": {
+      "median": 0.009545919185838539,
+      "lo": -0.014566622874899399,
+      "hi": 0.036566646928153354,
+      "significant": false
+    },
+    "drugbank": {
+      "median": 2.0,
+      "lo": 2.0,
+      "hi": 2.0,
+      "significant": true
+    }
+  }
+}

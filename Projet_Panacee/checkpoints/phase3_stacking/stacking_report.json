@@ -1,0 +1,76 @@
+{
+  "n_test_aligned": 3778,
+  "n_val_aligned": 3772,
+  "n_actives_test": 84,
+  "meta_coef": {
+    "gnn": 2.3597076549687697,
+    "rf": 3.085881416148137,
+    "intercept": -4.814982743405244
+  },
+  "strategies": {
+    "gnn_only": {
+      "auc": 0.7193647356072911,
+      "ef_1pct": 15.386591478696742,
+      "ef_5pct": 4.997354497354497,
+      "ef_10pct": 3.6885235575711763,
+      "bedroc_alpha20": 0.2844695869022058,
+      "hit_rate_top_100": 0.16,
+      "recall_top_10pct": 0.36904761904761907,
+      "prc_auc": 0.113143915075049,
+      "drugbank": {
+        "recall": 17,
+        "total": 34,
+        "recall_rate": 0.5,
+        "verdict": "FAIL"
+      }
+    },
+    "rf_only": {
+      "auc": 0.652378696470467,
+      "ef_1pct": 17.75375939849624,
+      "ef_5pct": 6.187200806248425,
+      "ef_10pct": 3.450554295792391,
+      "bedroc_alpha20": 0.3281867523811929,
+      "hit_rate_top_100": 0.23,
+      "recall_top_10pct": 0.34523809523809523,
+      "prc_auc": 0.1567387439081451,
+      "drugbank": {
+        "recall": 20,
+        "total": 34,
+        "recall_rate": 0.5882352941176471,
+        "verdict": "FAIL"
+      }
+    },
+    "rank_average": {
+      "auc": 0.7000493077577539,
+      "ef_1pct": 17.75375939849624,
+      "ef_5pct": 6.42517006802721,
+      "ef_10pct": 3.5695389266817834,
+      "bedroc_alpha20": 0.33448673510779975,
+      "hit_rate_top_100": 0.22,
+      "recall_top_10pct": 0.35714285714285715,
+      "prc_auc": 0.1617937047985602,
+      "drugbank": {
+        "recall": 22,
+        "total": 34,
+        "recall_rate": 0.6470588235294118,
+        "verdict": "FAIL"
+      }
+    },
+    "lr_meta": {
+      "auc": 0.6856195374738958,
+      "ef_1pct": 16.57017543859649,
+      "ef_5pct": 6.187200806248425,
+      "ef_10pct": 3.5695389266817834,
+      "bedroc_alpha20": 0.3302915246879955,
+      "hit_rate_top_100": 0.22,
+      "recall_top_10pct": 0.35714285714285715,
+      "prc_auc": 0.16492596658539466,
+      "drugbank": {
+        "recall": 18,
+        "total": 34,
+        "recall_rate": 0.5294117647058824,
+        "verdict": "FAIL"
+      }
+    }
+  }
+}

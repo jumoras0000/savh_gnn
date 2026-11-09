@@ -1,0 +1,84 @@
+{
+  "n_test": 3778,
+  "n_arv": 34,
+  "n_added_chembl": 15580,
+  "anti_leakage": {
+    "excluded_arv_canon": 3,
+    "excluded_evalleak_scaffold": 146,
+    "excluded_tanimoto_arv": 36,
+    "tanimoto_arv_max": 0.8,
+    "dup_train": 77,
+    "added_sharing_arv_scaffold": 189
+  },
+  "model_A": {
+    "roc_auc": 0.6472271637404285,
+    "ef_1pct": 18.93734335839599,
+    "ef_5pct": 5.949231544469639,
+    "bedroc_alpha20": 0.32454725428617953,
+    "hit_rate_top_100": 0.23,
+    "recall_top_10pct": 0.32142857142857145,
+    "prc_auc": 0.17323392614980435,
+    "drugbank": 26.0
+  },
+  "model_A_prime": {
+    "roc_auc": 0.620132067445278,
+    "ef_1pct": 16.57017543859649,
+    "ef_5pct": 4.997354497354497,
+    "bedroc_alpha20": 0.2908027164085916,
+    "hit_rate_top_100": 0.2,
+    "recall_top_10pct": 0.32142857142857145,
+    "prc_auc": 0.15414706348697607,
+    "drugbank": 32.0
+  },
+  "bootstrap_diff_Aprime_vs_A": {
+    "roc_auc": {
+      "median": -0.02738799182317564,
+      "lo": -0.07889239655786087,
+      "hi": 0.01994369867521123,
+      "significant": false
+    },
+    "ef_1pct": {
+      "median": -2.5169886742171883,
+      "lo": -7.747095010252902,
+      "hi": 2.1850780798149216,
+      "significant": false
+    },
+    "ef_5pct": {
+      "median": -0.7995767195767192,
+      "lo": -1.9142007069141134,
+      "hi": 0.0,
+      "significant": false
+    },
+    "bedroc_alpha20": {
+      "median": -0.034077498275766616,
+      "lo": -0.06862389699675794,
+      "hi": -0.0020650351192683845,
+      "significant": true
+    },
+    "hit_rate_top_100": {
+      "median": -0.03,
+      "lo": -0.08000000000000002,
+      "hi": 0.0,
+      "significant": false
+    },
+    "recall_top_10pct": {
+      "median": 0.0,
+      "lo": -0.06745447500968617,
+      "hi": 0.07058823529411762,
+      "significant": false
+    },
+    "prc_auc": {
+      "median": -0.023875491341162444,
+      "lo": -0.06735486650129104,
+      "hi": 0.01534865098049578,
+      "significant": false
+    },
+    "drugbank": {
+      "median": 7.0,
+      "lo": 6.0,
+      "hi": 7.0,
+      "significant": true
+    }
+  },
+  "n_boot": 2000
+}

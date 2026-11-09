@@ -1,0 +1,293 @@
+{
+  "n_added": 15580,
+  "found_A": 24,
+  "found_Ap": 31,
+  "newly_found": [
+    "Efavirenz",
+    "Rilpivirine",
+    "Dolutegravir",
+    "Raltegravir",
+    "Maraviroc",
+    "Doravirine",
+    "Fostemsavir"
+  ],
+  "lost": [],
+  "n_analog_assisted": 0,
+  "n_moderate": 2,
+  "n_legit": 5,
+  "gate_honest_excl_analog": 31,
+  "arvs": [
+    {
+      "name": "Zidovudine",
+      "class": "NRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.7636363636363637
+    },
+    {
+      "name": "Didanosine",
+      "class": "NRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.4807692307692308
+    },
+    {
+      "name": "Zalcitabine",
+      "class": "NRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.6170212765957447
+    },
+    {
+      "name": "Stavudine",
+      "class": "NRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.6739130434782609
+    },
+    {
+      "name": "Lamivudine",
+      "class": "NRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.625
+    },
+    {
+      "name": "Abacavir",
+      "class": "NRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.45588235294117646
+    },
+    {
+      "name": "Tenofovir",
+      "class": "NtRTI",
+      "found_A": false,
+      "found_Ap": false,
+      "newly_found": false,
+      "max_sim_added": 0.5185185185185185
+    },
+    {
+      "name": "Emtricitabine",
+      "class": "NRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.6379310344827587
+    },
+    {
+      "name": "Tenofovir_alafenamide",
+      "class": "NtRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.36
+    },
+    {
+      "name": "Islatravir",
+      "class": "NRTTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.7169811320754716
+    },
+    {
+      "name": "Nevirapine",
+      "class": "NNRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.5098039215686274
+    },
+    {
+      "name": "Delavirdine",
+      "class": "NNRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.7878787878787878
+    },
+    {
+      "name": "Efavirenz",
+      "class": "NNRTI",
+      "found_A": false,
+      "found_Ap": true,
+      "newly_found": true,
+      "max_sim_added": 0.7708333333333334
+    },
+    {
+      "name": "Etravirine",
+      "class": "NNRTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.7115384615384616
+    },
+    {
+      "name": "Rilpivirine",
+      "class": "NNRTI",
+      "found_A": false,
+      "found_Ap": true,
+      "newly_found": true,
+      "max_sim_added": 0.7551020408163265
+    },
+    {
+      "name": "Doravirine",
+      "class": "NNRTI",
+      "found_A": false,
+      "found_Ap": true,
+      "newly_found": true,
+      "max_sim_added": 0.27472527472527475
+    },
+    {
+      "name": "Saquinavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.7906976744186046
+    },
+    {
+      "name": "Ritonavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.7906976744186046
+    },
+    {
+      "name": "Indinavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.797752808988764
+    },
+    {
+      "name": "Nelfinavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.7922077922077922
+    },
+    {
+      "name": "Amprenavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.75
+    },
+    {
+      "name": "Lopinavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.5333333333333333
+    },
+    {
+      "name": "Atazanavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.75
+    },
+    {
+      "name": "Fosamprenavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.6097560975609756
+    },
+    {
+      "name": "Tipranavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.3541666666666667
+    },
+    {
+      "name": "Darunavir",
+      "class": "PI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.7974683544303798
+    },
+    {
+      "name": "Raltegravir",
+      "class": "INSTI",
+      "found_A": false,
+      "found_Ap": true,
+      "newly_found": true,
+      "max_sim_added": 0.3888888888888889
+    },
+    {
+      "name": "Elvitegravir",
+      "class": "INSTI",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.34782608695652173
+    },
+    {
+      "name": "Dolutegravir",
+      "class": "INSTI",
+      "found_A": false,
+      "found_Ap": true,
+      "newly_found": true,
+      "max_sim_added": 0.4
+    },
+    {
+      "name": "Bictegravir",
+      "class": "INSTI",
+      "found_A": false,
+      "found_Ap": false,
+      "newly_found": false,
+      "max_sim_added": 0.2625
+    },
+    {
+      "name": "Cabotegravir",
+      "class": "INSTI",
+      "found_A": false,
+      "found_Ap": false,
+      "newly_found": false,
+      "max_sim_added": 0.3253012048192771
+    },
+    {
+      "name": "Maraviroc",
+      "class": "CCR5",
+      "found_A": false,
+      "found_Ap": true,
+      "newly_found": true,
+      "max_sim_added": 0.3448275862068966
+    },
+    {
+      "name": "Fostemsavir",
+      "class": "GP120",
+      "found_A": false,
+      "found_Ap": true,
+      "newly_found": true,
+      "max_sim_added": 0.2653061224489796
+    },
+    {
+      "name": "Lenacapavir",
+      "class": "CAPSID",
+      "found_A": true,
+      "found_Ap": true,
+      "newly_found": false,
+      "max_sim_added": 0.3695652173913043
+    }
+  ]
+}

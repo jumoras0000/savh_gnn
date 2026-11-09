@@ -1,0 +1,42 @@
+{
+  "model": "rank_avg_5",
+  "created": "2026-11-05",
+  "ensemble_method": "rank_average (poids égaux)",
+  "gnn_ckpt": "/home/jovyan/panacee/Projet_Panacee/checkpoints/phase3_improved/best_val.pth",
+  "fp_kinds": [
+    "ecfp4",
+    "ecfp6",
+    "maccs",
+    "rdkit"
+  ],
+  "members": [
+    "gnn",
+    "rf_ecfp4",
+    "rf_ecfp6",
+    "rf_maccs",
+    "rf_rdkit"
+  ],
+  "rf_config": {
+    "n_estimators": 500,
+    "min_samples_leaf": 2,
+    "class_weight": "balanced",
+    "random_state": 42
+  },
+  "fp_config": {
+    "ecfp4": "morgan r=2 2048",
+    "ecfp6": "morgan r=3 2048",
+    "maccs": "MACCS 167",
+    "rdkit": "RDKit path-FP 2048"
+  },
+  "provenance": {
+    "n_train": 33570,
+    "n_train_actives": 1249,
+    "label_col": "hiv_HIV_active",
+    "data_dir": "/home/jovyan/panacee/Projet_Panacee/data/external/phase3"
+  },
+  "known_metrics": {
+    "drugbank_recall": "24/34",
+    "note": "plafond données (9 ARV OOD, cf. diagnose_arv.py)"
+  },
+  "usage": "screening batch : score_model_a(bundle, smiles_list) → rank-avg relatif au lot. Scorer la librairie entière en un appel."
+}
