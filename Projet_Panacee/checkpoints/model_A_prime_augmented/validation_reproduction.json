@@ -1,0 +1,56 @@
+{
+  "model_id": "model_A_prime_augmented",
+  "n_test": 3778,
+  "n_actives": 84,
+  "n_arv": 34,
+  "metrics": {
+    "roc_auc": 0.620132067445278,
+    "ef_1pct": 16.57017543859649,
+    "ef_5pct": 4.997354497354497,
+    "bedroc_alpha20": 0.29080271640859184,
+    "hit_rate_top_100": 0.2,
+    "recall_top_10pct": 0.32142857142857145,
+    "prc_auc": 0.15414706348697607,
+    "drugbank": 32
+  },
+  "published_metrics": {
+    "roc_auc": 0.620132067445278,
+    "ef_1pct": 16.57017543859649,
+    "ef_5pct": 4.997354497354497,
+    "bedroc_alpha20": 0.2908027164085916,
+    "hit_rate_top_100": 0.2,
+    "recall_top_10pct": 0.32142857142857145,
+    "prc_auc": 0.15414706348697607,
+    "drugbank": 32.0
+  },
+  "differences": {
+    "roc_auc": 0.0,
+    "ef_1pct": 0.0,
+    "ef_5pct": 0.0,
+    "bedroc_alpha20": 2.220446049250313e-16,
+    "hit_rate_top_100": 0.0,
+    "recall_top_10pct": 0.0,
+    "prc_auc": 0.0,
+    "drugbank": 0.0
+  },
+  "within_tolerance": {
+    "roc_auc": true,
+    "ef_1pct": true,
+    "ef_5pct": true,
+    "bedroc_alpha20": true,
+    "hit_rate_top_100": true,
+    "recall_top_10pct": true,
+    "prc_auc": true,
+    "drugbank": true
+  },
+  "method": "A'' rank-average sur test ; gate sur pool test+34 ARV",
+  "gnn_conformal_test": {
+    "empirical_coverage": 0.9309158284806776,
+    "target_coverage": 0.9,
+    "coverage_valid": true,
+    "avg_set_size": 1.6744309158284807,
+    "ambiguous_rate": 0.6744309158284807,
+    "reject_rate": 0.0,
+    "singleton_rate": 0.3255690841715193
+  }
+}

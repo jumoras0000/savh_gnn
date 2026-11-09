@@ -16,12 +16,24 @@ def _ready(root):
     }), encoding="utf-8")
     for kind in ("ecfp4", "ecfp6", "maccs", "rdkit"):
         (folder / f"rf_{kind}.joblib").write_bytes(b"rf")
+    (folder / "validation_reproduction.json").write_text(json.dumps({
+        "within_tolerance": {"roc_auc": True, "drugbank": True},
+        "metrics": {"roc_auc": 0.6201, "drugbank": 32},
+        "n_test": 3778, "n_arv": 34,
+    }), encoding="utf-8")
 
 
-def test_overview_requires_complete_validated_bundle(tmp_path):
+def test_overview_requires_complete_validated_bundle(monkeypatch, tmp_path):
+    from webapp import studio_support
+
     root = tmp_path / "checkpoints"
     assert studio.overview(root)["model"] is None
     _ready(root)
+    assert studio.overview(root)["model"] is None
+    monkeypatch.setattr(studio_support, "load_support", lambda _: {
+        "registry": {"reference_size": 3778, "ad_train_size": 49150,
+                     "calibration_size": 3772},
+    })
     result = studio.overview(root)
     assert result["model"]["id"] == studio.MODEL_ID
     assert result["model"]["created"] == "2026-11-06"
@@ -30,7 +42,9 @@ def test_overview_requires_complete_validated_bundle(tmp_path):
 
 
 def test_screen_uses_higher_rank_as_better_and_keeps_invalid(monkeypatch, tmp_path):
-    from webapp import cheminfo, research
+    import numpy as np
+
+    from webapp import cheminfo, research, studio_support
 
     root = tmp_path / "checkpoints"
     _ready(root)
@@ -39,12 +53,26 @@ def test_screen_uses_higher_rank_as_better_and_keeps_invalid(monkeypatch, tmp_pa
         "logp": 1, "lipinski_pass": True,
     } if s != "bad" else {"valid": False}))
     monkeypatch.setattr(cheminfo, "structural_alerts", lambda s: {"endpoints": []})
-    monkeypatch.setattr(research, "_score_ensemble", lambda smiles, path: [1.4, 1.6])
+    monkeypatch.setattr(research, "get_ensemble", lambda path: ({}, None, None))
+    monkeypatch.setattr(studio_support, "load_support", lambda _: {
+        "reference": {member: np.array([0.2, 0.5, 0.8])
+                      for member in studio_support.MEMBERS},
+    })
+    monkeypatch.setattr(studio_support, "raw_scores", lambda bundle, smiles: {
+        member: np.array([0.3, 0.9]) for member in studio_support.MEMBERS
+    })
+    monkeypatch.setattr(studio_support, "load_ad", lambda _: type("AD", (), {
+        "classify": lambda self, smiles: [{"ad_class": "in_domain_high", "max_sim": 0.8}] * len(smiles),
+    })())
+    monkeypatch.setattr(studio_support, "conformal_for_scores", lambda scores, support: [
+        {"decision": "ambiguous"} for _ in scores])
     result = studio.screen(["CCO", "CCN", "bad"], root)
     assert [row["smiles"] for row in result["ranked"]] == ["CCN", "CCO"]
     assert [row["position"] for row in result["ranked"]] == [1, 2]
     assert len(result["invalid"]) == 1
-    assert result["ad_status"] == "non évalué sur le nouveau lot"
+    assert result["ranked"][0]["reference_percentile"] == 100.0
+    assert result["ranked"][0]["ad_class"] == "in_domain_high"
+    assert result["ranked"][0]["gnn_conformal"] == "ambiguous"
 
 
 def test_hits_only_uses_clean_phase4_files(tmp_path):
@@ -60,11 +88,15 @@ def test_hits_only_uses_clean_phase4_files(tmp_path):
 
 
 def test_studio_api_local_contract(client, monkeypatch, tmp_path):
-    from webapp import server
+    from webapp import server, studio_support
 
     root = tmp_path / "checkpoints"
     _ready(root)
     monkeypatch.setattr(server, "_ckpt_root", lambda: str(root))
+    monkeypatch.setattr(studio_support, "load_support", lambda _: {
+        "registry": {"reference_size": 3778, "ad_train_size": 49150,
+                     "calibration_size": 3772},
+    })
     assert client.get("/").status_code == 200
     legacy = client.get("/legacy")
     assert legacy.status_code == 200

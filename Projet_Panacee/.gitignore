@@ -62,6 +62,8 @@ data/uploads/
 data/remote_cache/
 data/checkpoint_backups/
 data/archives/
+data/experiment_package/
+data/external_validation/
 
 # Checkpoints et modèles
 checkpoints/**

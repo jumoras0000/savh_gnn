@@ -112,6 +112,14 @@ async def api_studio_hits(request):
     return JSONResponse(result)
 
 
+async def api_studio_package(request):
+    file = PROJECT_ROOT / "data" / "experiment_package" / "submission_blinded.csv"
+    if not file.is_file():
+        return JSONResponse({"error": "Liste de candidats indisponible"}, status_code=404)
+    return FileResponse(file, filename="panacee_candidats_aveugles.csv",
+                        media_type="text/csv")
+
+
 async def api_studio_screen(request):
     from webapp import studio
     try:
@@ -1116,6 +1124,7 @@ routes = [
     Route("/legacy", legacy_index),
     Route("/api/studio/overview", api_studio_overview),
     Route("/api/studio/hits", api_studio_hits),
+    Route("/api/studio/package", api_studio_package),
     Route("/api/studio/screen", api_studio_screen, methods=["POST"]),
     Route("/api/health", health),
     Route("/api/config", api_config),

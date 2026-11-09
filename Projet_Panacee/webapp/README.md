@@ -7,6 +7,22 @@ console d'entraînement reste accessible à `/legacy` mais n'est plus le parcour
 principal. Voir `docs/STUDIO_V2_DECISIONS.md` pour le raisonnement et les
 limites du modèle.
 
+Le Studio exige le registre SHA-256 et les supports calculés depuis les splits
+HIV Jupyter. Après avoir synchronisé `hiv_train.csv`, `hiv_val.csv` et
+`hiv_test.csv` dans `data/external/phase3/hiv/` :
+
+```bash
+python scripts/build_studio_support.py
+python scripts/build_candidate_package.py
+```
+
+Le premier script recalcule les métriques A'', la référence fixe, le domaine
+train+augmentation et la calibration GNN. Le second prépare une liste aveugle
+de 26 candidats et contrôles dans `data/experiment_package/` (local, non publié).
+Pour un CSV externe indépendant `smiles,label`, l'audit utilise
+`python scripts/evaluate_external_hiv.py fichier.csv` ; les identités et
+scaffolds déjà vus sont exclus avant toute métrique.
+
 ## Ancienne console (conservée à /legacy)
 
 ### 🧬 Panacée — Tableau de bord web (console de signes vitaux)

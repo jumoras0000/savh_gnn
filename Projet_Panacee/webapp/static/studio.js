@@ -48,6 +48,9 @@ function renderRanking(data) {
     const smi = document.createElement("small"); smi.textContent = molecule.smiles;
     name.append(strong, smi); row.append(name);
     cell(row, fmt(molecule.rank_average, 3), "score-cell");
+    cell(row, fmt(molecule.reference_percentile, 1), "score-cell");
+    cell(row, `${molecule.ad_class || "—"} (${fmt(molecule.ad_max_sim, 2)})`);
+    cell(row, molecule.gnn_conformal);
     cell(row, fmt(molecule.qed, 3));
     cell(row, fmt(molecule.mw, 1));
     cell(row, fmt(molecule.logp, 2));
@@ -57,7 +60,7 @@ function renderRanking(data) {
          flags.length ? "flag-cell" : "");
     body.append(row);
   }
-  $("rankingNote").textContent = `${data.ranking_scope}. ${data.interpretation} Domaine d'applicabilité et conformal : non évalués pour ce lot.`;
+  $("rankingNote").textContent = `${data.ranking_scope}. ${data.interpretation} Référence fixe : test HIV sans labels (3 778 structures). Domaine : train + actifs ajoutés. Conformal : GNN seul.`;
   $("invalidNote").textContent = data.invalid.length
     ? `${data.invalid.length} entrée(s) invalide(s) ou non scorée(s) : ${data.invalid.map(x => x.name).join(", ")}` : "";
   $("screenResults").hidden = false;
@@ -66,7 +69,7 @@ function renderRanking(data) {
 
 function exportRanking() {
   if (!app.ranking?.ranked?.length) return;
-  const columns = ["position", "name", "smiles", "rank_average", "qed", "mw", "logp", "lipinski_pass", "structural_alerts"];
+  const columns = ["position", "name", "smiles", "rank_average", "reference_percentile", "ad_class", "ad_max_sim", "gnn_conformal", "qed", "mw", "logp", "lipinski_pass", "structural_alerts"];
   const quote = value => `"${String(value ?? "").replaceAll('"', '""')}"`;
   const csv = [columns.join(","), ...app.ranking.ranked.map(row =>
     columns.map(key => quote(Array.isArray(row[key]) ? row[key].join(";") : row[key])).join(","))].join("\r\n");
@@ -130,7 +133,7 @@ async function loadHits(source) {
 function renderOverview(data) {
   app.overview = data;
   const model = data.model;
-  $("modelState").textContent = model ? `A'' · ${model.created} · prêt` : "Modèle validé indisponible";
+  $("modelState").textContent = model ? `A'' · ${model.created} · poids vérifiés` : "Modèle validé indisponible";
   $("modelState").dataset.ready = model ? "true" : "false";
   $("heroModel").textContent = model ? `A'' propre · ${model.created}` : "Indisponible";
   const metrics = data.validation.metrics || {};
@@ -140,8 +143,11 @@ function renderOverview(data) {
   $("screenBtn").disabled = !model;
   const selected = [
     ["ROC-AUC", metrics.roc_auc], ["PRC-AUC", metrics.prc_auc],
-    ["EF@1 %", metrics.ef_1pct], ["BEDROC α=20", metrics.bedroc_alpha20],
-    ["Hit top 100", metrics.hit_rate_top_100], ["DrugBank", metrics.drugbank !== undefined
+    ["EF@1 %", metrics.ef_1pct], ["EF@5 %", metrics.ef_5pct],
+    ["BEDROC α=20", metrics.bedroc_alpha20],
+    ["Hit top 100", metrics.hit_rate_top_100],
+    ["Recall top 10 %", metrics.recall_top_10pct],
+    ["DrugBank", metrics.drugbank !== undefined
       ? `${metrics.drugbank}/${data.validation.evaluation.n_arv}` : undefined],
   ];
   const grid = $("metricGrid"); grid.replaceChildren();
@@ -153,8 +159,17 @@ function renderOverview(data) {
     item.append(name, number); grid.append(item);
   });
   $("metricSource").textContent = data.validation.source
-    ? `Test held-out : ${data.validation.evaluation.n_test} molécules · rapport : ${data.validation.source}`
+    ? `Reproduction exacte sur ${data.validation.evaluation.n_test} molécules · ${data.validation.source} · SHA GNN ${data.registry.gnn_sha256?.slice(0, 12) || "—"} · couverture conformal GNN sur test : ${fmt(100 * data.validation.conformal_test.empirical_coverage, 1)} % (cible 90 %).`
     : "Rapport de validation non disponible.";
+  const external = data.external_validation;
+  $("externalStatus").textContent = external?.status === "evaluated"
+    ? `${external.reports.length} évaluation(s) externe(s) enregistrée(s), après audit de recouvrement.`
+    : "Évaluation externe indépendante : aucune donnée admissible fournie. Les performances affichées restent celles du test interne.";
+  const packageInfo = data.candidate_package;
+  $("packageStatus").textContent = packageInfo
+    ? `Liste aveugle prête : ${packageInfo.count} structures (${packageInfo.zinc} ZINC, ${packageInfo.repurposing} repurposing, ${packageInfo.arv_reference} ARV et ${packageInfo.inactive_reference} références inactives). Aucun résultat expérimental enregistré.`
+    : "Liste de validation expérimentale non préparée.";
+  $("packageDownload").hidden = !packageInfo;
   const phases = $("phaseRoles"); phases.replaceChildren();
   for (const phase of data.phases) {
     const li = document.createElement("li");

@@ -1,0 +1,29 @@
+{
+  "model_id": "model_A_prime_augmented",
+  "created": "2026-11-06",
+  "source": "JupyterHub panacee/Projet_Panacee",
+  "prediction": "rank-average VIH relatif ; fixed reference = test HIV unlabeled pool",
+  "artifacts": {
+    "phase3/panacee_phase3_hiv_chembl_clean.pth": "31d0fbeff516a19fa9a6763e78c3e10fde713daf8f63b30b2bcc3ac7ee38a163",
+    "model_A_prime_augmented/manifest.json": "0db6064795005f120556aa8d751a1b8d1b9fe43aedd22d4aaac3ade08c558ab2",
+    "model_A_prime_augmented/added_actives.json": "14ce25939da694bc633846f5939c9671daab60cf3f1a4150c17f7e1e349aa933",
+    "model_A_prime_augmented/rf_ecfp4.joblib": "b424cd754b338b54d2df433ac800380f0d6d418ea9b9fe3cf7fcbd91c5123e96",
+    "model_A_prime_augmented/rf_ecfp6.joblib": "0841d6f535efcb3c82913885f7a26d4182e0515eb8969125a9440169aab32924",
+    "model_A_prime_augmented/rf_maccs.joblib": "025e5e1676c6e51c0aa14c0e5088cbf5b797a3c28e211a54712a4db417f9e954",
+    "model_A_prime_augmented/rf_rdkit.joblib": "583f5abca3120d15eeb1ec8da0b40a11296c17614c6deab7cb0d73ef55443e57",
+    "phase3_stacking/augmented_report.json": "60d45c41273ed69e4929d51d24fd7833e08852c6dc2757c9651a329d0ae1fa53",
+    "model_A_prime_augmented/validation_reproduction.json": "6e5080fe821893f9915606a1a902cd320cdefdeed0111f4d5625b9f661c63e3d",
+    "model_A_prime_augmented/reference_scores.npz": "74d2f7ef879468bb9baf0b498673d0244e70572635110e56c69eabfe1cc26864",
+    "model_A_prime_augmented/calibration_scores.npz": "b3238e3bf3721814b86fb411d0f3647a5b2b2248af0c3e5b0ad5f0beb7ce55fb",
+    "model_A_prime_augmented/ad_train_ecfp4.npz": "e88b7f101c2169ff569378e4b97b27f7420a7c6fff57162b5453fce2139760e4"
+  },
+  "datasets": {
+    "hiv_train.csv": "9f3c3ac2ece04cd0dacb70b708a9a0e26c25cde64ed6dc555e8d23111d99bbd0",
+    "hiv_val.csv": "e3437249e61d43a6ac95557f0f9718fd33d52dfa5747aa6d6b22498ca7eedbc4",
+    "hiv_test.csv": "35cf356fc1d008973e59c00a2457c02fb7eb26321644bd61c2a6c4d1e0de5d20"
+  },
+  "reference_size": 3778,
+  "calibration_size": 3772,
+  "calibration_positive": 110,
+  "ad_train_size": 49150
+}
