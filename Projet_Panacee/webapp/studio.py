@@ -35,7 +35,7 @@ def _reproduction(root: Path) -> dict:
 
 def overview(root: str | Path) -> dict:
     root = Path(root).resolve()
-    from webapp import studio_support
+    from webapp import studio_support, translational
 
     model = phases.model_inventory(root)["latest"]
     support = studio_support.load_support(str(root))
@@ -43,8 +43,10 @@ def overview(root: str | Path) -> dict:
     report = phases.latest_model_metrics(root)
     outputs = phases.phase4_outputs(root)["local_results"]
     project = root.parent
-    package = project / "data" / "experiment_package" / "package_manifest.json"
-    package_info = json.loads(package.read_text(encoding="utf-8")) if package.is_file() else None
+    try:
+        package_info = translational.package(project)[0]
+    except (OSError, ValueError, KeyError, TypeError):
+        package_info = None
     external_reports = []
     for file in (project / "data" / "external_validation").glob("*.json"):
         try:

@@ -77,7 +77,7 @@ distribution externe.
 (identité canonique ou scaffold) comme validation externe. Aucun jeu externe
 indépendant étiqueté n'était disponible dans le projet : statut explicite
 `not_performed`, pas de performance inventée. Le paquet de 26 structures
-(12 ZINC diversifiées, 6 repurposing, 4 ARV et 4 références inactives) est
+(12 ZINC diversifiées, 6 repurposing, 4 ARV et 4 comparateurs négatifs du criblage) est
 préparé localement, sans aucun résultat expérimental.
 
 Le rapport `augmented_report.json` du 6 novembre correspond au modèle retenu,

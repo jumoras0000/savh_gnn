@@ -14,8 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from webapp.studio import hits
+from webapp.studio import hits, screen
 from webapp.studio_support import MODEL_DIR, verify_registry
+from webapp.translational import package as frozen_package
+from webapp.translational import sha256
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -46,6 +48,11 @@ def build(root: Path = ROOT, output: Path | None = None) -> dict:
     from src.validation.drugbank_antiretroviral import canonicalize_arv_smiles
 
     root = root.resolve()
+    output = output or root / "data" / "experiment_package"
+    if (output / "package_manifest.json").is_file():
+        if output.resolve() != (root / "data" / "experiment_package").resolve():
+            raise ValueError("Un paquet gelé personnalisé doit être géré séparément")
+        return frozen_package(root)[0]
     registry = verify_registry(root / "checkpoints", datasets=True)
     if registry["status"] != "verified":
         raise ValueError("Registre ou données Jupyter non vérifiés")
@@ -73,29 +80,52 @@ def build(root: Path = ROOT, output: Path | None = None) -> dict:
         entries.append({"role": "ARV reference", "name": row["name"],
                         "smiles": row["smiles_canonical"], "class": row["class"]})
     for i, smiles in enumerate(inactive, 1):
-        entries.append({"role": "MoleculeNet HIV inactive reference", "name": f"inactive-{i}",
+        entries.append({"role": "MoleculeNet HIV screen-negative comparator", "name": f"screen-negative-{i}",
                         "smiles": smiles})
     random.Random(42).shuffle(entries)
     for i, row in enumerate(entries, 1):
         row["blind_id"] = f"PZ-{i:03d}"
-    output = output or root / "data" / "experiment_package"
     output.mkdir(parents=True, exist_ok=True)
-    with (output / "submission_blinded.csv").open("w", newline="", encoding="utf-8") as handle:
+    submission = output / "submission_blinded.csv"
+    with submission.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=["blind_id", "smiles"])
         writer.writeheader()
         writer.writerows({"blind_id": row["blind_id"], "smiles": row["smiles"]}
                          for row in entries)
-    (output / "key_local.json").write_text(json.dumps(entries, indent=2, ensure_ascii=False),
-                                            encoding="utf-8")
+    key_file = output / "key_local.json"
+    key_file.write_text(json.dumps(entries, indent=2, ensure_ascii=False),
+                        encoding="utf-8")
+    prediction_rows = screen([{"name": row["blind_id"], "smiles": row["smiles"]}
+                              for row in entries], root / "checkpoints")["ranked"]
+    predictions_file = output / "predictions_local.json"
+    predictions_file.write_text(json.dumps({row["name"]: {
+        "reference_percentile": row["reference_percentile"],
+        "rank_average": row["rank_average"], "ad_class": row["ad_class"],
+        "gnn_conformal": row["gnn_conformal"]} for row in prediction_rows},
+        indent=2, ensure_ascii=False), encoding="utf-8")
+    with (output / "assay_results_template.csv").open("w", newline="",
+                                                        encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["blind_id", "assay_id", "replicate",
+                                                  "ec50_um", "cc50_um"])
+        writer.writeheader()
+        for row in entries:
+            for replicate in (1, 2):
+                writer.writerow({"blind_id": row["blind_id"], "assay_id": "",
+                                 "replicate": replicate, "ec50_um": "", "cc50_um": ""})
     manifest = {"model_id": MODEL_DIR, "model_created": registry["created"],
                 "count": len(entries), "zinc": len(zinc), "repurposing": len(repurposing),
-                "arv_reference": len(arv), "inactive_reference": len(inactive),
+                "arv_reference": len(arv), "screen_negative_comparator": len(inactive),
                 "selection": "ZINC rank + diversité Morgan ; autres groupes conservés",
-                "status": "candidate_list_only_no_experimental_results"}
+                "status": "candidate_list_only_no_experimental_results",
+                "submission_sha256": sha256(submission), "key_sha256": sha256(key_file),
+                "predictions_sha256": sha256(predictions_file),
+                "exploratory_gates": {"ec50_max_um": 1.0, "selectivity_index_min": 10.0}}
     (output / "package_manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     return manifest
 
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     print(json.dumps(build(), ensure_ascii=False))

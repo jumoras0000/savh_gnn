@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Panacée Studio · criblage VIH</title>
-  <link rel="stylesheet" href="static/studio.css?v=20261109-v3">
-  <script src="static/studio.js?v=20261109-v3" defer></script>
+  <link rel="stylesheet" href="static/studio.css?v=20261109-v4">
+  <script src="static/studio.js?v=20261109-v4" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Aller au contenu</a>
   <header class="topbar">
     <a class="brand" href="./"><span class="brand-mark">P</span><span>Panacée <b>Studio</b></span></a>
     <nav aria-label="Navigation principale">
-      <a href="#screen">Cribler</a><a href="#hits">Explorer les hits</a><a href="#evidence">Preuves</a>
+      <a href="#screen">Cribler</a><a href="#hits">Explorer les hits</a><a href="#evidence">Preuves</a><a href="#translation">Validation</a>
     </nav>
     <span id="modelState" class="model-state" aria-live="polite">Vérification du modèle…</span>
   </header>
@@ -74,6 +74,14 @@
       </div>
       <div class="panel followup-panel"><div><span class="small-heading">VALIDATION SUIVANTE</span><h3>Du calcul au laboratoire</h3><p id="externalStatus" class="muted"></p><p id="packageStatus" class="muted"></p></div><a id="packageDownload" class="secondary-button" href="api/studio/package" download hidden>Télécharger la liste aveugle</a></div>
       <div class="method-line"><strong>Limite de lecture</strong><p>Le modèle classe des structures ; il ne démontre pas une activité biologique, une sécurité clinique ou une cible moléculaire. Les métriques du test sont reproduites avec les poids locaux ; le percentile fixe et le domaine sont des diagnostics complémentaires.</p></div>
+    </section>
+    <section id="translation" class="shell work-section" aria-labelledby="translationTitle">
+      <div class="section-heading"><div><span class="step">04 / VALIDATION</span><h2 id="translationTitle">Du candidat au test</h2></div><p>Les prédictions sont gelées avant la réception des mesures. Le laboratoire fournit les résultats ; l’application en vérifie la cohérence et conserve leur provenance.</p></div>
+      <div class="evidence-grid">
+        <div class="panel"><h3>Parcours de développement</h3><ol id="developmentGates" class="phase-list"></ol></div>
+        <div class="panel"><h3>Résultats aveugles</h3><p id="assayState" class="muted">Chargement…</p><p class="muted">Format : <code>blind_id,assay_id,replicate,ec50_um,cc50_um</code>. Concentrations en µM ; <code>&gt;nombre</code> indique une limite de mesure. Deux réplicats et des contrôles sont requis avant le décodage.</p><div class="assay-actions"><a href="api/studio/assay-template" download class="secondary-button">Modèle CSV</a><label class="secondary-button assay-file">Importer les résultats<input id="assayFile" type="file" accept=".csv,text/csv"></label></div><p id="assayMessage" class="status" role="status"></p></div>
+      </div>
+      <p class="muted translation-note">Le seuil exploratoire pré-enregistré est EC50 ≤ 1 µM et indice de sélectivité ≥ 10 ; il ne constitue ni une preuve de sécurité ni un critère d’autorisation clinique.</p>
     </section>
   </main>
   <footer class="shell"><span>Panacée Studio · données et calculs locaux</span><span>Modèle A'' · 6 novembre 2026</span></footer>

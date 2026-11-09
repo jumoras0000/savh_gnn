@@ -23,6 +23,7 @@ Le « root » des runs est configurable via la variable d'env PANACEE_CKPT_ROOT
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -113,11 +114,77 @@ async def api_studio_hits(request):
 
 
 async def api_studio_package(request):
+    from webapp import translational
+
     file = PROJECT_ROOT / "data" / "experiment_package" / "submission_blinded.csv"
     if not file.is_file():
         return JSONResponse({"error": "Liste de candidats indisponible"}, status_code=404)
+    try:
+        translational.package(PROJECT_ROOT)
+    except (OSError, ValueError, KeyError, TypeError):
+        return JSONResponse({"error": "Paquet aveugle non vérifié"}, status_code=409)
     return FileResponse(file, filename="panacee_candidats_aveugles.csv",
                         media_type="text/csv")
+
+
+async def api_studio_assay_template(request):
+    from webapp import translational
+
+    file = PROJECT_ROOT / "data" / "experiment_package" / "assay_results_template.csv"
+    if not file.is_file():
+        return JSONResponse({"error": "Modèle de résultats indisponible"}, status_code=404)
+    try:
+        translational.package(PROJECT_ROOT)
+    except (OSError, ValueError, KeyError, TypeError):
+        return JSONResponse({"error": "Paquet aveugle non vérifié"}, status_code=409)
+    return FileResponse(file, filename="panacee_resultats_laboratoire_modele.csv",
+                        media_type="text/csv")
+
+
+async def api_studio_development(request):
+    from webapp import translational
+
+    return JSONResponse(await asyncio.to_thread(translational.development_status,
+                                                PROJECT_ROOT))
+
+
+async def api_studio_assay_upload(request):
+    from webapp import translational
+
+    data = await request.body()
+    if not data or len(data) > 262_144:
+        return JSONResponse({"error": "CSV vide ou supérieur à 256 Ko"}, status_code=400)
+    try:
+        data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return JSONResponse({"error": "CSV UTF-8 requis"}, status_code=400)
+    digest = hashlib.sha256(data).hexdigest()
+    directory = PROJECT_ROOT / "data" / "assay_results"
+    directory.mkdir(parents=True, exist_ok=True)
+    file = directory / (digest + ".csv")
+    created = False
+    try:
+        with file.open("xb") as handle:
+            handle.write(data)
+        created = True
+    except FileExistsError:
+        pass
+    try:
+        report = await asyncio.to_thread(translational.evaluate_assay, file, PROJECT_ROOT)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        if created:
+            file.unlink(missing_ok=True)
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    output = directory / (digest + ".json")
+    payload = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
+    if output.is_file() and output.read_text(encoding="utf-8") != payload:
+        return JSONResponse({"error": "Rapport déjà enregistré avec un contenu différent"},
+                            status_code=409)
+    output.write_text(payload, encoding="utf-8")
+    return JSONResponse({"status": report["status"], "n_measured": report["n_measured"],
+                         "n_expected": report["n_expected"], "issues": report["issues"],
+                         "source_sha256": digest,
+                         "analysis": report.get("exploratory_analysis")})
 
 
 async def api_studio_screen(request):
@@ -1125,6 +1192,9 @@ routes = [
     Route("/api/studio/overview", api_studio_overview),
     Route("/api/studio/hits", api_studio_hits),
     Route("/api/studio/package", api_studio_package),
+    Route("/api/studio/assay-template", api_studio_assay_template),
+    Route("/api/studio/development", api_studio_development),
+    Route("/api/studio/assays", api_studio_assay_upload, methods=["POST"]),
     Route("/api/studio/screen", api_studio_screen, methods=["POST"]),
     Route("/api/health", health),
     Route("/api/config", api_config),

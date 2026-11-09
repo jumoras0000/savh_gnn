@@ -167,7 +167,7 @@ function renderOverview(data) {
     : "Évaluation externe indépendante : aucune donnée admissible fournie. Les performances affichées restent celles du test interne.";
   const packageInfo = data.candidate_package;
   $("packageStatus").textContent = packageInfo
-    ? `Liste aveugle prête : ${packageInfo.count} structures (${packageInfo.zinc} ZINC, ${packageInfo.repurposing} repurposing, ${packageInfo.arv_reference} ARV et ${packageInfo.inactive_reference} références inactives). Aucun résultat expérimental enregistré.`
+    ? `Liste aveugle prête : ${packageInfo.count} structures (${packageInfo.zinc} ZINC, ${packageInfo.repurposing} repurposing, ${packageInfo.arv_reference} ARV et ${packageInfo.screen_negative_comparator} comparateurs du criblage). Résultats suivis dans la section Validation.`
     : "Liste de validation expérimentale non préparée.";
   $("packageDownload").hidden = !packageInfo;
   const phases = $("phaseRoles"); phases.replaceChildren();
@@ -179,6 +179,33 @@ function renderOverview(data) {
     const note = document.createElement("small"); note.textContent = phase.use;
     content.append(title, note); li.append(num, content); phases.append(li);
   }
+}
+
+function renderDevelopment(data) {
+  const names = {
+    frozen: "Gelé", unavailable: "Indisponible", awaiting_lab_results: "En attente",
+    partial: "Partiel", data_inconsistent: "Incohérent", data_complete: "Données complètes",
+    evidence_recorded: "Pièce archivée, non validée",
+    not_performed: "Non réalisé", not_started: "Non commencé"
+  };
+  const list = $("developmentGates"); list.replaceChildren();
+  for (const gate of data.gates) {
+    const item = document.createElement("li");
+    const mark = document.createElement("b"); mark.textContent = gate.status === "data_complete" || gate.status === "frozen" ? "✓" : "○";
+    const content = document.createElement("span");
+    const title = document.createElement("strong"); title.textContent = gate.name;
+    const state = document.createElement("small"); state.textContent = names[gate.status] || gate.status;
+    content.append(title, state); item.append(mark, content); list.append(item);
+  }
+  const assay = data.assay;
+  $("assayState").textContent = assay.status === "awaiting_lab_results"
+    ? "Aucun résultat expérimental reçu. Le paquet aveugle est prêt pour un laboratoire partenaire."
+    : `${names[assay.status] || assay.status} · ${assay.n_measured}/${assay.n_expected} structures mesurées.${assay.issues?.length ? ` ${assay.issues.join(" ; ")}` : ""}`;
+}
+
+async function loadDevelopment() {
+  try { renderDevelopment(await api("api/studio/development")); }
+  catch (error) { $("assayState").textContent = error.message; }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -204,9 +231,21 @@ document.addEventListener("DOMContentLoaded", () => {
   $("moreHits").addEventListener("click", () => { app.hitVisible += 20; renderHits(); });
   document.querySelectorAll("[data-source]").forEach(button => button.addEventListener("click", () =>
     loadHits(button.dataset.source)));
+  $("assayFile").addEventListener("change", async event => {
+    const file = event.target.files?.[0]; if (!file) return;
+    $("assayMessage").textContent = "Contrôle du fichier en cours…";
+    try {
+      const result = await api("api/studio/assays", {method: "POST",
+        headers: {"Content-Type": "text/csv;charset=utf-8"}, body: file});
+      $("assayMessage").textContent = `${result.status} · ${result.n_measured}/${result.n_expected} structures. ${result.issues.join(" ; ")}`;
+      await loadDevelopment();
+    } catch (error) { $("assayMessage").textContent = error.message; }
+    event.target.value = "";
+  });
   api("api/studio/overview").then(renderOverview).catch(error => {
     $("modelState").textContent = error.message;
     $("screenBtn").disabled = true;
   });
   loadHits("zinc");
+  loadDevelopment();
 });
