@@ -75,15 +75,21 @@ Phase 4 (`phase4/*.csv`, résumés JSON, interprétations) sont aussi rapatriés
 `GET /api/phases` distingue les quatre phases documentées des artefacts
 réellement présents sur ce PC ; le laboratoire intègre les comptes et premiers
 hits Phase 4 locaux dans chaque nouveau dossier.
+La section « Modèle VIH livré depuis Jupyter » affiche le manifeste du dernier
+ensemble **complet** disponible et sa date déclarée. Le sélecteur des runs et
+ses courbes montrent uniquement l'historique d'entraînement (Phase 1–3), pas
+la date ni la disponibilité du modèle A'' livré ensuite.
 Avec `PANACEE_JUPYTER_AUTO_SYNC=1`, le webapp vérifie le serveur toutes les cinq
 minutes en arrière-plan et importe automatiquement les nouveaux journaux et
 résultats Phase 4 dès
 qu'il est actif. L'état distant apparaît dans la barre de fraîcheur ; les poids
 restent un transfert explicite avec `--weights`.
 
-Le dépôt GitHub fournit le code et le rapport scientifique, pas les checkpoints
-ni les CSV de criblage (exclus du dépôt). Le `git pull` peut être à jour alors
-que les artefacts du serveur Jupyter ne le sont pas encore localement.
+Le dépôt GitHub contient désormais les modèles finaux Jupyter via Git LFS,
+leurs manifestes et les résultats sélectionnés des phases 1–4. Les checkpoints
+intermédiaires de chaque époque ne sont pas publiés. Un clone exige Git LFS
+pour récupérer les poids ; `git pull` seul ne prouve pas que le serveur Jupyter
+n'a pas produit de nouvelles versions depuis le dernier commit.
 
 `--offline` interdit PubMed, les API et les CLI cloud. Seul un modèle Ollama
 installé localement, appelé par `codex exec --oss --local-provider ollama`,

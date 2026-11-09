@@ -1,5 +1,6 @@
 """Les quatre phases Jupyter restent distinctes des copies réellement locales."""
 import json
+from pathlib import Path
 
 from webapp import phases, server
 
@@ -32,3 +33,29 @@ def test_four_phase_inventory_and_phase4_outputs(client, monkeypatch, tmp_path):
     assert data["phase4"]["report_claims"]["zinc_clean_hits"] == 124
     assert data["phase4"]["local_count_matches_report"]["zinc"] is False
     assert phases.inventory(root)["phases"][0]["local_status"] == "artifacts_present"
+
+
+def test_latest_deployed_model_is_distinct_from_training_history(tmp_path):
+    root = tmp_path / "checkpoints"
+    gnn = root / "phase3" / "clean.pth"
+    gnn.parent.mkdir(parents=True)
+    gnn.write_bytes(b"gnn")
+    for name, date, complete in (("model_A_rank_avg_5", "2026-11-05", False),
+                                 ("model_A_prime_augmented", "2026-11-06", True)):
+        folder = root / name
+        folder.mkdir()
+        (folder / "manifest.json").write_text(json.dumps({
+            "created": date, "gnn_ckpt": "checkpoints/phase3/clean.pth",
+            "fp_kinds": ["ecfp4"],
+        }), encoding="utf-8")
+        if complete:
+            (folder / "rf_ecfp4.joblib").write_bytes(b"rf")
+    inventory = phases.inventory(root)["deployed_models"]
+    assert inventory["latest"]["id"] == "model_A_prime_augmented"
+    assert inventory["latest"]["created"] == "2026-11-06"
+    older = next(m for m in inventory["models"] if m["id"] == "model_A_rank_avg_5")
+    assert older["available"] is False
+    assert older["missing"] == ["rf_ecfp4.joblib"]
+    js = (Path(__file__).resolve().parents[1] / "webapp/static/app.js").read_text(encoding="utf-8")
+    assert "Historique d'entraînement (pas la date du modèle livré)" in js
+    assert "Modèle VIH livré depuis Jupyter" in js

@@ -53,13 +53,22 @@ def catalog(allow_plan: bool = False) -> dict:
         d = checkpoint_dir / directory
         manifest = d / "manifest.json"
         gnn_ready = False
+        created = None
+        gnn_name = None
         if manifest.is_file():
             try:
-                gnn = Path(json.loads(manifest.read_text(encoding="utf-8"))["gnn_ckpt"])
-                gnn_ready = gnn.is_file() or (checkpoint_dir / gnn.parent.name / gnn.name).is_file()
+                manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+                gnn = Path(manifest_data["gnn_ckpt"])
+                gnn_ready = ((gnn.is_absolute() and gnn.is_file()) or
+                             (checkpoint_dir / gnn.parent.name / gnn.name).is_file())
+                created = manifest_data.get("created")
+                gnn_name = gnn.name
             except (KeyError, ValueError, OSError, TypeError):
                 pass
-        panacee.append({"id": ident, "label": label,
+        display = f"{label} · Jupyter {created}" if created else label
+        panacee.append({"id": ident, "label": display,
+                        "created": created, "gnn_checkpoint": gnn_name,
+                        "source": "jupyter",
                         "available": gnn_ready and
                                      all((d / f"rf_{kind}.joblib").is_file()
                                          for kind in ("ecfp4", "ecfp6", "maccs", "rdkit"))})

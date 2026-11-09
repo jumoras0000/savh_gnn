@@ -19,7 +19,7 @@
       <span class="sub">Vital&nbsp;Signs&nbsp;Monitor</span>
     </div>
     <div class="ecg-wrap"><canvas id="ecg"></canvas></div>
-    <select id="runSelect" class="run-select" title="Run d'entraînement"></select>
+    <select id="runSelect" class="run-select" title="Historique des entraînements, pas les modèles livrés"></select>
     <button id="deleteRunBtn" class="run-del" title="Supprimer ce run du tableau de bord">🗑</button>
     <span id="statusPill" class="status-pill" data-state="idle">
       <span class="dot"></span><span id="statusText">EN ATTENTE</span>
@@ -29,6 +29,7 @@
   </header>
 
   <main class="wrap">
+    <div id="modelFreshness" class="run-freshness" aria-live="polite"></div>
     <div id="runFreshness" class="run-freshness" aria-live="polite"></div>
     <section id="phaseOverview" class="phase-overview" aria-label="État des quatre phases Jupyter"></section>
     <!-- ===================== Verdict clinique ===================== -->

@@ -681,7 +681,7 @@ async function loadRuns() {
   if (freshness) {
     const newest = runs[0];
     if (!newest) {
-      freshness.textContent = "Aucune donnée d'entraînement dans le dossier local.";
+      freshness.textContent = "Historique d'entraînement : aucun journal local. Le modèle livré est indiqué séparément.";
       freshness.dataset.state = "stale";
     } else {
       const ageDays = Math.max(0, Math.floor((Date.now() / 1000 - newest.last_update) / 86400));
@@ -699,7 +699,7 @@ async function loadRuns() {
         : remote.status === "synced" ? `Jupyter synchronisé (${remote.updated || 0} artefact(s) actualisé(s)).`
         : remote.status === "unavailable" ? "Jupyter distant inaccessible."
         : "Jupyter distant non configuré.";
-      freshness.textContent = `Données locales : ${date} · ${newest.id} · epoch ${newest.last_epoch || 0} · ${ageDays} jour(s) · ${source} ${remoteLabel}`;
+      freshness.textContent = `Historique d'entraînement (pas la date du modèle livré) : ${date} · ${newest.id} · epoch ${newest.last_epoch || 0} · ${ageDays} jour(s) · ${source} ${remoteLabel}`;
       freshness.dataset.state = ageDays > 7 ? "stale" : "fresh";
     }
   }
@@ -730,6 +730,15 @@ async function loadPhases() {
   const root = document.getElementById("phaseOverview");
   if (!root) return;
   const data = await fetchJSON("api/phases");
+  const modelBanner = document.getElementById("modelFreshness");
+  const deployed = data.inventory?.deployed_models;
+  if (modelBanner) {
+    const latest = deployed?.latest;
+    modelBanner.textContent = latest
+      ? `Modèle VIH livré depuis Jupyter : ${latest.id} · créé le ${latest.created || "date inconnue"} · GNN ${latest.gnn_checkpoint} · poids locaux disponibles. Les courbes ci-dessous sont des entraînements antérieurs.`
+      : "Aucun ensemble VIH complet disponible localement ; les courbes ci-dessous sont uniquement l'historique d'entraînement.";
+    modelBanner.dataset.state = latest ? "fresh" : "stale";
+  }
   root.replaceChildren();
   const outputs = data.phase4?.local_results || {};
   (data.inventory?.phases || []).forEach(phase => {
