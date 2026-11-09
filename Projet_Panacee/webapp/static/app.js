@@ -20,7 +20,7 @@ const MONO = '11px "JetBrains Mono", monospace';
 
 /* ---------- état global ---------- */
 const state = {
-  runId: null, meta: {}, epochs: [], latest: {},
+  runId: null, runUserSelected: false, meta: {}, epochs: [], latest: {},
   expected: {}, thresholds: {}, status: "idle",
   verdict: null, compare: [], perTask: {}, es: null,
   observations: [], files: { checkpoints: [], csvs: [] },
@@ -606,7 +606,7 @@ function renderCompare() {
 }
 
 async function renderRunsTable() {
-  const data = await fetchJSON("/api/compare");
+  const data = await fetchJSON("api/compare");
   const thead = document.querySelector("#runsTable thead");
   const tbody = document.querySelector("#runsTable tbody");
   thead.innerHTML = "<tr><th>Run</th><th>Phase</th><th>Epochs</th><th>AUC / Perte</th><th>Sensib.</th><th>FNR</th><th>Danger</th><th>Verdict</th></tr>";
@@ -651,18 +651,61 @@ async function fetchJSON(url, opts) {
 
 async function loadConfig() {
   try {
-    const cfg = await fetchJSON("/api/config");
+    const cfg = await fetchJSON("api/config");
     state.expected = cfg.expected; state.thresholds = cfg.thresholds;
+    if (cfg.demo_readonly) {
+      document.body.classList.add("demo-readonly");
+      document.getElementById("labClaude").disabled = true;
+      document.getElementById("labOpenAI").disabled = true;
+      document.getElementById("p4Claude").checked = false;
+      document.getElementById("p4ChatGPT").checked = false;
+      document.getElementById("p4Claude").disabled = true;
+      document.getElementById("p4ChatGPT").disabled = true;
+    }
+    if (cfg.offline) {
+      document.getElementById("labLiterature").checked = false;
+      document.getElementById("labLiterature").disabled = true;
+      document.getElementById("labClaude").disabled = true;
+      document.body.classList.add("offline");
+      document.getElementById("labSIWCConnect").style.display = "none";
+    }
   } catch (e) { /* défauts gérés côté getters */ }
 }
 
 async function loadRuns() {
-  const data = await fetchJSON("/api/runs");
+  const data = await fetchJSON("api/runs");
   const sel = document.getElementById("runSelect");
   const runs = data.runs || [];
   state.runs = runs;
+  const freshness = document.getElementById("runFreshness");
+  if (freshness) {
+    const newest = runs[0];
+    if (!newest) {
+      freshness.textContent = "Aucune donnée d'entraînement dans le dossier local.";
+      freshness.dataset.state = "stale";
+    } else {
+      const ageDays = Math.max(0, Math.floor((Date.now() / 1000 - newest.last_update) / 86400));
+      const date = new Date(newest.last_update * 1000).toLocaleString("fr-FR");
+      const sync = data.sync || {};
+      const source = sync.status === "not_configured"
+        ? "Aucune source de synchronisation configurée."
+        : sync.status === "source_unavailable" ? "Source de synchronisation inaccessible."
+        : sync.status === "conflict" ? "Conflit avec la source : aucune donnée écrasée."
+        : sync.status === "error" ? `Synchronisation échouée : ${sync.error || "erreur"}.`
+        : `Copie locale synchronisée : ${sync.run_id || newest.id}.`;
+      const remote = data.remote_sync || {};
+      const remoteLabel = remote.status === "server_stopped" ? "Jupyter distant arrêté."
+        : remote.status === "checking" ? "Vérification du serveur Jupyter…"
+        : remote.status === "synced" ? `Jupyter synchronisé (${remote.updated || 0} artefact(s) actualisé(s)).`
+        : remote.status === "unavailable" ? "Jupyter distant inaccessible."
+        : "Jupyter distant non configuré.";
+      freshness.textContent = `Données locales : ${date} · ${newest.id} · epoch ${newest.last_epoch || 0} · ${ageDays} jour(s) · ${source} ${remoteLabel}`;
+      freshness.dataset.state = ageDays > 7 ? "stale" : "fresh";
+    }
+  }
   sel.innerHTML = runs.map(r => {
-    const tag = r.source === "remote" ? "🛰️ Kaggle · " : "";
+    const tag = r.source === "remote" || r.source === "jupyter"
+      ? `🛰️ ${r.id.startsWith("kaggle") ? "Kaggle (historique)" : "Jupyter"} · ` : "";
     return `<option value="${esc(r.id)}">${tag}${esc(r.id)} · ${r.status} · ${r.points} pts</option>`;
   }).join("");
   updateKaggleBanner();
@@ -675,9 +718,41 @@ async function loadRuns() {
   }
   // garde le run courant si présent, sinon prend le plus récent
   const ids = runs.map(r => r.id);
-  if (!state.runId || !ids.includes(state.runId)) state.runId = runs[0].id;
+  const previousRun = state.runId;
+  if (!state.runUserSelected || !state.runId || !ids.includes(state.runId)) {
+    state.runId = runs[0].id;
+  }
   sel.value = state.runId;
-  connectStream(state.runId);
+  if (!state.es || previousRun !== state.runId) connectStream(state.runId);
+}
+
+async function loadPhases() {
+  const root = document.getElementById("phaseOverview");
+  if (!root) return;
+  const data = await fetchJSON("api/phases");
+  root.replaceChildren();
+  const outputs = data.phase4?.local_results || {};
+  (data.inventory?.phases || []).forEach(phase => {
+    const card = document.createElement("div"); card.className = "phase-card";
+    const title = document.createElement("strong");
+    title.textContent = `Phase ${phase.number} · ${phase.label}`; card.append(title);
+    const history = document.createElement("span");
+    history.textContent = "Historique Jupyter : réalisée ; copie locale vérifiée ci-dessous.";
+    card.append(history);
+    const present = (phase.artifacts || []).filter(a => a.local).length;
+    const local = document.createElement("span");
+    local.textContent = `Artefacts locaux : ${present}/${(phase.artifacts || []).length}`;
+    card.append(local);
+    if (phase.number === 4) {
+      const hits = document.createElement("span");
+      const zinc = outputs.zinc?.status === "local" ? outputs.zinc.count : "non synchronisés";
+      const repurposing = outputs.repurposing?.status === "local"
+        ? outputs.repurposing.count : "non synchronisés";
+      hits.textContent = `Hits locaux : ZINC ${zinc} · repurposing ${repurposing}`;
+      card.append(hits);
+    }
+    root.append(card);
+  });
 }
 
 // Remet l'UI à zéro quand AUCUN run n'est sélectionné (évite d'afficher des
@@ -685,6 +760,7 @@ async function loadRuns() {
 function resetRunState() {
   if (state.es) { state.es.close(); state.es = null; }
   state.runId = null;
+  state.runUserSelected = false;
   state.epochs = []; state.latest = {}; state.meta = {};
   state.perTask = {}; state.compare = []; state.observations = [];
   state.verdict = { level: "NA", title: "Aucun run sélectionné", reasons: ["Lance un entraînement ou sélectionne un run."] };
@@ -702,11 +778,12 @@ function resetRunState() {
   const conn = document.getElementById("connText"); if (conn) conn.textContent = "—";
 }
 
-// Bannière « Entraînement Kaggle en cours » : visible dès qu'un run distant tourne.
+// Bannière d'entraînement distant : Jupyter est la source actuelle.
 function updateKaggleBanner() {
   const banner = document.getElementById("kaggleBanner");
   if (!banner) return;
-  const remote = (state.runs || []).filter(r => r.source === "remote" && r.status === "running");
+  const remote = (state.runs || []).filter(r =>
+    (r.source === "remote" || r.source === "jupyter") && r.status === "running");
   if (!remote.length) { banner.style.display = "none"; return; }
   const r = remote[0];
   // Métrique clé adaptée à la phase : perte (Phase 1) ou AUC (Phase 2/3).
@@ -717,7 +794,7 @@ function updateKaggleBanner() {
   banner.style.display = "flex";
   banner.innerHTML =
     `<span class="kb-pulse"></span>` +
-    `<div><b>🛰️ Entraînement Kaggle en cours</b> — run <code>${esc(r.id)}</code> · ` +
+    `<div><b>🛰️ Entraînement Jupyter en cours</b> — run <code>${esc(r.id)}</code> · ` +
     `epoch ${ep} · ${metric} · ${r.points} points` +
     `<div class="kb-meta">Les courbes et le verdict clinique se mettent à jour en temps réel. ` +
     `<a href="#" id="kbGoEvo">Voir l'évolution →</a></div></div>`;
@@ -748,7 +825,7 @@ function connectStream(runId) {
   if (state.es) { state.es.close(); state.es = null; }
   const conn = document.getElementById("connText");
   conn.textContent = "connexion…";
-  const es = new EventSource(`/api/stream?id=${encodeURIComponent(runId)}`);
+  const es = new EventSource(`api/stream?id=${encodeURIComponent(runId)}`);
   state.es = es;
 
   es.addEventListener("snapshot", (ev) => { conn.innerHTML = "<b>actif</b>"; applySnapshot(JSON.parse(ev.data)); });
@@ -815,7 +892,7 @@ function setupTabs() {
 const PAGE_HELP = {
   evo: {
     title: "📈 Évolution — suivi temps réel de l'entraînement",
-    role: "Visualise, <b>en direct</b>, l'apprentissage du modèle GNN epoch après epoch : courbes de perte, ROC-AUC et signes vitaux de sécurité. Les données arrivent par flux SSE depuis l'entraînement local <i>ou</i> Kaggle.",
+    role: "Visualise, <b>en direct</b>, l'apprentissage du modèle GNN epoch après epoch : courbes de perte, ROC-AUC et signes vitaux de sécurité. Les données arrivent par flux SSE depuis l'entraînement local ou le serveur Jupyter.",
     entries: [
       "<b>KPI (cartes du haut)</b> — epoch courant + ETA, ROC-AUC validation, sensibilité, FNR (faux négatifs), endpoints en danger. Chaque carte a une <i>sparkline</i> de tendance.",
       "<b>🎚️ Analyse d'une epoch précise</b> — curseur pour rejouer l'analyse (verdict, KPIs, observations, endpoints) de N'IMPORTE quelle epoch. ⭐ = meilleure epoch (score clinique). « Dernier / live » revient au temps réel.",
@@ -826,7 +903,7 @@ const PAGE_HELP = {
       "<b>Sélecteur de run</b> (barre du haut) — bascule entre les entraînements détectés.",
     ],
     howto: [
-      "Lance un entraînement (onglet Entraînement) ou pousse-le depuis Kaggle.",
+      "Lance un entraînement (onglet Entraînement) ou synchronise le serveur Jupyter.",
       "Sélectionne le run dans la liste déroulante en haut.",
       "Observe les courbes en temps réel ; déplace le curseur pour analyser une epoch donnée.",
       "Dans « Épochs sauvegardées », supprime les epochs faibles et garde la meilleure.",
@@ -1023,6 +1100,7 @@ function setupHelp() {
 
 function setupRunSelect() {
   document.getElementById("runSelect").addEventListener("change", (e) => {
+    state.runUserSelected = true;
     state.runId = e.target.value;
     if (state.runId) connectStream(state.runId);
   });
@@ -1039,11 +1117,12 @@ async function deleteRunUI() {
                `Les modèles principaux (.pth) ne sont pas touchés.`)) return;
   try {
     if (state.es) { state.es.close(); state.es = null; }
-    const r = await fetch(`/api/run?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const r = await fetch(`api/run?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     const d = await r.json();
     if (!d.ok) { flashToast("Échec : " + (d.error || "inconnu")); return; }
     flashToast(`Run « ${id} » supprimé`);
     state.runId = null;
+    state.runUserSelected = false;
     await loadRuns();           // recharge la liste (et reconnecte un autre run si présent)
   } catch (e) {
     flashToast("Erreur réseau pendant la suppression");
@@ -1108,7 +1187,7 @@ function applyPoint(d) {
 async function selectEpoch(n) {
   if (!state.runId) return;
   try {
-    const d = await fetchJSON(`/api/run?id=${encodeURIComponent(state.runId)}&epoch=${n}`);
+    const d = await fetchJSON(`api/run?id=${encodeURIComponent(state.runId)}&epoch=${n}`);
     state.pinnedEpoch = (d.selected_epoch != null) ? d.selected_epoch : n;
     applyPoint(d);
     flashToast(`Analyse de l'epoch ${state.pinnedEpoch}`);
@@ -1119,7 +1198,7 @@ async function unpinEpoch() {
   state.pinnedEpoch = null;
   if (!state.runId) { updateEpochSlider(); return; }
   try {
-    const d = await fetchJSON(`/api/run?id=${encodeURIComponent(state.runId)}`);
+    const d = await fetchJSON(`api/run?id=${encodeURIComponent(state.runId)}`);
     applyPoint(d);
   } catch (e) { updateEpochSlider(); }
   flashToast("Suivi temps réel (dernier point)");
@@ -1128,7 +1207,7 @@ async function unpinEpoch() {
 async function loadEpochManagement() {
   if (!state.runId) return;
   try {
-    const d = await fetchJSON(`/api/epochs?id=${encodeURIComponent(state.runId)}`);
+    const d = await fetchJSON(`api/epochs?id=${encodeURIComponent(state.runId)}`);
     state.epochList = d.epochs || [];
     state.bestEpoch = d.best_epoch != null ? d.best_epoch : state.bestEpoch;
     renderEpochTable();
@@ -1151,7 +1230,7 @@ function renderEpochTable() {
     : "Chaque epoch peut avoir son checkpoint par-epoch, géré ici. Supprime celles dont "
       + "l'analyse n'est pas bonne (le point ET le checkpoint local sont retirés). La colonne "
       + "affiche la taille si le .pth est présent en local (« — » si l'entraînement tourne encore "
-      + "sur Kaggle). ⭐ = meilleure epoch (conservée par la supervision). Clique une ligne pour l'analyser.");
+      + "sur Jupyter). ⭐ = meilleure epoch (conservée par la supervision). Clique une ligne pour l'analyser.");
   // Pour le pré-entraînement, l'étoile est recalculée côté client (perte min)
   // pour rester correcte même si le backend renvoie un is_best périmé.
   const clientBest = computeBestEpoch();
@@ -1205,12 +1284,12 @@ async function deleteEpochUI(n) {
   if (Number.isNaN(n)) return;
   if (!confirm(`Supprimer l'epoch ${n} ? Son checkpoint et son point de métriques seront effacés.`)) return;
   try {
-    const r = await fetch(`/api/epoch?id=${encodeURIComponent(state.runId)}&epoch=${n}`, { method: "DELETE" });
+    const r = await fetch(`api/epoch?id=${encodeURIComponent(state.runId)}&epoch=${n}`, { method: "DELETE" });
     if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch (e) {} throw new Error(m); }
     flashToast(`Epoch ${n} supprimée.`);
     if (state.pinnedEpoch === n) state.pinnedEpoch = null;
     // recharge le run (courbes) + la liste de gestion
-    const d = await fetchJSON(`/api/run?id=${encodeURIComponent(state.runId)}`);
+    const d = await fetchJSON(`api/run?id=${encodeURIComponent(state.runId)}`);
     state.epochs = d.epochs || []; state.latest = d.latest || {};
     state.verdict = d.verdict; state.compare = d.compare || []; state.perTask = d.per_task_auc || {};
     state.bestEpoch = d.best_epoch;
@@ -1228,7 +1307,7 @@ async function pruneWeakEpochs() {
   let ok = 0;
   for (const r of weak) {
     try {
-      const resp = await fetch(`/api/epoch?id=${encodeURIComponent(state.runId)}&epoch=${r.epoch}`, { method: "DELETE" });
+      const resp = await fetch(`api/epoch?id=${encodeURIComponent(state.runId)}&epoch=${r.epoch}`, { method: "DELETE" });
       if (resp.ok) ok++;
     } catch (e) { /* continue */ }
   }
@@ -1236,7 +1315,7 @@ async function pruneWeakEpochs() {
   flashToast(`${ok}/${weak.length} epoch(s) faible(s) supprimée(s).`);
   state.pinnedEpoch = null;
   try {
-    const d = await fetchJSON(`/api/run?id=${encodeURIComponent(state.runId)}`);
+    const d = await fetchJSON(`api/run?id=${encodeURIComponent(state.runId)}`);
     state.epochs = d.epochs || []; state.latest = d.latest || {};
     state.verdict = d.verdict; state.compare = d.compare || []; state.perTask = d.per_task_auc || {};
     state.bestEpoch = d.best_epoch;
@@ -1273,7 +1352,7 @@ function setupEval() {
     if (!checkpoint || !val_csv) { flashToast("Renseigne le checkpoint et le CSV.", true); return; }
     const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Évaluation…';
     try {
-      const res = await fetchJSON("/api/evaluate", {
+      const res = await fetchJSON("api/evaluate", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ checkpoint, val_csv }),
       });
@@ -1305,7 +1384,7 @@ window.addEventListener("resize", () => {
    ==================================================================== */
 async function loadFiles() {
   try {
-    state.files = await fetchJSON("/api/files");
+    state.files = await fetchJSON("api/files");
   } catch (e) { return; }
   const cks = state.files.checkpoints || [];
   const csvs = state.files.csvs || [];
@@ -1329,7 +1408,7 @@ function fillPicker(id, items, key) {
 }
 
 async function uploadFile(file) {
-  const url = `/api/upload?name=${encodeURIComponent(file.name)}`;
+  const url = `api/upload?name=${encodeURIComponent(file.name)}`;
   const r = await fetch(url, { method: "POST", body: file });
   if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch (e) {} throw new Error(m); }
   return r.json();
@@ -1377,7 +1456,7 @@ function setupTraining() {
       download: document.getElementById("trDownload").checked,
     };
     try {
-      const res = await fetchJSON("/api/train/start", {
+      const res = await fetchJSON("api/train/start", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -1389,7 +1468,7 @@ function setupTraining() {
   });
 
   document.getElementById("trStop").addEventListener("click", async () => {
-    try { await fetchJSON("/api/train/stop", { method: "POST" }); flashToast("Entraînement arrêté."); }
+    try { await fetchJSON("api/train/stop", { method: "POST" }); flashToast("Entraînement arrêté."); }
     catch (e) { flashToast("Arrêt : " + e.message, true); }
     pollTrain(true);
   });
@@ -1397,16 +1476,17 @@ function setupTraining() {
 
 async function pollTrain(once = false) {
   try {
-    const s = await fetchJSON("/api/train/status");
+    const s = await fetchJSON("api/train/status");
     const badge = document.getElementById("trStateBadge");
     const map = { running: "WARN", finished: "OK", failed: "DANGER", stopped: "NA", idle: "NA" };
     badge.className = "badge " + (map[s.state] || "NA");
     badge.textContent = s.state || "idle";
-    const remote = (state.runs || []).filter(r => r.source === "remote" && r.status === "running");
+    const remote = (state.runs || []).filter(r =>
+      (r.source === "remote" || r.source === "jupyter") && r.status === "running");
     const meta = s.pid
       ? `${s.label || ""} · pid ${s.pid} · ${s.cmd || ""}`
       : (remote.length
-          ? `🛰️ Aucun process local — un entraînement Kaggle (${remote[0].id}) pousse ses métriques en temps réel.`
+          ? `🛰️ Aucun process local — un entraînement Jupyter (${remote[0].id}) fournit ses métriques.`
           : "Aucun entraînement lancé depuis l'interface.");
     document.getElementById("trMeta").textContent = meta;
     document.getElementById("trLog").textContent = (s.log_tail && s.log_tail.length)
@@ -1433,13 +1513,13 @@ function setupResearch() {
     box.innerHTML = `<div class="card"><span class="spinner"></span> Analyse en cours…</div>`;
     document.getElementById("rsComboResult").innerHTML = "";
     try {
-      const res = await fetchJSON("/api/predict", {
+      const res = await fetchJSON("api/predict", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ smiles, checkpoint }),
       });
       // Sécurité SANS modèle (toujours dispo) : alertes structurelles + domaine
       try {
-        const saf = await fetchJSON("/api/safety", {
+        const saf = await fetchJSON("api/safety", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ smiles }),
         });
@@ -1462,7 +1542,7 @@ function setupResearch() {
     const box = document.getElementById("rsComboResult");
     box.innerHTML = `<div class="card"><span class="spinner"></span> Analyse de la combinaison…</div>`;
     try {
-      const res = await fetchJSON("/api/combo", {
+      const res = await fetchJSON("api/combo", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ smiles, checkpoint }),
       });
@@ -1539,7 +1619,7 @@ function moleculeCard(r) {
     <h3><span class="badge ${risk.level}">${risk.level}</span>
       <span class="smi">${esc(d.canonical || r.smiles)}</span></h3>
     <div class="mol-grid3">
-      <div class="mol-struct"><img loading="lazy" alt="structure" src="/api/depict?smiles=${encodeURIComponent(r.smiles)}" /></div>
+      <div class="mol-struct"><img loading="lazy" alt="structure" src="api/depict?smiles=${encodeURIComponent(r.smiles)}" /></div>
       <div>
         <div class="o-head">Descripteurs (RDKit)</div>
         <table class="mol-tbl">${descRows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(String(v))}</td></tr>`).join("")}</table>
@@ -1624,7 +1704,7 @@ function toCSV(rows, cols) {
    ==================================================================== */
 async function loadLibraries() {
   let libs;
-  try { libs = await fetchJSON("/api/libraries"); } catch (e) { return; }
+  try { libs = await fetchJSON("api/libraries"); } catch (e) { return; }
   state.libraries = libs;
   const sel = document.getElementById("scLib");
   sel.innerHTML = Object.entries(libs).map(([k, v]) =>
@@ -1637,11 +1717,13 @@ function setupScreening() {
     const checkpoint = document.getElementById("scCkpt").value || null;
     const smiles = document.getElementById("scSmiles").value.trim();
     const library = document.getElementById("scLib").value;
-    const body = smiles ? { objective, checkpoint, smiles } : { objective, checkpoint, library };
+    const chosenCheckpoint = objective === "efficacy_ensemble" ? null : checkpoint;
+    const body = smiles ? { objective, checkpoint: chosenCheckpoint, smiles } :
+      { objective, checkpoint: chosenCheckpoint, library };
     const meta = document.getElementById("scMeta");
     meta.innerHTML = '<span class="spinner"></span> Criblage…';
     try {
-      const res = await fetchJSON("/api/screen", {
+      const res = await fetchJSON("api/screen", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -1662,14 +1744,15 @@ function renderScreen(res) {
   state.lastScreen = res;
   document.getElementById("scResultCard").style.display = "block";
   document.getElementById("scHint").textContent =
-    `${res.objective_label} · mode ${res.mode} · ${res.n_valid}/${res.n_input} molécules valides`;
+    `${res.objective_label} · mode ${res.mode} · ${res.n_valid}/${res.n_input} molécules valides` +
+    (res.objective === "efficacy_ensemble" ? " · score = percentile relatif au lot, pas une probabilité" : "");
   const thead = document.querySelector("#scTable thead");
   const tbody = document.querySelector("#scTable tbody");
   thead.innerHTML = "<tr><th>#</th><th>Nom</th><th>SMILES</th><th>Score</th><th>MW</th><th>LogP</th><th>QED</th><th>Lipinski</th><th>Risque</th></tr>";
   tbody.innerHTML = (res.ranked || []).map(r => `<tr data-level="${r.risk || ""}">
     <td>${r.rank}</td><td>${esc(r.name || "—")}</td>
     <td class="smi-cell">${esc(r.smiles)}</td>
-    <td><b>${r.score}</b></td><td>${r.mw}</td><td>${r.logp}</td><td>${r.qed ?? "—"}</td>
+    <td><b>${r.score ?? "—"}</b></td><td>${r.mw}</td><td>${r.logp}</td><td>${r.qed ?? "—"}</td>
     <td>${r.lipinski_pass ? "✅" : "❌"}</td>
     <td>${r.risk ? `<span class="badge ${r.risk}">${r.risk}</span>` : "—"}</td></tr>`).join("")
     || `<tr><td colspan="9" style="color:var(--faint)">Aucun résultat.</td></tr>`;
@@ -1680,7 +1763,7 @@ function renderScreen(res) {
    ==================================================================== */
 async function loadCapabilities() {
   let data;
-  try { data = await fetchJSON("/api/capabilities"); } catch (e) { return; }
+  try { data = await fetchJSON("api/capabilities"); } catch (e) { return; }
   document.getElementById("capabilities").innerHTML = (data.capabilities || []).map(g =>
     `<div class="cap-group"><div class="cap-title">${esc(g.group)}</div>
       <ul>${g.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`).join("");
@@ -1698,7 +1781,7 @@ let _glossaryCache = null;
 
 async function loadGlossary() {
   if (!_glossaryCache) {
-    try { _glossaryCache = await fetchJSON("/api/glossary"); } catch (e) { return; }
+    try { _glossaryCache = await fetchJSON("api/glossary"); } catch (e) { return; }
   }
   const data = _glossaryCache;
   const o = data.overview || {};
@@ -1814,8 +1897,8 @@ function setupChat() {
     const sb = document.getElementById("chatSearch");
     const q = sb ? sb.value.trim() : "";
     try {
-      const data = q ? await fetchJSON("/api/conversations/search?q=" + encodeURIComponent(q))
-                     : await fetchJSON("/api/conversations");
+      const data = q ? await fetchJSON("api/conversations/search?q=" + encodeURIComponent(q))
+                     : await fetchJSON("api/conversations");
       renderConvList(q ? data.results : data.conversations);
     } catch (e) { /* ignore */ }
   }
@@ -1833,7 +1916,7 @@ function setupChat() {
     }));
     box.querySelectorAll(".conv-del").forEach(b => b.addEventListener("click", async (e) => {
       e.stopPropagation();
-      await fetch("/api/conversations/" + b.dataset.id, { method: "DELETE" });
+      await fetch("api/conversations/" + b.dataset.id, { method: "DELETE" });
       if (state.currentConv === b.dataset.id) { state.currentConv = null; log.innerHTML = ""; }
       loadConversations();
     }));
@@ -1847,10 +1930,10 @@ function setupChat() {
     log.innerHTML = "";
     resetSearch();
     try {
-      const data = await fetchJSON("/api/conversations/" + cid);
+      const data = await fetchJSON("api/conversations/" + cid);
       for (const m of data.messages) {
         const b = addBubble(m.role === "user" ? "user" : "bot", m.content);
-        if (m.image) addImage(b, "/api/chat/image?name=" + encodeURIComponent(m.image), "user-img");
+        if (m.image) addImage(b, "api/chat/image?name=" + encodeURIComponent(m.image), "user-img");
         if (m.tools && m.tools.length) setToolNote(b, m.tools.map(t => t.tool || t));
       }
     } catch (e) {}
@@ -1860,7 +1943,7 @@ function setupChat() {
   async function newConversation() {
     resetSearch();
     try {
-      const c = await fetchJSON("/api/conversations", { method: "POST",
+      const c = await fetchJSON("api/conversations", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: "{}" });
       state.currentConv = c.id; log.innerHTML = ""; await loadConversations();
     } catch (e) {}
@@ -1913,7 +1996,7 @@ function setupChat() {
     };
 
     try {
-      const resp = await fetch("/api/chat/stream", {
+      const resp = await fetch("api/chat/stream", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversation_id: state.currentConv, content: text, image: payloadImage }),
       });
@@ -1961,13 +2044,13 @@ function setupChat() {
   });
   document.getElementById("chatExport").addEventListener("click", () => {
     if (!state.currentConv) { flashToast("Ouvre une conversation d'abord.", true); return; }
-    window.open("/api/conversations/" + state.currentConv + "/export", "_blank");
+    window.open("api/conversations/" + state.currentConv + "/export", "_blank");
   });
   document.getElementById("apiKeySave").addEventListener("click", async () => {
     const k = document.getElementById("apiKeyInput").value.trim();
     if (!k) { flashToast("Colle ta clé API.", true); return; }
     try {
-      const result = await fetchJSON("/api/settings/apikey", { method: "POST",
+      const result = await fetchJSON("api/settings/apikey", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: k }) });
       document.getElementById("apiKeyInput").value = "";
       flashToast(result.claude ? "Clé enregistrée — Claude activé." : "Clé enregistrée.");
@@ -1980,7 +2063,7 @@ function setupChat() {
   if (discoBtn) discoBtn.addEventListener("click", async () => {
     if (!confirm("Déconnecter la clé Claude ? L'assistant repassera en mode local.")) return;
     try {
-      const r = await fetchJSON("/api/settings/apikey", { method: "DELETE" });
+      const r = await fetchJSON("api/settings/apikey", { method: "DELETE" });
       flashToast(r.env_locked
         ? "Clé locale effacée (une clé ANTHROPIC_API_KEY reste active côté serveur)."
         : "Claude déconnecté — mode local.");
@@ -1995,7 +2078,7 @@ async function refreshChatMode() {
   const badge = document.getElementById("chatMode");
   if (!badge) return;
   try {
-    const s = await fetchJSON("/api/chat/status");
+    const s = await fetchJSON("api/chat/status");
     badge.textContent = s.claude ? "Claude " + s.model : "local";
     badge.className = "badge " + (s.claude ? "OK" : "NA");
     const row = document.getElementById("apiKeyRow");
@@ -2022,7 +2105,7 @@ function setupPhase4() {
     history.replaceState(null, "", window.location.pathname);
   }
   function refreshPlan() {
-    fetchJSON("/api/siwc/status").then(async s => {
+    fetchJSON("api/siwc/status").then(async s => {
       profile.replaceChildren(new Option("Nouveau compte", ""));
       (s.profiles || []).forEach(p => profile.add(new Option(p.label, p.id)));
       disconnect.style.display = s.connected ? "inline-flex" : "none";
@@ -2031,7 +2114,7 @@ function setupPhase4() {
         : (s.error || (loginResult === "error" ? "Connexion refusée ou impossible. Réessaie." : "Abonnement non connecté."));
       if (s.connected) {
         try {
-          const catalog = await fetchJSON("/api/siwc/models");
+          const catalog = await fetchJSON("api/siwc/models");
           const target = "gpt-6.1-sol";
           planStatus.textContent = (catalog.models || []).some(m => m.id === target)
             ? `Abonnement connecté : ${s.account}. ${target} est dans le catalogue de ce compte ; son usage reste soumis aux limites du plan.`
@@ -2041,11 +2124,11 @@ function setupPhase4() {
     }).catch(e => { planStatus.textContent = `État de la connexion indisponible : ${e.message}`; });
   }
   connect.addEventListener("click", () => {
-    connect.href = "/api/siwc/start" + (profile.value ? "?profile=" + encodeURIComponent(profile.value) : "");
+    connect.href = "api/siwc/start" + (profile.value ? "?profile=" + encodeURIComponent(profile.value) : "");
   });
   disconnect.addEventListener("click", async () => {
     try {
-      const result = await fetchJSON("/api/siwc/disconnect", {
+      const result = await fetchJSON("api/siwc/disconnect", {
         method: "POST", headers: {"X-Panacee-Action": "siwc-disconnect"}});
       planStatus.textContent = result.revocation_confirmed
         ? "Compte déconnecté et session révoquée." : "Déconnecté localement ; révocation distante non confirmée. Vérifie les accès dans ChatGPT.";
@@ -2053,7 +2136,7 @@ function setupPhase4() {
     } catch (e) { planStatus.textContent = `Déconnexion impossible : ${e.message}`; }
   });
   refreshPlan();
-  fetchJSON("/api/phase4/status").then(available => {
+  fetchJSON("api/phase4/status").then(available => {
     document.getElementById("p4Components").textContent =
       `Modèle Phase 3 : ${available.phase3_checkpoint ? "checkpoint présent" : "absent"} · ` +
       `Claude : ${available.claude ? "clé configurée, crédit non garanti" : "indisponible"} · ` +
@@ -2078,7 +2161,7 @@ function setupPhase4() {
     status.textContent = "Analyse du modèle, notices PubMed et revues IA demandées…";
     results.replaceChildren(); chart.replaceChildren(); exportBtn.style.display = "none";
     try {
-      const dossier = await fetchJSON("/api/phase4", {
+      const dossier = await fetchJSON("api/phase4", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ library: document.getElementById("p4Library").value,
           hypotheses, with_claude: document.getElementById("p4Claude").checked,
@@ -2163,19 +2246,194 @@ function setupPhase4() {
 }
 
 /* ====================================================================
+   Laboratoire VIH : dossier commun et relecture croisée
+   ==================================================================== */
+function setupLab() {
+  const get = id => document.getElementById(id);
+  let currentReport = null;
+  get("labRun").disabled = true;
+  fetchJSON("api/lab/index").then(data => {
+    get("labIndexStatus").textContent =
+      `Index local : ${data.files} fichiers, ${data.passages} extraits, ${data.git_commits} commits Git.`;
+  }).catch(() => { get("labIndexStatus").textContent = "Index local indisponible."; });
+  function section(parent, title, body) {
+    const box = document.createElement("section");
+    box.className = "p4-review";
+    const h = document.createElement("h3"); h.textContent = title; box.append(h);
+    const p = document.createElement("pre"); p.className = "p4-review-text";
+    p.textContent = typeof body === "string" ? body : JSON.stringify(body, null, 2);
+    box.append(p); parent.append(box);
+  }
+  function render(report) {
+    currentReport = report;
+    get("labExport").disabled = false;
+    const root = get("labResults"); root.replaceChildren();
+    const evidence = report.evidence || {};
+    section(root, "Question et modèle", {
+      question: evidence.question, modèle: evidence.panacee?.selected,
+      statut: evidence.panacee?.status,
+      sens_du_score: evidence.panacee?.score_semantics,
+      empreinte_checkpoint: evidence.panacee?.checkpoint_sha256,
+      empreinte_dossier: report.evidence_sha256,
+    });
+    section(root, "Quatre phases Jupyter · historique et disponibilité locale",
+      evidence.jupyter_phases || {});
+    section(root, "Phase 4 · criblage et repurposing",
+      evidence.phase4_results || {});
+    (evidence.panacee?.candidates || []).forEach(item => section(
+      root, item.name || item.smiles, item
+    ));
+    (evidence.project_passages || []).forEach(p => section(
+      root, `Projet · ${p.source}:${p.line}`, p.excerpt
+    ));
+    const papers = [...(evidence.literature || []),
+      ...(evidence.candidate_literature || []).flatMap(c => c.pubmed || [])];
+    const lit = document.createElement("section"); lit.className = "p4-review";
+    const title = document.createElement("h3");
+    title.textContent = `Notices PubMed (${papers.length}) · ${evidence.literature_status}`;
+    lit.append(title);
+    papers.forEach(paper => {
+      const line = document.createElement("p");
+      const a = document.createElement("a");
+      a.href = paper.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.textContent = `PMID ${paper.pmid} — ${paper.title}`;
+      line.append(a); lit.append(line);
+    });
+    root.append(lit);
+    Object.entries(report.reviews || {}).forEach(([name, review]) =>
+      section(root, `${name} · analyse indépendante (${review.status})`,
+        {texte: review.text, pmid_non_vérifiés: review.unverified_pmids, erreur: review.error}));
+    Object.entries(report.critiques || {}).forEach(([name, review]) =>
+      section(root, `${name} · critique croisée (${review.status})`,
+        {texte: review.text, pmid_non_vérifiés: review.unverified_pmids, erreur: review.error}));
+    section(root, "Plan de vérification", report.validation_plan || []);
+    get("labStatus").textContent = report.id
+      ? `Dossier ${report.id} enregistré · accord des IA ≠ validation expérimentale.`
+      : "Analyse terminée · non enregistrée en mode démonstration.";
+  }
+  async function refreshHistory() {
+    const data = await fetchJSON("api/lab/reports");
+    const select = get("labPrior");
+    const previous = select.value;
+    select.replaceChildren(new Option("Nouveau dossier", ""));
+    (data.reports || []).forEach(r => select.add(new Option(
+      `${new Date(r.created * 1000).toLocaleDateString("fr-FR")} · ${r.question.slice(0, 75)}`,
+      r.id)));
+    select.value = previous;
+  }
+  async function showThread(id) {
+    const root = get("labThread");
+    root.replaceChildren();
+    if (!id) return;
+    const data = await fetchJSON(`api/lab/conversation?id=${encodeURIComponent(id)}`);
+    const turns = data.turns || [];
+    const title = document.createElement("strong");
+    title.textContent = `Conversation locale · ${turns.length} dossier(s)`;
+    root.append(title);
+    const list = document.createElement("ol");
+    turns.forEach(turn => {
+      const item = document.createElement("li");
+      item.textContent = turn.question || "Question non renseignée";
+      list.append(item);
+    });
+    root.append(list);
+  }
+  fetchJSON("api/lab/models").then(data => {
+    const pan = get("labPanacee"); pan.replaceChildren();
+    (data.panacee || []).forEach(m => {
+      const opt = new Option(m.label + (m.available ? "" : " — indisponible"), m.id);
+      opt.disabled = !m.available; pan.add(opt);
+    });
+    pan.value = data.panacee?.find(m => m.id === "ensemble_a_prime" && m.available)?.id
+      || data.panacee?.find(m => m.id === "phase3" && m.available)?.id || "descriptors";
+    get("labRun").disabled = false;
+    (data.claude || []).forEach(m => get("labClaude").add(new Option(
+      m.startsWith("cli:") ? `Claude Code local · ${m.slice(4)}` : `Claude API · ${m}`, m)));
+    (data.openai || []).forEach(m => get("labOpenAI").add(new Option(
+      m.startsWith("oss:") ? `Codex + Ollama hors ligne · ${m.slice(4)}` :
+      m.startsWith("cli:") ? `Codex CLI local · ${m.slice(4)}` :
+      m.startsWith("plan:") ? `Abonnement ChatGPT local · ${m.slice(5)}` :
+      `OpenAI API · ${m}`, m)));
+    if (!data.claude_configured) get("labClaude").title = "Clé Claude non configurée";
+    if (!data.openai_api_configured) get("labOpenAI").title = "Clé OpenAI non configurée";
+  }).catch(e => { get("labStatus").textContent = e.message; });
+  fetchJSON("api/siwc/status").then(data => {
+    get("labPlanStatus").textContent = data.connected
+      ? "Abonnement connecté ; modèles autorisés ajoutés au sélecteur."
+      : "Abonnement non connecté.";
+  }).catch(() => { get("labPlanStatus").textContent = "Connexion d'abonnement locale indisponible."; });
+  fetchJSON("api/libraries").then(data => {
+    Object.entries(data || {}).forEach(([id, item]) =>
+      get("labLibrary").add(new Option(item.label || id, id)));
+  }).catch(() => {});
+  refreshHistory().catch(() => {});
+  get("labRun").addEventListener("click", async () => {
+    const button = get("labRun"); button.disabled = true;
+    get("labStatus").textContent = "Constitution du dossier et analyse en cours…";
+    try {
+      const candidates = get("labCandidates").value.split(/\r?\n/).map(s => s.trim())
+        .filter(Boolean).map(line => {
+          const sep = line.indexOf("|");
+          return sep < 0 ? {name: "", smiles: line} :
+            {name: line.slice(0, sep).trim(), smiles: line.slice(sep + 1).trim()};
+        });
+      const report = await fetchJSON("api/lab/run", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          question: get("labQuestion").value, candidates,
+          library: candidates.length ? null : get("labLibrary").value || null,
+          hypotheses: get("labHypotheses").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean),
+          panacee_model: get("labPanacee").value,
+          claude_model: get("labClaude").value || null,
+          openai_model: get("labOpenAI").value || null,
+          openai_source: get("labOpenAI").value.startsWith("plan:") ? "plan" :
+            get("labOpenAISource").value,
+          literature: get("labLiterature").checked,
+          prior_report_id: get("labPrior").value || null,
+        }),
+      });
+      render(report);
+      if (report.id) {
+        await refreshHistory();
+        get("labPrior").value = report.id;
+        await showThread(report.id);
+        get("labQuestion").value = "";
+      }
+    } catch (e) { get("labStatus").textContent = e.message; }
+    finally { button.disabled = false; }
+  });
+  get("labPrior").addEventListener("change", async () => {
+    const id = get("labPrior").value;
+    if (!id) { get("labThread").replaceChildren(); return; }
+    try {
+      const report = await fetchJSON(`api/lab/reports/${encodeURIComponent(id)}`);
+      render(report);
+      await showThread(id);
+    } catch (e) { get("labStatus").textContent = e.message; }
+  });
+  get("labExport").addEventListener("click", () => {
+    if (!currentReport) return;
+    downloadFile("panacee-laboratoire.json", JSON.stringify(currentReport, null, 2),
+      "application/json");
+  });
+}
+
+/* ====================================================================
    Démarrage
    ==================================================================== */
 async function main() {
   setupTheme();
   ecgInit(); setupTabs(); setupHelp(); setupRunSelect(); setupEpochTools(); setupEval();
-  setupFiles(); setupTraining(); setupResearch(); setupScreening(); setupChat(); setupPhase4();
+  setupFiles(); setupTraining(); setupResearch(); setupScreening(); setupChat(); setupLab();
   await loadConfig();
   renderBarème();
   await loadFiles();
   await loadRuns();
+  await loadPhases();
   await renderRunsTable();
   // rafraîchit la liste des runs périodiquement (nouveaux runs)
   setInterval(() => loadRuns().catch(() => {}), 15000);
+  setInterval(() => loadPhases().catch(() => {}), 60000);
   setInterval(() => renderRunsTable().catch(() => {}), 15000);
   // statut d'entraînement (poll régulier tant que l'app est ouverte)
   setInterval(() => { pollTrain(); }, 4000);

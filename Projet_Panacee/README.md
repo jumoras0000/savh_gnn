@@ -9,13 +9,15 @@ avec un **tableau de bord web temps réel** et un **assistant conversationnel**.
 
 ---
 
-## Architecture (3 phases)
+## Architecture (4 phases)
 
 ```
 Phase 1 — Pré-entraînement MGM (ZINC)      → encodeur moléculaire souverain
 Phase 2 — Fine-tuning toxicité (Tox21)     → 12 endpoints toxicologiques
 Phase 3 — Multi-propriétés + IA raisonnement → efficacité anti-VIH, ADME,
                                                synergie/doses de combinaisons
+Phase 4 — Criblage VIH et repurposing        → hits ZINC, antiviraux, audits,
+                                               interprétabilité et dossier de recherche
 ```
 
 Encodeur : message passing edge‑aware (GATv2), résidus, triple pooling.
@@ -49,10 +51,10 @@ python -m webapp.run            # http://127.0.0.1:8000
 ```
 
 Onglets : **Évolution · Métriques cliniques · Sécurité · Comparaison ·
-Entraînement · Recherche · Criblage VIH · Assistant · Guide** — plus le **mode
+Entraînement · Recherche · Criblage VIH · Laboratoire VIH · Assistant · Guide** — plus le **mode
 clair/sombre** (bouton 🌙/☀️). Documentation : [webapp/README.md](webapp/README.md).
 
-### Entraînement (UI onglet Entraînement, ou CLI / Kaggle)
+### Entraînement (UI, CLI ou serveur Jupyter)
 
 ```bash
 python run_phase2.py --download --epochs 60     # toxicité
@@ -60,8 +62,8 @@ python run_phase3.py --download --epochs 80     # + efficacité anti-VIH
 # (optionnel) python run_phase1.py --download --epochs 50
 ```
 
-Suivi **temps réel** dans l'onglet Évolution (même depuis Kaggle via push HTTP —
-voir [webapp/README.md](webapp/README.md#temps-réel-depuis-kaggle)).
+Suivi des phases Jupyter et de leurs artefacts synchronisés dans l'onglet
+Évolution ; voir [webapp/README.md](webapp/README.md#actualisation-des-données-dentraînement).
 
 ### Découvrir des médicaments anti‑VIH
 

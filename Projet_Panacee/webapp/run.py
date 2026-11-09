@@ -59,9 +59,18 @@ def main():
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--root", default=None, help="Racine des runs (défaut: checkpoints/)")
     p.add_argument("--reload", action="store_true")
+    p.add_argument("--demo", action="store_true", help="Désactive les commandes d'administration")
+    p.add_argument("--offline", action="store_true", help="Désactive les services réseau et n'autorise que Codex/Ollama local")
     args = p.parse_args()
 
-    root = args.root or str(PROJECT_ROOT / "checkpoints")
+    if args.host not in ("127.0.0.1", "localhost", "::1") and os.environ.get("PANACEE_ALLOW_REMOTE") != "1":
+        p.error("Panacée fonctionne en local : utiliser --host 127.0.0.1")
+    if args.demo:
+        os.environ["PANACEE_DEMO_READONLY"] = "1"
+    if args.offline:
+        os.environ["PANACEE_OFFLINE"] = "1"
+
+    root = args.root or os.environ.get("PANACEE_CKPT_ROOT") or str(PROJECT_ROOT / "checkpoints")
     os.environ["PANACEE_CKPT_ROOT"] = root
     Path(root).mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +82,7 @@ def main():
     print("=" * 70)
     print(f"  Racine des runs       : {root}")
     print(f"  URL locale            : http://{args.host}:{args.port}")
-    print(f"  Réception Kaggle      : /api/ingest  "
+    print(f"  Ingestion distante    : /api/ingest  "
           f"[token={'*'*4 + ingest_tok[-4:] if ingest_tok else 'non sécurisé – pas de PANACEE_INGEST_TOKEN'}]")
     print(f"  Clé Anthropic (chat)  : {anthropic}")
     print("=" * 70)

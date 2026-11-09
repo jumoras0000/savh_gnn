@@ -24,11 +24,10 @@ import json
 from pathlib import Path
 
 import numpy as np
-import torch
 from scipy.stats import rankdata
 
+from push_ensemble import rf_scores_aligned_fp
 from stack_gnn_rf import gnn_scores_aligned, load_gnn
-from push_ensemble import FP_KINDS, featurize, rf_scores_aligned_fp
 
 
 def load_model_a(model_dir, device):
@@ -38,7 +37,14 @@ def load_model_a(model_dir, device):
     model_dir = Path(model_dir)
     with open(model_dir / "manifest.json", encoding="utf-8") as f:
         manifest = json.load(f)
-    gnn = load_gnn(manifest["gnn_ckpt"], device)
+    gnn_path = Path(manifest["gnn_ckpt"])
+    if not gnn_path.is_file():
+        # Le manifeste peut avoir été produit sur un autre hôte. Ne reconstituer
+        # que le chemin sous la racine checkpoints voisine de ce bundle.
+        gnn_path = model_dir.parent / gnn_path.parent.name / gnn_path.name
+    if not gnn_path.is_file():
+        raise FileNotFoundError(f"Checkpoint GNN du bundle introuvable : {manifest['gnn_ckpt']}")
+    gnn = load_gnn(str(gnn_path), device)
     rfs = {}
     for kind in manifest["fp_kinds"]:
         rfs[kind] = joblib.load(model_dir / f"rf_{kind}.joblib")

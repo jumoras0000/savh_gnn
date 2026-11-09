@@ -27,11 +27,113 @@ python -m webapp.run                           # ouvre http://127.0.0.1:8000
 
 Puis ouvre **http://127.0.0.1:8000**.
 
-### Connexion ChatGPT par abonnement (Phase 4)
+### Exécution entièrement sur ce PC
 
-L'onglet Phase 4 propose « Continuer avec ChatGPT » pour un compte éligible, distinct de la clé API OpenAI facturée séparément. Démarre impérativement l'application sur `http://127.0.0.1:8000`, installe les dépendances de `webapp/requirements.txt`, puis donne ton consentement dans le navigateur. L'application vérifie les modèles autorisés par le compte et n'utilise jamais la clé API comme secours silencieux quand « Mon abonnement » est choisi. Les jetons sont chiffrés localement et ignorés par Git ; déconnecte le compte depuis l'interface si nécessaire. Cette connexion n'est pas disponible depuis un client distant, et ni l'éligibilité du compte ni l'accès à `gpt-6.1-sol` ne sont garantis. Voir [la documentation OpenAI](https://developers.openai.com/siwc/token-sharing-open-source).
+Depuis `Projet_Panacee/` :
 
-Options : `--host 0.0.0.0 --port 8080`, `--root <dossier_checkpoints>`.
+```bash
+pip install -r requirements.txt
+pip install -r webapp/requirements.txt
+python -m webapp.run --host 127.0.0.1 --port 8000
+```
+
+Ouvrir `http://127.0.0.1:8000`. Le serveur refuse une liaison réseau externe
+par défaut. `--root D:\chemin\vers\checkpoints` permet de sélectionner un
+dossier de poids local hors du dépôt. Pour A'', ce dossier doit contenir
+`model_A_prime_augmented/manifest.json`, les quatre `rf_*.joblib` et le
+checkpoint GNN référencé par le manifeste (ou son équivalent sous `phase3/`).
+Sans ces fichiers, RDKit reste utilisable ; les modes GNN sont indiqués absents.
+
+### Actualisation des données d'entraînement
+
+Le tableau de bord lit `checkpoints/` sur ce PC, et non les fichiers restés sur
+un serveur distant. Pour synchroniser un journal téléchargé ou un fichier sur
+un volume réseau monté, définir `PANACEE_SYNC_SOURCE` (chemin du
+`live_metrics.jsonl`) et `PANACEE_SYNC_RUN_ID` dans `.env`, puis redémarrer.
+L'interface interroge `/api/runs` toutes les 15 secondes : un journal plus
+avancé du même run est importé automatiquement. Un journal plus ancien ou
+incompatible n'écrase jamais les données locales. La date et l'epoch des
+données réellement affichées sont visibles au-dessus du tableau de bord.
+Cette synchronisation ne se connecte pas directement à un serveur SSH non
+configuré ; le fichier source doit être accessible localement.
+
+Pour le serveur JupyterHub déjà enregistré dans VS Code, le rapatriement est
+préparé sans recopier de jeton dans le code :
+
+```bash
+python -m webapp.jupyter_sync             # état du serveur personnel
+python -m webapp.jupyter_sync --sync      # Phase 1-3 : journaux ; Phase 4 : résultats
+python -m webapp.jupyter_sync --sync --weights  # + checkpoints, RF et manifestes
+```
+
+Le script lit la connexion VS Code ou `PANACEE_JUPYTER_URL` et
+`PANACEE_JUPYTER_TOKEN`, puis utilise l'API JupyterHub et l'API Contents du
+serveur personnel. Il ne démarre pas le serveur et n'importe rien s'il est
+arrêté. Les journaux ne remplacent que des runs compatibles plus avancés ;
+les poids déjà présents sont sauvegardés avant remplacement. Les fichiers
+Phase 4 (`phase4/*.csv`, résumés JSON, interprétations) sont aussi rapatriés.
+`GET /api/phases` distingue les quatre phases documentées des artefacts
+réellement présents sur ce PC ; le laboratoire intègre les comptes et premiers
+hits Phase 4 locaux dans chaque nouveau dossier.
+Avec `PANACEE_JUPYTER_AUTO_SYNC=1`, le webapp vérifie le serveur toutes les cinq
+minutes en arrière-plan et importe automatiquement les nouveaux journaux et
+résultats Phase 4 dès
+qu'il est actif. L'état distant apparaît dans la barre de fraîcheur ; les poids
+restent un transfert explicite avec `--weights`.
+
+Le dépôt GitHub fournit le code et le rapport scientifique, pas les checkpoints
+ni les CSV de criblage (exclus du dépôt). Le `git pull` peut être à jour alors
+que les artefacts du serveur Jupyter ne le sont pas encore localement.
+
+`--offline` interdit PubMed, les API et les CLI cloud. Seul un modèle Ollama
+installé localement, appelé par `codex exec --oss --local-provider ollama`,
+peut alors produire une réponse IA. `--demo` désactive les commandes
+d'administration et les appels IA.
+
+Claude Code et Codex CLI peuvent être utilisés depuis ce PC avec leurs sessions
+déjà connectées. Leur exécutable est local mais, en mode standard, **l'inférence
+est effectuée par leurs services distants**. Codex/Ollama est l'option hors ligne.
+
+### Laboratoire de recherche VIH
+
+L'onglet **Laboratoire VIH · Phase 4** réunit une question, jusqu'à cinq molécules
+ou une bibliothèque, un modèle Panacée choisi, des extraits sourcés du code,
+des documents, rapports et commits Git locaux, des notices PubMed facultatives
+et jusqu'à dix hypothèses. Les choix Panacée comprennent RDKit sans modèle,
+Phase 2, Phase 3 et les ensembles A/A'' lorsque leurs artefacts existent.
+L'ensemble produit un **rang relatif au lot**, jamais une probabilité d'activité.
+
+Claude et OpenAI/Codex peuvent être sélectionnés séparément ou ensemble, via
+API ou CLI locale. Les modèles CLI installés sont détectés ; des listes de
+modèles autorisés se règlent via `PANACEE_CLAUDE_CLI_MODELS`,
+`PANACEE_CODEX_CLI_MODELS`, `PANACEE_CLAUDE_MODELS` et
+`PANACEE_OPENAI_MODELS`. La connexion d'abonnement ChatGPT locale reste
+disponible dans le laboratoire pour les modèles autorisés par ce compte.
+Les deux IA reçoivent le **même dossier de preuves** et produisent d'abord des
+analyses indépendantes, puis chacune critique l'autre. Le rapport distingue
+documents, prédictions, hypothèses et éléments manquants ; l'accord des IA ne
+constitue pas une validation expérimentale.
+
+Les dossiers sont stockés localement dans `data/panacee_lab.db` et exportables en
+JSON. L'index du projet est stocké dans `data/panacee_lab_index.db` ; il ne lit
+ni secrets, ni poids, ni lignes des datasets (colonnes seulement). Un dossier
+antérieur peut être repris : les cinq derniers dossiers de la chaîne servent
+de mémoire bornée. L'interface affiche la chronologie des questions et laisse
+le champ libre pour la question suivante ; chaque nouveau dossier conserve
+l'identifiant de son parent. API :
+`GET /api/lab/models`, `GET /api/lab/index`, `GET /api/lab/reports`,
+`GET /api/lab/reports/{id}`, `GET /api/lab/conversation?id={id}`,
+`POST /api/lab/run`.
+
+### Connexion ChatGPT par abonnement
+
+Le laboratoire propose « Connecter l'abonnement ChatGPT local » pour un compte
+éligible, distinct de la clé API OpenAI. L'application vérifie les modèles
+autorisés par ce compte et n'utilise pas la clé API comme secours silencieux.
+Les jetons sont chiffrés localement et ignorés par Git. Cette connexion exige
+`http://127.0.0.1:8000` dans le navigateur et reste indépendante de Codex CLI.
+
+Options : `--port 8080`, `--root <dossier_checkpoints>`, `--offline`, `--demo`.
 
 ## Ce que montre le tableau de bord
 
@@ -94,14 +196,17 @@ tunnel). Dans le notebook Kaggle, **avant** de lancer l'entraînement :
 import os
 os.environ["PANACEE_PUSH_URL"]   = "https://TON-TUNNEL.ngrok.io"  # ton dashboard exposé
 os.environ["PANACEE_PUSH_RUN"]   = "phase2"                        # id du run
-os.environ["PANACEE_PUSH_TOKEN"] = "secret"                        # optionnel
+os.environ["PANACEE_PUSH_TOKEN"] = "secret"                        # requis pour accès distant
 # puis : python run_phase2.py --download --epochs 60
 ```
 
 Côté dashboard, protège l'ingestion avec le même secret :
 `PANACEE_INGEST_TOKEN=secret python -m webapp.run --host 0.0.0.0`. Chaque epoch
 arrive via `POST /api/ingest` et apparaît dans l'onglet Évolution comme un run local.
-Sans tunnel, l'alternative reste l'**import** du `live_metrics.jsonl` téléchargé.
+Le jeton d'ingestion ne permet aucun accès aux autres API. Un accès API distant
+distinct exige `PANACEE_API_TOKEN` dans l'en-tête `X-Panacee-Token` ; sans ce
+jeton, ces routes restent fermées. Sans tunnel, l'alternative reste l'**import**
+du `live_metrics.jsonl` téléchargé.
 
 ## Assistant (chatbot)
 

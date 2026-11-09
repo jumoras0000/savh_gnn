@@ -53,4 +53,4 @@ def client(runs_root):
     from starlette.testclient import TestClient
 
     from webapp.server import app
-    return TestClient(app)
+    return TestClient(app, base_url="http://127.0.0.1:8000", client=("127.0.0.1", 12345))

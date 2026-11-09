@@ -33,13 +33,17 @@ TOX21_TASKS = [
 
 
 def _phase3_default() -> str:
-    from src.config import CHECKPOINT_DIR, PHASE3
-    return str(CHECKPOINT_DIR / "phase3" / PHASE3["checkpoint_name"])
+    from src.config import PHASE3
+    return str(_checkpoint_root() / "phase3" / PHASE3["checkpoint_name"])
+
+
+def _checkpoint_root() -> Path:
+    from src.config import CHECKPOINT_DIR
+    return Path(os.environ.get("PANACEE_CKPT_ROOT") or CHECKPOINT_DIR).resolve()
 
 
 def _phase2_default() -> str:
-    from src.config import CHECKPOINT_DIR
-    return str(CHECKPOINT_DIR / "phase2" / "best_toxicity_model.pth")
+    return str(_checkpoint_root() / "phase2" / "best_toxicity_model.pth")
 
 
 def detect_checkpoint_kind(path: str) -> str:
@@ -355,8 +359,7 @@ _OBJECTIVES = {
 
 
 def _ensemble_default_dir() -> str:
-    from src.config import CHECKPOINT_DIR
-    return str(CHECKPOINT_DIR / "model_A_prime_augmented")
+    return str(_checkpoint_root() / "model_A_prime_augmented")
 
 
 def get_ensemble(model_dir: str | None = None):
@@ -380,7 +383,6 @@ def get_ensemble(model_dir: str | None = None):
 
 def _score_ensemble(smiles_list: list[str], model_dir: str | None = None) -> list[float | None]:
     """Score une liste de SMILES via l'ensemble A'' (rank-average 5 modèles)."""
-    import numpy as np
     bundle, device, score_fn = get_ensemble(model_dir)
     scores, valid = score_fn(bundle, smiles_list, device)
     return [float(scores[i]) if valid[i] else None for i in range(len(smiles_list))]
@@ -398,6 +400,8 @@ def screen(molecules: list, objective: str = "drug_likeness",
     from webapp import cheminfo
     if objective not in _OBJECTIVES:
         return {"error": f"objectif inconnu: {objective}"}
+    if objective == "efficacy_ensemble" and checkpoint:
+        return {"error": "Le modèle ensemble est sélectionné par objectif ; le checkpoint Phase 3 ne s'applique pas."}
 
     # Normaliser les entrées
     items = []
@@ -424,6 +428,7 @@ def screen(molecules: list, objective: str = "drug_likeness",
         if objective == "safety" and predictor is None:
             raise FileNotFoundError("Le criblage par sécurité nécessite un modèle Phase 2 ou 3.")
 
+    n_scored = sum(v is not None for v in ensemble_scores) if ensemble_scores else 0
     ranked, invalid = [], []
     for idx, it in enumerate(items):
         desc = cheminfo.descriptors(it["smiles"])
@@ -438,7 +443,9 @@ def screen(molecules: list, objective: str = "drug_likeness",
             score = round((desc["qed"] or 0) * 100, 1)
         elif objective == "efficacy_ensemble":
             es = ensemble_scores[idx] if ensemble_scores else None
-            score = round(es * 100, 1) if es is not None else 0.0
+            score = round(100 * (es - 1) / (n_scored - 1), 1) if es is not None and n_scored > 1 else None
+            row["raw_rank_average"] = es
+            row["score_kind"] = "relative_percentile_not_probability"
         else:
             pr = predictor.predict_properties(it["smiles"]) if predictor else None
             if pr:
@@ -448,10 +455,10 @@ def screen(molecules: list, objective: str = "drug_likeness",
                     score = (pr.get("efficacy") or {}).get("probabilite_activite")
                 row["safety_score"] = pr.get("safety_score")
                 row["risk"] = assess_risk(pr)["level"]
-        row["score"] = score if score is not None else 0.0
+        row["score"] = score
         ranked.append(row)
 
-    ranked.sort(key=lambda r: r["score"], reverse=True)
+    ranked.sort(key=lambda r: r["score"] if r["score"] is not None else -1, reverse=True)
     for i, r in enumerate(ranked[:top_k], 1):
         r["rank"] = i
     return {"objective": objective, "objective_label": _OBJECTIVES[objective],

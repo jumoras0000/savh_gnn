@@ -49,6 +49,37 @@ def _ckpt_root() -> str:
 
 # Sérialise les écritures /api/ingest concurrentes (voir api_ingest).
 _INGEST_LOCK = asyncio.Lock()
+_REMOTE_SYNC_TASK: asyncio.Task | None = None
+_REMOTE_SYNC_NEXT = 0.0
+_REMOTE_SYNC_RESULT: dict = {"status": "not_configured"}
+
+
+def _pull_remote_runs(root: str) -> dict:
+    from webapp import jupyter_sync
+    try:
+        result = jupyter_sync.pull(local_root=Path(root))
+        return {"status": result["status"],
+                "updated": sum(item.get("status") == "updated"
+                               for item in result.get("files", []))}
+    except Exception as exc:
+        return {"status": "unavailable", "error": type(exc).__name__}
+
+
+async def _remote_sync_status(root: str) -> dict:
+    global _REMOTE_SYNC_TASK, _REMOTE_SYNC_NEXT, _REMOTE_SYNC_RESULT
+    if os.environ.get("PANACEE_OFFLINE") == "1" or os.environ.get("PANACEE_JUPYTER_AUTO_SYNC") != "1":
+        return {"status": "not_configured"}
+    if _REMOTE_SYNC_TASK is not None and _REMOTE_SYNC_TASK.done():
+        try:
+            _REMOTE_SYNC_RESULT = _REMOTE_SYNC_TASK.result()
+        except asyncio.CancelledError:
+            _REMOTE_SYNC_RESULT = {"status": "unavailable"}
+        _REMOTE_SYNC_TASK = None
+    now = asyncio.get_running_loop().time()
+    if _REMOTE_SYNC_TASK is None and now >= _REMOTE_SYNC_NEXT:
+        _REMOTE_SYNC_NEXT = now + 300
+        _REMOTE_SYNC_TASK = asyncio.create_task(asyncio.to_thread(_pull_remote_runs, root))
+    return {"status": "checking"} if _REMOTE_SYNC_TASK else _REMOTE_SYNC_RESULT
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -73,12 +104,28 @@ async def health(request):
 
 
 async def api_config(request):
-    return JSONResponse({"expected": service.EXPECTED, "thresholds": service.THRESHOLDS})
+    return JSONResponse({"expected": service.EXPECTED, "thresholds": service.THRESHOLDS,
+                         "demo_readonly": os.environ.get("PANACEE_DEMO_READONLY") == "1",
+                         "offline": os.environ.get("PANACEE_OFFLINE") == "1"})
 
 
 async def api_runs(request):
+    from webapp import data_sync
     root = _ckpt_root()
-    return JSONResponse({"root": root, "runs": service.list_runs(root)})
+    remote_sync = await _remote_sync_status(root)
+    sync = await asyncio.to_thread(data_sync.sync, root)
+    return JSONResponse({"root": root, "runs": service.list_runs(root),
+                         "sync": sync, "remote_sync": remote_sync})
+
+
+async def api_phases(request):
+    from webapp import phases
+    root = _ckpt_root()
+    inventory, outputs = await asyncio.gather(
+        asyncio.to_thread(phases.inventory, root),
+        asyncio.to_thread(phases.phase4_outputs, root),
+    )
+    return JSONResponse({"inventory": inventory, "phase4": outputs})
 
 
 async def api_run(request):
@@ -135,9 +182,10 @@ async def api_ingest(request):
     Écrit dans checkpoints/<run>/live_metrics.jsonl → repris par le SSE.
     """
     run_id = request.query_params.get("run", "remote")
-    token = request.query_params.get("token", "")
+    token = request.headers.get("x-panacee-token", "") or request.query_params.get("token", "")
     expected = os.environ.get("PANACEE_INGEST_TOKEN", "")
-    if expected and token != expected:
+    import hmac
+    if expected and not hmac.compare_digest(token, expected):
         return JSONResponse({"error": "token invalide"}, status_code=403)
 
     # run_id sûr : pas de séparateur de chemin ni de traversée
@@ -664,6 +712,10 @@ async def api_phase4(request):
         return JSONResponse({"error": "JSON invalide"}, status_code=400)
     if not isinstance(body, dict):
         return JSONResponse({"error": "objet JSON attendu"}, status_code=400)
+    if os.environ.get("PANACEE_DEMO_READONLY") == "1" and (
+        body.get("with_claude") or body.get("with_chatgpt")
+    ):
+        return JSONResponse({"error": "Appels IA désactivés en mode démonstration"}, status_code=403)
     source = body.get("chatgpt_source", "api")
     if source == "plan" and (not _siwc_local(request) or not _siwc_same_origin(request)):
         return JSONResponse({"error": "Abonnement ChatGPT réservé à 127.0.0.1"}, status_code=403)
@@ -699,8 +751,8 @@ async def api_phase4(request):
 async def api_phase4_status(request):
     """Disponibilité réelle des composants, sans exposer les clés API."""
     import importlib.util
-    from webapp import chatbot, research
-    from webapp import siwc
+
+    from webapp import chatbot, research, siwc
     return JSONResponse({
         "claude": chatbot._claude_available(),
         "chatgpt": bool(os.environ.get("OPENAI_API_KEY") and os.environ.get("OPENAI_MODEL")
@@ -712,6 +764,95 @@ async def api_phase4_status(request):
         "pubmed": "network_check_on_request",
         "clinical_validation": False,
     })
+
+
+async def api_lab_models(request):
+    from webapp import lab
+    return JSONResponse(await asyncio.to_thread(lab.catalog, _siwc_local(request)))
+
+
+async def api_lab_index(request):
+    from webapp import lab_index
+    return JSONResponse(await asyncio.to_thread(lab_index.status))
+
+
+async def api_lab_reports(request):
+    from webapp import lab
+    return JSONResponse({"reports": await asyncio.to_thread(lab.list_reports)})
+
+
+async def api_lab_report(request):
+    from webapp import lab
+    report = await asyncio.to_thread(lab.get_report, request.path_params["report_id"])
+    return JSONResponse(report) if report else JSONResponse({"error": "dossier introuvable"}, status_code=404)
+
+
+async def api_lab_conversation(request):
+    from webapp import lab
+    try:
+        chain = await asyncio.to_thread(
+            lab.conversation_context, request.query_params.get("id", "")
+        )
+    except FileNotFoundError:
+        return JSONResponse({"error": "conversation introuvable"}, status_code=404)
+    return JSONResponse({"turns": chain})
+
+
+async def api_lab_run(request):
+    from webapp import lab
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON invalide"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "objet JSON attendu"}, status_code=400)
+    if os.environ.get("PANACEE_DEMO_READONLY") == "1" and (
+        body.get("claude_model") or body.get("openai_model")
+    ):
+        return JSONResponse({"error": "Appels IA désactivés en mode démonstration"}, status_code=403)
+    if ((body.get("openai_source") == "plan"
+         or str(body.get("openai_model") or "").startswith("plan:"))
+        and not str(body.get("openai_model") or "").startswith(("cli:", "oss:"))
+        and (
+        not _siwc_local(request) or not _siwc_same_origin(request)
+    )):
+        return JSONResponse({"error": "Abonnement ChatGPT réservé à 127.0.0.1"}, status_code=403)
+    candidates = body.get("candidates") or []
+    if not candidates and body.get("library"):
+        from webapp.catalog import LIBRARIES
+        library = LIBRARIES.get(body["library"])
+        if library is None:
+            return JSONResponse({"error": "bibliothèque inconnue"}, status_code=400)
+        candidates = library["molecules"][:5]
+    context = []
+    if body.get("prior_report_id"):
+        try:
+            context = await asyncio.to_thread(
+                lab.conversation_context, str(body["prior_report_id"])
+            )
+        except FileNotFoundError:
+            return JSONResponse({"error": "dossier précédent introuvable"}, status_code=404)
+    try:
+        report = await asyncio.to_thread(
+            lab.run, body.get("question"), candidates=candidates,
+            panacee_model=body.get("panacee_model", "descriptors"),
+            claude_model=body.get("claude_model") or None,
+            openai_model=body.get("openai_model") or None,
+            openai_source=body.get("openai_source", "api"),
+            literature=body.get("literature") is not False,
+            hypotheses=body.get("hypotheses"), prior_context=context,
+            allow_plan=_siwc_local(request),
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except FileNotFoundError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
+    except Exception as exc:
+        return JSONResponse({"error": f"Laboratoire indisponible : {type(exc).__name__}"}, status_code=503)
+    if os.environ.get("PANACEE_DEMO_READONLY") != "1":
+        report["parent_id"] = body.get("prior_report_id") or None
+        report["id"] = await asyncio.to_thread(lab.save, report)
+    return JSONResponse(report)
 
 
 def _siwc_local(request) -> bool:
@@ -917,6 +1058,7 @@ routes = [
     Route("/api/health", health),
     Route("/api/config", api_config),
     Route("/api/runs", api_runs),
+    Route("/api/phases", api_phases),
     Route("/api/run", api_run),
     Route("/api/run", api_run_delete, methods=["DELETE"]),
     Route("/api/epochs", api_epochs),
@@ -938,6 +1080,12 @@ routes = [
     Route("/api/screen", api_screen, methods=["POST"]),
     Route("/api/phase4", api_phase4, methods=["POST"]),
     Route("/api/phase4/status", api_phase4_status),
+    Route("/api/lab/models", api_lab_models),
+    Route("/api/lab/index", api_lab_index),
+    Route("/api/lab/reports", api_lab_reports),
+    Route("/api/lab/reports/{report_id}", api_lab_report),
+    Route("/api/lab/conversation", api_lab_conversation),
+    Route("/api/lab/run", api_lab_run, methods=["POST"]),
     Route("/api/siwc/status", api_siwc_status),
     Route("/api/siwc/start", api_siwc_start),
     Route("/auth/callback", api_siwc_callback),
@@ -959,22 +1107,14 @@ routes = [
     Mount("/static", app=StaticFiles(directory=str(STATIC_DIR)), name="static"),
 ]
 
-def _host_is_local(host: str) -> bool:
-    """Vrai si la requête vient de la machine locale (navigateur sur 127.0.0.1)."""
-    h = (host or "").rsplit(":", 1)[0].strip().lower().strip("[]")
-    return h in ("127.0.0.1", "localhost", "::1", "")
-
-
 class TokenGuard:
     """
-    Middleware ASGI : quand PANACEE_INGEST_TOKEN est défini, exige ce token pour
-    tout /api/* (sauf /api/health) provenant d'un accès EXTERNE (ex. via ngrok).
-    Les requêtes locales (127.0.0.1, le navigateur du poste) passent librement.
+    Middleware ASGI : l'accès externe à /api/ingest exige le jeton d'ingestion ;
+    toutes les autres API exigent un jeton d'administration distinct.
+    Le client réseau ASGI, et non l'en-tête Host falsifiable, détermine l'origine.
 
-    Pourquoi : le tunnel ngrok n'est ouvert que pour que Kaggle POST /api/ingest.
-    Sans ce garde, n'importe qui connaissant l'URL ngrok pourrait lancer un
-    entraînement, importer un fichier, etc. Le token (le même que côté Kaggle)
-    referme cette porte. Pur ASGI → ne bufferise pas le flux SSE.
+    Un jeton d'ingestion ne donne jamais accès à l'entraînement, aux imports,
+    aux suppressions, au laboratoire ou aux conversations.
     """
 
     def __init__(self, app):
@@ -982,22 +1122,43 @@ class TokenGuard:
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") == "http":
-            token = os.environ.get("PANACEE_INGEST_TOKEN", "")
             path = scope.get("path", "")
-            if token and path.startswith("/api/") and path != "/api/health":
-                headers = dict(scope.get("headers") or [])
-                host = headers.get(b"host", b"").decode("latin-1")
-                if not _host_is_local(host):
-                    provided = headers.get(b"x-panacee-token", b"").decode("latin-1")
-                    if not provided:
+            if os.environ.get("PANACEE_OFFLINE") == "1" and (
+                path.startswith("/api/chat") or path.startswith("/api/siwc")
+                or path in {"/api/phase4", "/api/ingest"}
+            ):
+                resp = JSONResponse({"error": "Service réseau désactivé en mode hors ligne"}, status_code=403)
+                await resp(scope, receive, send)
+                return
+            if os.environ.get("PANACEE_DEMO_READONLY") == "1" and (
+                path in {"/api/train/start", "/api/train/stop", "/api/upload", "/api/ingest",
+                         "/api/settings/apikey", "/api/siwc/start", "/api/siwc/disconnect"}
+                or (scope.get("method") == "DELETE")
+                or path.startswith("/api/conversations")
+                or path.startswith("/api/chat")
+                or path.startswith("/api/lab/reports")
+                or path.startswith("/api/lab/conversation")
+            ):
+                resp = JSONResponse({"error": "Fonction désactivée en mode démonstration"}, status_code=403)
+                await resp(scope, receive, send)
+                return
+            if path.startswith("/api/") and path != "/api/health":
+                client_host = (scope.get("client") or ("", 0))[0]
+                if client_host not in ("127.0.0.1", "::1"):
+                    headers = dict(scope.get("headers") or [])
+                    if path == "/api/ingest":
+                        expected = os.environ.get("PANACEE_INGEST_TOKEN", "")
+                        provided = headers.get(b"x-panacee-token", b"").decode("latin-1")
                         from urllib.parse import parse_qs
                         qs = parse_qs(scope.get("query_string", b"").decode("latin-1"))
-                        provided = (qs.get("token") or [""])[0]
+                        provided = provided or (qs.get("token") or [""])[0]
+                    else:
+                        expected = os.environ.get("PANACEE_API_TOKEN", "")
+                        provided = headers.get(b"x-panacee-token", b"").decode("latin-1")
                     import hmac
-                    if not hmac.compare_digest(provided, token):
+                    if not expected or not hmac.compare_digest(provided, expected):
                         resp = JSONResponse(
-                            {"error": "Accès externe : token requis "
-                                      "(en-tête X-Panacee-Token ou ?token=)."},
+                            {"error": "Accès externe refusé : jeton d'API requis."},
                             status_code=403)
                         await resp(scope, receive, send)
                         return

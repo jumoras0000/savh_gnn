@@ -58,25 +58,33 @@ def test_server_responsive_after_volume(client, runs_root):
 
 
 def test_token_guard_blocks_external_without_token(client, monkeypatch):
-    """Token défini : un accès EXTERNE (Host non-local) sans token est refusé ;
-    l'accès local et /api/health restent ouverts."""
-    monkeypatch.setenv("PANACEE_INGEST_TOKEN", "sekret")
+    """Jeton d'ingestion ≠ jeton API ; Host ne donne jamais le statut local."""
+    from starlette.testclient import TestClient
 
-    # Externe sans token → 403
-    assert client.get("/api/runs", headers={"host": "abcd.ngrok-free.dev"}).status_code == 403
-    # Externe avec le bon token (en-tête) → OK
-    assert client.get("/api/runs", headers={"host": "abcd.ngrok-free.dev",
-                                            "x-panacee-token": "sekret"}).status_code == 200
-    # /api/health reste public même en externe
-    assert client.get("/api/health", headers={"host": "abcd.ngrok-free.dev"}).status_code == 200
-    # Accès local → libre
-    assert client.get("/api/runs", headers={"host": "127.0.0.1:8000"}).status_code == 200
+    from webapp.server import app
+
+    monkeypatch.setenv("PANACEE_INGEST_TOKEN", "sekret")
+    monkeypatch.setenv("PANACEE_API_TOKEN", "admin-test")
+
+    with TestClient(app, base_url="http://abcd.ngrok-free.dev",
+                    client=("198.51.100.7", 1234)) as external:
+        assert external.get("/api/runs").status_code == 403
+        assert external.get("/api/runs", headers={"x-panacee-token": "sekret"}).status_code == 403
+        assert external.get("/api/runs", headers={"x-panacee-token": "admin-test"}).status_code == 200
+        assert external.get("/api/runs", headers={"host": "127.0.0.1:8000"}).status_code == 403
+        assert external.get("/api/health").status_code == 200
+    assert client.get("/api/runs").status_code == 200
 
 
 def test_token_guard_allows_ingest_with_query_token(client, monkeypatch):
     """Kaggle (externe) pousse via ?token=… : accepté ; sans token : refusé."""
+    from starlette.testclient import TestClient
+
+    from webapp.server import app
+
     monkeypatch.setenv("PANACEE_INGEST_TOKEN", "kg")
-    ext = {"host": "x.ngrok-free.dev"}
     meta = {"_type": "meta", "phase": "phase1"}
-    assert client.post("/api/ingest?run=k", json=meta, headers=ext).status_code == 403
-    assert client.post("/api/ingest?run=k&token=kg", json=meta, headers=ext).status_code == 200
+    with TestClient(app, base_url="http://x.ngrok-free.dev",
+                    client=("198.51.100.7", 1234)) as external:
+        assert external.post("/api/ingest?run=k", json=meta).status_code == 403
+        assert external.post("/api/ingest?run=k&token=kg", json=meta).status_code == 200

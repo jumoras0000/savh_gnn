@@ -646,3 +646,23 @@ textarea { resize: vertical; line-height: 1.5; }
 .p4-review { border-top: 1px solid var(--line); padding: 12px 0; }
 .p4-review-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit;
   font-size: 13px; line-height: 1.6; max-height: 420px; overflow-y: auto; }
+.lab-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+  margin: 12px 0; }
+.lab-grid .picker, #labPrior, #labQuestion, #labCandidates, #labHypotheses {
+  width: 100%; box-sizing: border-box; }
+#view-lab label { display: block; margin-top: 12px; }
+@media (max-width: 700px) { .lab-grid { grid-template-columns: 1fr; } }
+.demo-readonly [data-tab="train"], .demo-readonly [data-tab="chat"],
+.demo-readonly #deleteRunBtn, .demo-readonly #epochPrune,
+.demo-readonly #p4SIWCConnect, .demo-readonly #p4SIWCDisconnect,
+.demo-readonly #labSIWCConnect {
+  display: none !important;
+}
+.run-freshness { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; font-size: 12px; background: var(--panel, #182332); color: var(--text, #dce6ef); }
+.run-freshness[data-state="stale"] { border-left: 3px solid #e6a23c; }
+.run-freshness[data-state="fresh"] { border-left: 3px solid #54b88a; }
+.phase-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.phase-overview .phase-card { padding: 10px; border: 1px solid var(--border, #304252); border-radius: 8px; background: var(--panel, #182332); font-size: 12px; }
+.phase-overview .phase-card strong { display: block; margin-bottom: 4px; }
+.phase-overview .phase-card span { display: block; color: var(--muted, #a9bac9); }
+@media (max-width: 850px) { .phase-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

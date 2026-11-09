@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>if (!location.pathname.endsWith("/")) location.replace(location.pathname + "/" + location.search + location.hash);</script>
   <title>Panacée — Console de signes vitaux</title>
   <!-- Polices distinctives (dégradation gracieuse hors-ligne) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="static/style.css" />
 </head>
 <body>
   <!-- ===================== Barre d'instrument ===================== -->
@@ -28,6 +29,8 @@
   </header>
 
   <main class="wrap">
+    <div id="runFreshness" class="run-freshness" aria-live="polite"></div>
+    <section id="phaseOverview" class="phase-overview" aria-label="État des quatre phases Jupyter"></section>
     <!-- ===================== Verdict clinique ===================== -->
     <section id="verdict" class="verdict" data-level="NA">
       <div class="icon" id="verdictIcon">🩺</div>
@@ -76,7 +79,7 @@
       <button class="tab" data-tab="train">🎛️ Entraînement</button>
       <button class="tab" data-tab="research">🧪 Recherche</button>
       <button class="tab" data-tab="screen">🧬 Criblage VIH</button>
-      <button class="tab" data-tab="phase4">🔎 Phase 4</button>
+      <button class="tab" data-tab="lab">🧫 Laboratoire VIH · Phase 4</button>
       <button class="tab" data-tab="chat">💬 Assistant</button>
       <button class="tab" data-tab="lexique">📖 Lexique</button>
       <button class="tab" data-tab="info">ℹ️ Guide</button>
@@ -331,6 +334,42 @@
       </div>
     </section>
 
+    <!-- ---------- Laboratoire de recherche ---------- -->
+    <section class="panel-view" id="view-lab">
+      <div class="card">
+        <h2>Laboratoire de recherche VIH</h2>
+        <p class="hint">Question, preuves du projet, prédictions Panacée, notices PubMed et analyses IA dans un dossier traçable. L'accord entre IA n'est pas une validation expérimentale.</p>
+        <p id="labIndexStatus" class="hint">Index local du projet : chargement…</p>
+        <label for="labQuestion">Question de recherche</label>
+        <textarea id="labQuestion" rows="3" maxlength="3000" placeholder="Ex. Quels candidats anti-VIH méritent une vérification indépendante, et pourquoi ?"></textarea>
+        <div class="lab-grid">
+          <div><label for="labPanacee">Modèle Panacée</label><select id="labPanacee" class="picker"></select></div>
+          <div><label for="labClaude">Claude</label><select id="labClaude" class="picker"><option value="">Sans Claude</option></select></div>
+          <div><label for="labOpenAI">OpenAI / Codex</label><select id="labOpenAI" class="picker"><option value="">Sans OpenAI</option></select></div>
+          <div><label for="labOpenAISource">Accès OpenAI</label><select id="labOpenAISource" class="picker"><option value="api">Clé API</option><option value="plan">Abonnement local éligible</option></select></div>
+        </div>
+        <div class="p4-options">
+          <a class="btn ghost" id="labSIWCConnect" href="api/siwc/start">Connecter l'abonnement ChatGPT local</a>
+          <span id="labPlanStatus" class="hint"></span>
+        </div>
+        <label for="labCandidates">Molécules (une par ligne : nom | SMILES, maximum 5)</label>
+        <textarea id="labCandidates" rows="3" placeholder="Zidovudine | CC1=CN(C(=O)NC1=O)[C@@H]2O[C@H](CO)[C@@H](N=[N+]=[N-])C2"></textarea>
+        <label for="labLibrary">Ou bibliothèque de candidats (5 premiers si aucun SMILES saisi)</label>
+        <select id="labLibrary" class="picker"><option value="">Aucune bibliothèque</option></select>
+        <label for="labHypotheses">Hypothèses (une par ligne, maximum 10)</label>
+        <textarea id="labHypotheses" rows="2" placeholder="H1 : vérifier l'activité sur des variants résistants"></textarea>
+        <label for="labPrior">Poursuivre un dossier</label><select id="labPrior" class="picker"><option value="">Nouveau dossier</option></select>
+        <div id="labThread" class="hint" aria-live="polite"></div>
+        <label><input type="checkbox" id="labLiterature" checked /> Notices PubMed</label>
+        <div class="p4-options">
+          <button class="btn" id="labRun" type="button">Analyser et confronter</button>
+          <button class="btn ghost" id="labExport" type="button" disabled>Exporter le dossier JSON</button>
+        </div>
+        <p id="labStatus" class="hint" role="status"></p>
+        <div id="labResults"></div>
+      </div>
+    </section>
+
     <!-- ---------- Phase 4 : dossier de recherche ---------- -->
     <section class="panel-view" id="view-phase4">
       <div class="card">
@@ -346,7 +385,7 @@
           <option value="api">Clé API OpenAI (facturation séparée)</option>
         </select>
         <div class="p4-options">
-          <a class="btn" id="p4SIWCConnect" href="/api/siwc/start">Continuer avec ChatGPT</a>
+          <a class="btn" id="p4SIWCConnect" href="api/siwc/start">Continuer avec ChatGPT</a>
           <select id="p4SIWCProfile" class="picker" aria-label="Compte ChatGPT enregistré"><option value="">Nouveau compte</option></select>
           <button class="btn ghost" id="p4SIWCDisconnect" type="button" style="display:none">Déconnecter</button>
           <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Gérer mon utilisation</a>
@@ -495,6 +534,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="static/app.js"></script>
 </body>
 </html>

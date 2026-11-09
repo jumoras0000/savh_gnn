@@ -53,12 +53,19 @@ data/processed/**/*
 
 # Base de données chatbot + images de chat + uploads (local)
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 data/chat_images/
 data/uploads/
+data/remote_cache/
+data/checkpoint_backups/
+data/archives/
 
 # Checkpoints et modèles
+checkpoints/**
+!checkpoints/.gitkeep
 checkpoints/**/*.pth
 checkpoints/**/*.pt
 !checkpoints/.gitkeep
