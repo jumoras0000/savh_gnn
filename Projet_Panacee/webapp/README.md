@@ -82,6 +82,11 @@ modèle ; les anciens runs restent stockés sans apparaître dans l'interface.
 Le laboratoire ne propose par défaut que le dernier ensemble complet et RDKit
 sans modèle. `PANACEE_SHOW_HISTORICAL_MODELS=1` restaure les anciens choix pour
 une comparaison volontaire.
+Le panneau « Métriques du modèle récent » lit directement
+`phase3_stacking/augmented_report.json` : huit mesures A'' (ROC-AUC, PRC-AUC,
+EF@1 %, EF@5 %, BEDROC, hit rate top 100, recall top 10 %, DrugBank), taille du
+test et rapport complet dépliable avec bootstrap et comparaison DeLong. Ces
+mesures sont rapportées par Jupyter, non recalculées par la web app.
 Avec `PANACEE_JUPYTER_AUTO_SYNC=1`, le webapp vérifie le serveur toutes les cinq
 minutes en arrière-plan et importe automatiquement les nouveaux journaux et
 résultats Phase 4 dès

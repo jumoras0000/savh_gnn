@@ -705,6 +705,7 @@ async function loadRuns() {
       freshness.dataset.state = ageDays > 7 ? "stale" : "fresh";
     }
   }
+  document.body.classList.toggle("model-only", Boolean(data.latest_model && !runs.length));
   sel.innerHTML = runs.map(r => {
     const tag = r.source === "remote" || r.source === "jupyter"
       ? `🛰️ ${r.id.startsWith("kaggle") ? "Kaggle (historique)" : "Jupyter"} · ` : "";
@@ -746,6 +747,47 @@ async function loadPhases() {
       ? `Modèle VIH livré depuis Jupyter : ${latest.id} · créé le ${latest.created || "date inconnue"} · GNN ${latest.gnn_checkpoint} · poids locaux disponibles. Les courbes ci-dessous sont des entraînements antérieurs.`
       : "Aucun ensemble VIH complet disponible localement ; les courbes ci-dessous sont uniquement l'historique d'entraînement.";
     modelBanner.dataset.state = latest ? "fresh" : "stale";
+  }
+  const metricRoot = document.getElementById("modelMetrics");
+  if (metricRoot) {
+    metricRoot.replaceChildren();
+    const report = data.latest_model_metrics || {};
+    const title = document.createElement("h2");
+    title.textContent = "Métriques du modèle récent · A'' Jupyter";
+    metricRoot.append(title);
+    if (report.status === "reported") {
+      const context = document.createElement("p");
+      context.textContent = `Test : ${report.evaluation.n_test ?? "?"} molécules · ${report.evaluation.n_arv ?? "?"} ARV DrugBank · source : ${report.source} · mesures rapportées, non recalculées par la web app.`;
+      metricRoot.append(context);
+      const labels = {
+        roc_auc: "ROC-AUC", prc_auc: "PRC-AUC", ef_1pct: "EF@1 %",
+        ef_5pct: "EF@5 %", bedroc_alpha20: "BEDROC α=20",
+        hit_rate_top_100: "Hit rate top 100", recall_top_10pct: "Recall top 10 %",
+        drugbank: "ARV DrugBank retrouvés",
+      };
+      const grid = document.createElement("div"); grid.className = "model-metric-grid";
+      Object.entries(report.metrics || {}).forEach(([key, value]) => {
+        const card = document.createElement("div"); card.className = "model-metric-card";
+        const name = document.createElement("span"); name.textContent = labels[key] || key;
+        const number = document.createElement("strong");
+        number.textContent = key === "drugbank"
+          ? `${value}/${report.evaluation.n_arv ?? "?"}`
+          : (typeof value === "number" ? Number(value.toFixed(4)).toString() : String(value));
+        card.append(name, number); grid.append(card);
+      });
+      metricRoot.append(grid);
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "Toutes les mesures du rapport, intervalles bootstrap, anti-fuite et comparaison DeLong";
+      const pre = document.createElement("pre");
+      pre.textContent = JSON.stringify({rapport: report.full_report,
+        delong: report.delong_report || null}, null, 2);
+      details.append(summary, pre); metricRoot.append(details);
+    } else {
+      const message = document.createElement("p");
+      message.textContent = "Aucun rapport de métriques correspondant au modèle récent n'est disponible.";
+      metricRoot.append(message);
+    }
   }
   root.replaceChildren();
   const outputs = data.phase4?.local_results || {};

@@ -58,6 +58,17 @@ def test_latest_deployed_model_is_distinct_from_training_history(tmp_path):
     older = next(m for m in inventory["models"] if m["id"] == "model_A_rank_avg_5")
     assert older["available"] is False
     assert older["missing"] == ["rf_ecfp4.joblib"]
+    report_dir = root / "phase3_stacking"
+    report_dir.mkdir()
+    (report_dir / "augmented_report.json").write_text(json.dumps({
+        "n_test": 3778, "n_arv": 34, "model_A_prime": {
+            "roc_auc": 0.6201, "drugbank": 32.0,
+        }, "bootstrap_diff_Aprime_vs_A": {"drugbank": {"median": 7}},
+    }), encoding="utf-8")
+    measures = phases.latest_model_metrics(root)
+    assert measures["status"] == "reported"
+    assert measures["metrics"]["drugbank"] == 32.0
+    assert measures["evaluation"]["n_arv"] == 34
     js = (Path(__file__).resolve().parents[1] / "webapp/static/app.js").read_text(encoding="utf-8")
     assert "Historique d'entraînement (pas la date du modèle livré)" in js
     assert "Modèle VIH livré depuis Jupyter" in js

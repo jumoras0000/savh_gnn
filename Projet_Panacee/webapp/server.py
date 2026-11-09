@@ -142,11 +142,13 @@ async def api_runs(request):
 async def api_phases(request):
     from webapp import phases
     root = _ckpt_root()
-    inventory, outputs = await asyncio.gather(
+    inventory, outputs, model_metrics = await asyncio.gather(
         asyncio.to_thread(phases.inventory, root),
         asyncio.to_thread(phases.phase4_outputs, root),
+        asyncio.to_thread(phases.latest_model_metrics, root),
     )
-    return JSONResponse({"inventory": inventory, "phase4": outputs})
+    return JSONResponse({"inventory": inventory, "phase4": outputs,
+                         "latest_model_metrics": model_metrics})
 
 
 async def api_run(request):

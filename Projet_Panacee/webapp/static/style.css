@@ -662,6 +662,18 @@ textarea { resize: vertical; line-height: 1.5; }
 .run-freshness[data-state="stale"] { border-left: 3px solid #e6a23c; }
 .run-freshness[data-state="fresh"] { border-left: 3px solid #54b88a; }
 .phase-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.model-metrics { margin: 0 0 14px; padding: 16px; border: 1px solid var(--border, #304252); border-radius: 10px; background: var(--panel, #182332); }
+.model-metrics h2 { font-size: 18px; margin: 0 0 6px; }
+.model-metrics p { font-size: 12px; color: var(--muted, #a9bac9); margin: 0 0 12px; }
+.model-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.model-metric-card { padding: 10px; border: 1px solid var(--border, #304252); border-radius: 8px; }
+.model-metric-card span { display: block; font-size: 12px; color: var(--muted, #a9bac9); }
+.model-metric-card strong { display: block; font-size: 20px; margin-top: 3px; }
+.model-metrics details { margin-top: 12px; font-size: 12px; }
+.model-metrics summary { cursor: pointer; }
+.model-metrics pre { overflow: auto; max-height: 420px; padding: 10px; white-space: pre-wrap; }
+body.model-only #verdict, body.model-only .kpis { display: none; }
+@media (max-width: 850px) { .model-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .phase-overview .phase-card { padding: 10px; border: 1px solid var(--border, #304252); border-radius: 8px; background: var(--panel, #182332); font-size: 12px; }
 .phase-overview .phase-card strong { display: block; margin-bottom: 4px; }
 .phase-overview .phase-card span { display: block; color: var(--muted, #a9bac9); }

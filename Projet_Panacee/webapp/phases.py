@@ -60,6 +60,41 @@ def model_inventory(root: str | Path) -> dict:
     return {"latest": latest, "models": models}
 
 
+def latest_model_metrics(root: str | Path) -> dict:
+    """Mesures publiées pour A'' ; ne les confond pas avec les runs antérieurs."""
+    root = Path(root).resolve()
+    latest = model_inventory(root)["latest"]
+    if not latest:
+        return {"status": "no_complete_model"}
+    if latest["id"] != "model_A_prime_augmented":
+        return {"status": "no_matching_report", "model_id": latest["id"]}
+    source = root / "phase3_stacking" / "augmented_report.json"
+    if not source.is_file():
+        return {"status": "report_missing", "model_id": latest["id"]}
+    try:
+        report = json.loads(source.read_text(encoding="utf-8"))
+        metrics = report["model_A_prime"]
+        if not isinstance(metrics, dict):
+            raise ValueError("Métriques absentes")
+        result = {
+            "status": "reported", "model_id": latest["id"],
+            "source": source.relative_to(root).as_posix(),
+            "metrics": metrics,
+            "evaluation": {key: report.get(key) for key in
+                           ("n_test", "n_arv", "n_added_chembl", "n_boot")},
+            "anti_leakage": report.get("anti_leakage", {}),
+            "bootstrap_delta_vs_A": report.get("bootstrap_diff_Aprime_vs_A", {}),
+            "full_report": report,
+        }
+        delong_file = root / "phase3_stacking" / "delong_compare.json"
+        if delong_file.is_file():
+            result["delong_source"] = delong_file.relative_to(root).as_posix()
+            result["delong_report"] = json.loads(delong_file.read_text(encoding="utf-8"))
+        return result
+    except (OSError, ValueError, TypeError, KeyError):
+        return {"status": "report_invalid", "model_id": latest["id"]}
+
+
 def inventory(root: str | Path | None = None) -> dict:
     root = Path(root or PROJECT_ROOT / "checkpoints").resolve()
     phases = []
