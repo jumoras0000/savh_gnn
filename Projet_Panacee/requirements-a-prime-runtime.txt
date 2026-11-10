@@ -1,0 +1,3 @@
+# Version ayant sérialisé les quatre forêts aléatoires A'' du 6 novembre 2026.
+# Installer après requirements.txt dans l'environnement d'inférence (Python >=3.11).
+scikit-learn==1.9.1

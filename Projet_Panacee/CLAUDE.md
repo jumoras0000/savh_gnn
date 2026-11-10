@@ -13,6 +13,11 @@ L'Assistant historique et la revue Claude de phase 4 utilisent maintenant
 prioritairement la session Claude Code du compte pour le texte ; la clé API
 Anthropic n'est pas transmise à ce sous-processus. L'abonnement et les crédits
 API sont distincts. Voir `webapp/chatbot.py` et `webapp/lab_providers.py`.
+Le Laboratoire de recherche a été vérifié de bout en bout avec A'', Claude
+Code et ChatGPT connecté : deux analyses puis deux critiques croisées sur un
+dossier commun. Son score A'' passe par `studio.screen`. L'environnement
+d'inférence des forêts RF doit utiliser `scikit-learn==1.9.1` (voir
+`requirements-a-prime-runtime.txt`).
 La revue scientifique des quatre phases est
 [`reports/revue_scientifique_panacee_2026-11.pdf`](reports/revue_scientifique_panacee_2026-11.pdf) ;
 sa construction traçable se trouve dans `scripts/build_scientific_review.py`.

@@ -2406,13 +2406,18 @@ function setupLab() {
     pan.value = data.panacee?.find(m => m.id === "ensemble_a_prime" && m.available)?.id
       || data.panacee?.find(m => m.id === "phase3" && m.available)?.id || "descriptors";
     get("labRun").disabled = false;
-    (data.claude || []).forEach(m => get("labClaude").add(new Option(
-      m.startsWith("cli:") ? `Claude Code local · ${m.slice(4)}` : `Claude API · ${m}`, m)));
-    (data.openai || []).forEach(m => get("labOpenAI").add(new Option(
+    const claudeChoice = get("labClaude");
+    (data.claude || []).forEach(m => claudeChoice.add(new Option(
+      m.startsWith("cli:") ? `Claude Code · ${m.slice(4)} (abonnement)` : `Claude API · ${m}`, m)));
+    claudeChoice.value = (data.claude || []).find(m => m.startsWith("cli:")) || "";
+    const openaiChoice = get("labOpenAI");
+    (data.openai || []).forEach(m => openaiChoice.add(new Option(
       m.startsWith("oss:") ? `Codex + Ollama hors ligne · ${m.slice(4)}` :
-      m.startsWith("cli:") ? `Codex CLI local · ${m.slice(4)}` :
-      m.startsWith("plan:") ? `Abonnement ChatGPT local · ${m.slice(5)}` :
+      m.startsWith("cli:") ? `Codex CLI · ${m.slice(4)}` :
+      m.startsWith("plan:") ? `ChatGPT · ${m.slice(5)} (abonnement connecté)` :
       `OpenAI API · ${m}`, m)));
+    openaiChoice.value = (data.openai || []).find(m => m.startsWith("plan:")) || "";
+    if (openaiChoice.value.startsWith("plan:")) get("labOpenAISource").value = "plan";
     if (!data.claude_configured) get("labClaude").title = "Clé Claude non configurée";
     if (!data.openai_api_configured) get("labOpenAI").title = "Clé OpenAI non configurée";
   }).catch(e => { get("labStatus").textContent = e.message; });

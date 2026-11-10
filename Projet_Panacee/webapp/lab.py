@@ -177,7 +177,8 @@ def _panacee_evidence(candidates: list[dict], selected: str) -> dict:
         except Exception as exc:
             alerts = {"status": f"unavailable:{type(exc).__name__}"}
         try:
-            domain = cheminfo.applicability_domain(c["smiles"]) if d.get("valid") else None
+            domain = (cheminfo.applicability_domain(c["smiles"])
+                      if d.get("valid") and selected != "ensemble_a_prime" else None)
         except Exception as exc:
             domain = {"status": f"unavailable:{type(exc).__name__}"}
         out["candidates"].append({"name": c["name"], "smiles": c["smiles"],
@@ -200,15 +201,37 @@ def _panacee_evidence(candidates: list[dict], selected: str) -> dict:
                                   for kind in manifest_data.get("fp_kinds", [])] + [gnn]
         out["artifact_sha256s"] = {p.name: _sha256_file(p) for p in artifacts if p.is_file()}
         out["checkpoint_sha256"] = out["artifact_sha256s"]["manifest.json"]
-        scores = research._score_ensemble([c["smiles"] for c in candidates], str(model_dir))
-        valid_scores = [s for s in scores if s is not None]
-        best = max(valid_scores) if valid_scores else None
-        worst = min(valid_scores) if valid_scores else None
         out["score_semantics"] = "rang relatif au lot, non probabilité; comparaison requiert au moins 2 molécules"
-        for row, score in zip(out["candidates"], scores):
-            row["prediction"] = {"relative_percentile": round((score - worst) / (best - worst) * 100, 1)
-                                 if score is not None and best is not None and best > worst else None,
-                                 "raw_rank_average": score}
+        if selected == "ensemble_a_prime":
+            # Même chemin de calcul, mêmes références et même registre vérifié
+            # que la page Studio ; le vieux proxy de domaine est écarté.
+            from webapp import studio
+
+            scored = studio.screen(candidates, checkpoint_dir)
+            out["studio_model"] = scored["model"]
+            out["ranking_scope"] = scored["ranking_scope"]
+            for item in scored["ranked"]:
+                row = out["candidates"][item["input_order"] - 1]
+                row["prediction"] = {
+                    "rank_average": item["rank_average"],
+                    "reference_percentile": item["reference_percentile"],
+                    "gnn_conformal": item["gnn_conformal"],
+                }
+                row["applicability_domain_reference"] = {
+                    "source": "Studio A'' train+augmentation",
+                    "ad_class": item["ad_class"], "max_sim": item["ad_max_sim"],
+                }
+        else:
+            scores = research._score_ensemble([c["smiles"] for c in candidates], str(model_dir))
+            valid_scores = [s for s in scores if s is not None]
+            best = max(valid_scores) if valid_scores else None
+            worst = min(valid_scores) if valid_scores else None
+            for row, score in zip(out["candidates"], scores):
+                row["prediction"] = {
+                    "relative_percentile": round((score - worst) / (best - worst) * 100, 1)
+                    if score is not None and best is not None and best > worst else None,
+                    "raw_rank_average": score,
+                }
     elif selected in ("phase2", "phase3") or selected.startswith(("phase3_file:", "checkpoint:")):
         if out["status"] == "available":
             if selected.startswith("checkpoint:") and research.detect_checkpoint_kind(str(checkpoint)) == "unknown":

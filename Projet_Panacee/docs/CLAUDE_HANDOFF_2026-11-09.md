@@ -1,5 +1,21 @@
 # Handoff pour Claude — Panacée, 9 novembre 2026
 
+## Vérification réelle de la synchronisation — 10 novembre 2026
+
+Un appel local `lab.run` avec A'' et deux structures tests a produit des
+prédictions non nulles. Claude Code `cli:sonnet` et ChatGPT via abonnement
+`plan:gpt-6.1-sol` ont chacun produit une analyse indépendante, puis chacun
+une critique de l'autre, sur un dossier ayant une empreinte SHA-256 unique.
+Les deux IA ne modifient pas les poids Panacée ; leurs textes ne constituent
+pas une preuve biologique. Le sélecteur de Laboratoire choisit désormais A'',
+Claude Code et ChatGPT connecté par défaut si disponibles. L'inférence A'' du
+Laboratoire appelle le même `studio.screen` que l'accueil ; le percentile fixe
+et le domaine train+augmentation remplacent l'ancien proxy du Laboratoire.
+Une comparaison directe sur deux structures a donné des rangs identiques.
+Les forêts RF étaient sérialisées sous `scikit-learn 1.9.1`, alors que le PC
+avait 1.9.0 ; l'environnement a été aligné sur 1.9.1 et la dépendance
+spécifique est figée dans `requirements-a-prime-runtime.txt`.
+
 ## Correctif de connexion Claude — 10 novembre 2026
 
 La clé `ANTHROPIC_API_KEY` locale est valide et le modèle API

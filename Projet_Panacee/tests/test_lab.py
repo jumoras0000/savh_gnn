@@ -97,7 +97,7 @@ def test_ensemble_score_is_relative_percentile_not_probability(monkeypatch):
 def test_lab_ensemble_higher_rank_is_better(monkeypatch, tmp_path):
     import json
 
-    from webapp import cheminfo
+    from webapp import cheminfo, studio
 
     model = tmp_path / "model_A_prime_augmented"
     model.mkdir()
@@ -105,14 +105,27 @@ def test_lab_ensemble_higher_rank_is_better(monkeypatch, tmp_path):
         "gnn_ckpt": "phase3/clean.pth", "fp_kinds": [],
     }), encoding="utf-8")
     monkeypatch.setattr(research, "_checkpoint_root", lambda: tmp_path)
-    monkeypatch.setattr(research, "_score_ensemble", lambda smiles, directory: [1.4, 1.6])
+    monkeypatch.setattr(studio, "screen", lambda candidates, root: {
+        "model": {"id": "model_A_prime_augmented", "created": "2026-11-06"},
+        "ranking_scope": "rang relatif à ce lot de 2 molécules",
+        "ranked": [
+            {"input_order": 2, "rank_average": 1.6,
+             "reference_percentile": 85, "gnn_conformal": "ambiguous",
+             "ad_class": "in_domain_moderate", "ad_max_sim": 0.6},
+            {"input_order": 1, "rank_average": 1.4,
+             "reference_percentile": 50, "gnn_conformal": "ambiguous",
+             "ad_class": "out_of_domain", "ad_max_sim": 0.2},
+        ]})
     monkeypatch.setattr(cheminfo, "descriptors", lambda smiles: {"valid": True})
     monkeypatch.setattr(cheminfo, "structural_alerts", lambda smiles: {})
-    monkeypatch.setattr(cheminfo, "applicability_domain", lambda smiles: {})
+    monkeypatch.setattr(cheminfo, "applicability_domain", lambda smiles:
+                        (_ for _ in ()).throw(AssertionError("ancien proxy utilisé")))
     result = lab._panacee_evidence([
         {"name": "A", "smiles": "CCO"}, {"name": "B", "smiles": "CCN"},
     ], "ensemble_a_prime")
-    assert [row["prediction"]["relative_percentile"] for row in result["candidates"]] == [0, 100]
+    assert [row["prediction"]["rank_average"] for row in result["candidates"]] == [1.4, 1.6]
+    assert [row["prediction"]["reference_percentile"] for row in result["candidates"]] == [50, 85]
+    assert result["candidates"][0]["applicability_domain_reference"]["source"].startswith("Studio")
 
 
 def test_model_bundle_resolves_relocated_gnn(monkeypatch, tmp_path):
@@ -159,6 +172,15 @@ def test_project_guide_explains_model_and_sections(client):
                     "Explorer les hits", "Examiner les preuves", "Suivre la validation"):
         assert concept in html
     assert 'href="guide"' in client.get("/").text
+
+
+def test_legacy_lab_defaults_to_connected_cross_review(client):
+    html = client.get("/legacy").text
+    script = client.get("/static/app.js").text
+    assert "analysent d'abord séparément" in html
+    assert 'data.claude || []).find(m => m.startsWith("cli:"))' in script
+    assert 'data.openai || []).find(m => m.startsWith("plan:"))' in script
+    assert 'find(m => m.id === "ensemble_a_prime" && m.available)' in script
 
 
 def test_external_host_header_cannot_bypass_token(monkeypatch):

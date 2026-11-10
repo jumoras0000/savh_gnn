@@ -43,7 +43,6 @@ import torch
 from scipy.stats import rankdata
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score
 
 from src.config import CHECKPOINT_DIR, EXTERNAL_DIR, PHASE3
 from src.models.encoder import MolecularEncoder
@@ -57,7 +56,6 @@ from src.validation.drugbank_antiretroviral import (
     validate_model_recall,
 )
 from src.validation.pharma_metrics import full_screening_report
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Prédicteurs ALIGNÉS par index (NaN si molécule invalide)
@@ -115,7 +113,7 @@ def load_gnn(ckpt_path, device):
     model = MultiPropertyPredictor(encoder, hidden_dim=256)
     model.load_state_dict(ckpt["model_state_dict"], strict=False)
     model.to(device).eval()
-    print(f"  ✓ GNN chargé (use_chirality={use_chirality})")
+    print(f"  GNN chargé (use_chirality={use_chirality})")
     return model
 
 

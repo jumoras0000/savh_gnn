@@ -287,6 +287,15 @@ sont séparés ; un abonnement actif ne crédite pas automatiquement une clé AP
 La vision nécessite toujours l'API. Le badge Assistant indique le fournisseur
 effectivement sélectionné.
 
+Le modèle A'' actuellement servi utilise quatre forêts sérialisées avec
+`scikit-learn 1.9.1`. L'environnement local a été aligné sur cette version ;
+`requirements-a-prime-runtime.txt` la fige pour les installations d'inférence
+du modèle récent. Le Laboratoire passe maintenant par le même calcul A'' que
+Studio, y compris le registre vérifié, le percentile fixe et le domaine
+train+augmentation. Avec les deux abonnements connectés, les sélecteurs du
+Laboratoire prennent par défaut A'', Claude Code et ChatGPT ; les revues sont
+indépendantes puis croisées sur le même dossier, sans fusion des poids.
+
 Onglet **💬 Assistant** : converse avec le modèle GNN. Avec **Claude
 (claude-opus-4-8)**, il orchestre les outils du modèle (toxicité, efficacité VIH,
 descripteurs, criblage, synergie, statut) pour des analyses avancées ; sans clé,
