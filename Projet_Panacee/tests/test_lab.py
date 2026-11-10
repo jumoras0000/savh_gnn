@@ -183,6 +183,20 @@ def test_legacy_lab_defaults_to_connected_cross_review(client):
     assert 'find(m => m.id === "ensemble_a_prime" && m.available)' in script
 
 
+def test_legacy_hides_redundant_assistant_and_invalid_toxicology_picker(client):
+    html = client.get("/legacy").text
+    js = client.get("/static/app.js").text
+    assert 'data-tab="lab"' in html
+    assert 'data-tab="chat"' not in html
+    assert 'id="view-chat"' not in html
+    assert 'data-tab="clin"' not in html
+    assert 'id="evalCsv"' not in html
+    assert 'id="evalCkpt"' not in html
+    assert "setupChat()" not in js
+    assert "setupEval()" not in js
+    assert "renderClinicalFromLive" not in js
+
+
 def test_external_host_header_cannot_bypass_token(monkeypatch):
     monkeypatch.setenv("PANACEE_INGEST_TOKEN", "test-token")
     monkeypatch.setenv("PANACEE_API_TOKEN", "admin-token")

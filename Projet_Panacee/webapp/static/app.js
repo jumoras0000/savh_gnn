@@ -24,7 +24,7 @@ const state = {
   expected: {}, thresholds: {}, status: "idle",
   verdict: null, compare: [], perTask: {}, es: null,
   observations: [], files: { checkpoints: [], csvs: [] },
-  trainTimer: null, chatHistory: [], currentConv: null, _loadConversations: null,
+  trainTimer: null,
   runs: [],
   // Analyse par epoch + gestion des epochs sauvegardées
   pinnedEpoch: null, bestEpoch: null, epochList: [],
@@ -493,61 +493,6 @@ function renderObservations() {
       <span class="o-metric">${esc(o.metric)}</span><span class="o-text">${esc(o.text)}</span></div>`).join("");
 }
 
-/* ---------- métriques cliniques ---------- */
-const CLIN_COLS = [
-  ["task", "Endpoint"], ["danger", "Niveau"], ["support", "N"], ["prevalence", "Prév."],
-  ["sensitivity", "Sensib."], ["specificity", "Spécif."], ["fnr", "FNR"],
-  ["precision", "Précis."], ["f1", "F1"], ["roc_auc", "ROC-AUC"], ["pr_auc", "PR-AUC"], ["ece", "ECE"],
-];
-
-function renderClinicalFromLive() {
-  // À défaut d'évaluation, on affiche le per-task AUC du dernier point
-  const pt = state.perTask || {};
-  const tbody = document.querySelector("#clinTable tbody");
-  const thead = document.querySelector("#clinTable thead");
-  thead.innerHTML = "<tr><th>Endpoint</th><th>ROC-AUC (live)</th><th>Niveau</th></tr>";
-  const dT = state.thresholds.auc_danger || 0.6, wT = state.thresholds.auc_warn || 0.7;
-  const rows = Object.entries(pt).map(([k, v]) => {
-    const lvl = v == null ? "NA" : v < dT ? "DANGER" : v < wT ? "WARN" : "OK";
-    return `<tr data-level="${lvl}"><td>${esc(k)}</td><td>${nf(v)}</td><td><span class="badge ${lvl}">${lvl}</span></td></tr>`;
-  });
-  tbody.innerHTML = rows.join("") || `<tr><td colspan="3" style="color:var(--faint)">Pas encore de données per-endpoint.</td></tr>`;
-}
-
-function renderClinicalFromEval(res) {
-  const agg = res.aggregate || {};
-  document.getElementById("evalAgg").innerHTML = `
-    <div class="kpis" style="margin:0">
-      ${aggCard("AUC macro", nf(agg.macro_roc_auc))}
-      ${aggCard("Sensibilité macro", pct(agg.macro_sensitivity))}
-      ${aggCard("FNR macro", pct(agg.macro_fnr))}
-      ${aggCard("ECE (calibration)", nf(agg.mean_ece))}
-      ${aggCard("Endpoints DANGER", agg.n_danger ?? "—")}
-    </div>`;
-  const thead = document.querySelector("#clinTable thead");
-  const tbody = document.querySelector("#clinTable tbody");
-  thead.innerHTML = "<tr>" + CLIN_COLS.map(([, h]) => `<th>${h}</th>`).join("") + "</tr>";
-  tbody.innerHTML = (res.tasks || []).map(t => {
-    const cells = CLIN_COLS.map(([k]) => {
-      if (k === "task") return `<td>${esc(t.task)}</td>`;
-      if (k === "danger") return `<td><span class="badge ${t.danger}">${t.danger}</span></td>`;
-      if (k === "support") return `<td>${t.support}</td>`;
-      if (["prevalence", "sensitivity", "specificity", "fnr", "precision", "f1"].includes(k))
-        return `<td>${pct(t[k])}</td>`;
-      return `<td>${nf(t[k])}</td>`;
-    });
-    return `<tr data-level="${t.danger}">${cells.join("")}</tr>`;
-  }).join("");
-  document.getElementById("clinSource").textContent =
-    `Source : évaluation du checkpoint (${res.meta ? res.meta.n_molecules : "?"} molécules).`;
-  // alimente aussi l'onglet sécurité
-  renderAlerts(res.alerts);
-}
-
-function aggCard(label, val) {
-  return `<div class="kpi"><div class="label">${label}</div><div class="value" style="font-size:24px">${val}</div></div>`;
-}
-
 /* ---------- sécurité ---------- */
 function renderAlerts(alerts) {
   const box = document.getElementById("alerts");
@@ -637,7 +582,7 @@ function renderStatus() {
 
 function renderAll() {
   renderStatus(); renderVerdict(); renderKPIs(); renderEvolution();
-  renderObservations(); renderClinicalFromLive(); renderAlerts(); renderBarème(); renderCompare();
+  renderObservations(); renderAlerts(); renderBarème(); renderCompare();
 }
 
 /* ====================================================================
@@ -824,10 +769,6 @@ function resetRunState() {
   state.perTask = {}; state.compare = []; state.observations = [];
   state.verdict = { level: "NA", title: "Aucun run sélectionné", reasons: ["Lance un entraînement ou sélectionne un run."] };
   state.status = "idle"; state.pinnedEpoch = null; state.bestEpoch = null;
-  // Vide les blocs spécifiques à une évaluation (sinon ils restent affichés)
-  const agg = document.getElementById("evalAgg"); if (agg) agg.innerHTML = "";
-  const src = document.getElementById("clinSource");
-  if (src) src.textContent = "Aucun run sélectionné — lance un entraînement ou une évaluation.";
   // Vide la table de gestion des epochs
   const epBody = document.querySelector("#epochTable tbody");
   if (epBody) epBody.innerHTML = "";
@@ -897,7 +838,7 @@ function connectStream(runId) {
     if (state.pinnedEpoch == null) {
       state.latest = e;
       if (e.per_task_auc) state.perTask = e.per_task_auc;
-      renderKPIs(); renderObservations(); renderClinicalFromLive(); renderAlerts(); renderCompare();
+      renderKPIs(); renderObservations(); renderAlerts(); renderCompare();
     }
     renderEvolution();
     updateEpochSlider();
@@ -934,11 +875,10 @@ function setupTabs() {
       requestAnimationFrame(() => { renderEvolution(); renderCompare(); });
       if (tab === "evo") loadEpochManagement();
       if (tab === "train") pollTrain();
-      if (tab === "clin" || tab === "research") loadFiles();
+      if (tab === "research") loadFiles();
       if (tab === "screen") { loadFiles(); loadLibraries(); }
       if (tab === "info") loadCapabilities();
       if (tab === "lexique") loadGlossary();
-      if (tab === "chat") refreshChatMode();
     });
   });
   const lexSearch = document.getElementById("lexSearch");
@@ -968,22 +908,6 @@ const PAGE_HELP = {
       "Dans « Épochs sauvegardées », supprime les epochs faibles et garde la meilleure.",
     ],
     objective: "Détecter tôt si un modèle dérape (FNR qui monte, AUC qui stagne), analyser chaque epoch, et ne garder que les meilleurs checkpoints. La supervision arrête l'entraînement sur la meilleure epoch (score clinique) et garde le meilleur modèle pour les phases suivantes.",
-  },
-  clin: {
-    title: "🏥 Métriques cliniques — évaluation par endpoint",
-    role: "Calcule le détail des performances <b>endpoint toxicologique par endpoint</b> (les 12 cibles Tox21) à partir d'un checkpoint et d'un CSV de validation.",
-    entries: [
-      "<b>Sélecteur de checkpoint (.pth)</b> — le modèle entraîné à évaluer (détecté automatiquement).",
-      "<b>Sélecteur de CSV de validation</b> — le jeu de données étiqueté pour la mesure.",
-      "<b>Importer</b> — charge un .pth ou .csv qui n'est pas déjà dans le projet.",
-      "<b>Tableau</b> — par endpoint : sensibilité, spécificité, FNR, précision, F1, ROC-AUC, PR-AUC, ECE (calibration).",
-    ],
-    howto: [
-      "Choisis un checkpoint et un CSV dans les sélecteurs.",
-      "Clique « Évaluer ».",
-      "Lis le tableau : repère les endpoints à FNR élevé (toxiques manqués) — les plus risqués.",
-    ],
-    objective: "Savoir précisément OÙ le modèle se trompe pour juger s'il est déployable et sur quels dangers il faut se méfier.",
   },
   sec: {
     title: "🚨 Sécurité — alertes triées par gravité",
@@ -1064,24 +988,6 @@ const PAGE_HELP = {
       "Exporte le top candidats en CSV.",
     ],
     objective: "Reproduire un criblage à haut débit (HTS) sans paillasse : trier des centaines de molécules pour ne garder que les meilleures.",
-  },
-  chat: {
-    title: "💬 Assistant — copilote synchronisé au modèle",
-    role: "Un chatbot qui <b>orchestre les outils du modèle GNN</b> (toxicité, efficacité VIH, descripteurs, criblage, synergie). Avec une clé Claude il raisonne et analyse les images ; sans clé, un assistant local appelle quand même les outils.",
-    entries: [
-      "<b>Clé API Anthropic</b> — colle <code>sk-ant-…</code> puis « Activer Claude ». « Déconnecter » revient au mode local.",
-      "<b>Nouvelle conversation / liste</b> — historique multi-chats à gauche (créer, ouvrir, supprimer).",
-      "<b>Recherche</b> — filtre les conversations (Échap pour vider).",
-      "<b>🖼️ Image</b> — joins une image pour analyse vision (nécessite Claude).",
-      "<b>Structures 2D</b> — générées automatiquement à partir des SMILES détectés.",
-      "<b>Exporter</b> — télécharge la conversation courante en JSON.",
-    ],
-    howto: [
-      "(Optionnel) Active Claude avec ta clé pour des analyses avancées.",
-      "Pose une question avec un SMILES, ex. « toxicité et risque de CC(=O)Nc1ccc(O)cc1 ».",
-      "Réponses en streaming ; tout est sauvegardé automatiquement.",
-    ],
-    objective: "Parler en langage naturel à ton modèle et obtenir des analyses complètes, même hors-ligne.",
   },
   lexique: {
     title: "📖 Lexique — comprendre le projet et chaque mot-clé",
@@ -1239,7 +1145,7 @@ function applyPoint(d) {
   state.perTask = d.per_task_auc || {};
   state.bestEpoch = d.best_epoch != null ? d.best_epoch : state.bestEpoch;
   renderVerdict(); renderKPIs(); renderObservations();
-  renderClinicalFromLive(); renderAlerts(); renderCompare(); renderEvolution();
+  renderAlerts(); renderCompare(); renderEvolution();
   updateEpochSlider();
 }
 
@@ -1403,25 +1309,6 @@ function setupEpochTools() {
   document.getElementById("epochPrune")?.addEventListener("click", pruneWeakEpochs);
 }
 
-function setupEval() {
-  const btn = document.getElementById("evalBtn");
-  btn.addEventListener("click", async () => {
-    const checkpoint = document.getElementById("evalCkpt").value.trim();
-    const val_csv = document.getElementById("evalCsv").value.trim();
-    if (!checkpoint || !val_csv) { flashToast("Renseigne le checkpoint et le CSV.", true); return; }
-    const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Évaluation…';
-    try {
-      const res = await fetchJSON("api/evaluate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ checkpoint, val_csv }),
-      });
-      renderClinicalFromEval(res);
-      flashToast("Évaluation terminée.");
-    } catch (e) { flashToast("Échec : " + e.message, true); }
-    finally { btn.disabled = false; btn.innerHTML = old; }
-  });
-}
-
 let toastTimer = null;
 function flashToast(msg, err = false) {
   const t = document.getElementById("toast");
@@ -1446,9 +1333,6 @@ async function loadFiles() {
     state.files = await fetchJSON("api/files");
   } catch (e) { return; }
   const cks = state.files.checkpoints || [];
-  const csvs = state.files.csvs || [];
-  fillPicker("evalCkpt", cks, "rel");
-  fillPicker("evalCsv", csvs, "rel");
   // Recherche / criblage : privilégier les checkpoints Phase 3 puis Phase 2
   const phase3 = cks.filter(c => /phase3/i.test(c.rel));
   const preferred = phase3.length ? phase3 : cks;
@@ -1464,37 +1348,6 @@ function fillPicker(id, items, key) {
   sel.innerHTML = items.map(it =>
     `<option value="${esc(it.path)}">${esc(it[key])} · ${it.size_mb} Mo</option>`).join("");
   if (prev && items.some(it => it.path === prev)) sel.value = prev;
-}
-
-async function uploadFile(file) {
-  const url = `api/upload?name=${encodeURIComponent(file.name)}`;
-  const r = await fetch(url, { method: "POST", body: file });
-  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch (e) {} throw new Error(m); }
-  return r.json();
-}
-
-function setupFiles() {
-  document.getElementById("refreshFiles")?.addEventListener("click", () => {
-    loadFiles(); flashToast("Listes de fichiers rafraîchies.");
-  });
-  const wire = (inputId, msg) => {
-    const inp = document.getElementById(inputId);
-    inp?.addEventListener("change", async () => {
-      if (!inp.files || !inp.files[0]) return;
-      const f = inp.files[0];
-      const el = document.getElementById("uploadMsg");
-      el.textContent = `Import de ${f.name}…`;
-      try {
-        const res = await uploadFile(f);
-        el.textContent = `✓ ${res.name} importé (${res.size_mb} Mo)`;
-        await loadFiles();
-        flashToast(`${msg} importé : ${res.name}`);
-      } catch (e) { el.textContent = "✗ " + e.message; flashToast("Import échoué : " + e.message, true); }
-      inp.value = "";
-    });
-  };
-  wire("upCkpt", "Checkpoint");
-  wire("upCsv", "CSV");
 }
 
 /* ====================================================================
@@ -1918,237 +1771,6 @@ function setupTheme() {
   });
 }
 
-/* ====================================================================
-   Assistant (chatbot)
-   ==================================================================== */
-function setupChat() {
-  const log = document.getElementById("chatLog");
-  const input = document.getElementById("chatInput");
-  let attachedImage = null; // {media_type, data}
-
-  const addBubble = (cls, text) => {
-    const div = document.createElement("div");
-    div.className = "bubble " + cls;
-    const txt = document.createElement("span");
-    txt.className = "txt"; txt.textContent = text || "";
-    div.appendChild(txt);
-    log.appendChild(div); log.scrollTop = log.scrollHeight;
-    return div;
-  };
-  const setToolNote = (bubble, tools) => {
-    if (!tools || !tools.length) return;
-    let n = bubble.querySelector(".toolnote");
-    if (!n) { n = document.createElement("span"); n.className = "toolnote"; bubble.appendChild(n); }
-    n.textContent = "🔧 " + tools.join(", ");
-  };
-  const addImage = (bubble, src, cls) => {
-    const img = document.createElement("img");
-    img.className = "chat-img " + (cls || ""); img.src = src; img.loading = "lazy";
-    const note = bubble.querySelector(".toolnote");
-    bubble.insertBefore(img, note || null);
-    log.scrollTop = log.scrollHeight;
-  };
-
-  // ---- conversations ----
-  // La barre de recherche est la source unique de vérité : la liste reflète
-  // toujours son contenu (évite la désynchro liste ↔ champ de recherche).
-  async function loadConversations() {
-    const sb = document.getElementById("chatSearch");
-    const q = sb ? sb.value.trim() : "";
-    try {
-      const data = q ? await fetchJSON("api/conversations/search?q=" + encodeURIComponent(q))
-                     : await fetchJSON("api/conversations");
-      renderConvList(q ? data.results : data.conversations);
-    } catch (e) { /* ignore */ }
-  }
-  function renderConvList(items) {
-    const box = document.getElementById("convList");
-    box.innerHTML = (items || []).map(c => `
-      <div class="conv ${c.id === state.currentConv ? "active" : ""}" data-id="${c.id}">
-        <div class="conv-title">${esc(c.title || "Conversation")}</div>
-        <div class="conv-snip">${esc(c.last_snippet || c.snippet || "")}</div>
-        <button class="conv-del" data-id="${c.id}" title="Supprimer">✕</button>
-      </div>`).join("") || `<div class="empty" style="padding:14px">Aucune conversation.</div>`;
-    box.querySelectorAll(".conv").forEach(el => el.addEventListener("click", (e) => {
-      if (e.target.classList.contains("conv-del")) return;
-      openConversation(el.dataset.id);
-    }));
-    box.querySelectorAll(".conv-del").forEach(b => b.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      await fetch("api/conversations/" + b.dataset.id, { method: "DELETE" });
-      if (state.currentConv === b.dataset.id) { state.currentConv = null; log.innerHTML = ""; }
-      loadConversations();
-    }));
-  }
-  function resetSearch() {
-    const sb = document.getElementById("chatSearch");
-    if (sb) sb.value = "";
-  }
-  async function openConversation(cid) {
-    state.currentConv = cid;
-    log.innerHTML = "";
-    resetSearch();
-    try {
-      const data = await fetchJSON("api/conversations/" + cid);
-      for (const m of data.messages) {
-        const b = addBubble(m.role === "user" ? "user" : "bot", m.content);
-        if (m.image) addImage(b, "api/chat/image?name=" + encodeURIComponent(m.image), "user-img");
-        if (m.tools && m.tools.length) setToolNote(b, m.tools.map(t => t.tool || t));
-      }
-    } catch (e) {}
-    log.scrollTop = log.scrollHeight;
-    loadConversations();
-  }
-  async function newConversation() {
-    resetSearch();
-    try {
-      const c = await fetchJSON("api/conversations", { method: "POST",
-        headers: { "Content-Type": "application/json" }, body: "{}" });
-      state.currentConv = c.id; log.innerHTML = ""; await loadConversations();
-    } catch (e) {}
-  }
-
-  // ---- image attach ----
-  function clearImage() {
-    attachedImage = null;
-    const p = document.getElementById("imgPreview");
-    p.style.display = "none"; p.innerHTML = "";
-    document.getElementById("chatImage").value = "";
-  }
-  document.getElementById("chatImage").addEventListener("change", (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = () => {
-      attachedImage = { media_type: f.type, data: r.result.split(",")[1] };
-      const p = document.getElementById("imgPreview");
-      p.style.display = "flex";
-      p.innerHTML = `<img src="${r.result}" alt="aperçu"/><button class="btn ghost" id="imgClear">✕ retirer</button>`;
-      document.getElementById("imgClear").addEventListener("click", clearImage);
-    };
-    r.readAsDataURL(f);
-  });
-
-  // ---- send (streaming + persistance) ----
-  const send = async () => {
-    const text = input.value.trim();
-    if (!text && !attachedImage) return;
-    input.value = "";
-    const ub = addBubble("user", text);
-    const payloadImage = attachedImage;
-    if (payloadImage) addImage(ub, "data:" + payloadImage.media_type + ";base64," + payloadImage.data, "user-img");
-    clearImage();
-    const bubble = addBubble("bot", "");
-    const txt = bubble.querySelector(".txt");
-    txt.innerHTML = '<span class="typing">…</span>';
-    let full = "", tools = [], started = false;
-
-    const onEvent = (ev, data) => {
-      if (ev === "meta") { if (data.conversation_id) state.currentConv = data.conversation_id; }
-      else if (ev === "image") { addImage(bubble, data.url, "mol-img"); }
-      else if (ev === "tool") { tools.push(data.tool); setToolNote(bubble, tools); }
-      else if (ev === "delta") {
-        if (!started) { txt.textContent = ""; started = true; }
-        full += data.text || ""; txt.textContent = full; log.scrollTop = log.scrollHeight;
-      } else if (ev === "done") { setToolNote(bubble, (data.tools || []).map(t => t.tool || t)); }
-      else if (ev === "error") { txt.textContent = "Erreur : " + (data.error || "?"); }
-    };
-
-    try {
-      const resp = await fetch("api/chat/stream", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversation_id: state.currentConv, content: text, image: payloadImage }),
-      });
-      if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
-      const reader = resp.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let i;
-        while ((i = buf.indexOf("\n\n")) >= 0) {
-          const block = buf.slice(0, i); buf = buf.slice(i + 2);
-          let ev = "msg", dat = {};
-          for (const line of block.split("\n")) {
-            if (line.startsWith("event:")) ev = line.slice(6).trim();
-            else if (line.startsWith("data:")) { try { dat = JSON.parse(line.slice(5).trim()); } catch (e) {} }
-          }
-          onEvent(ev, dat);
-        }
-      }
-      if (!started && !full) txt.textContent = "(pas de réponse)";
-      loadConversations();
-    } catch (e) { txt.textContent = "Erreur : " + e.message; }
-  };
-
-  // ---- wiring ----
-  document.getElementById("chatSend").addEventListener("click", send);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-  });
-  document.querySelectorAll("#view-chat .chip").forEach(c =>
-    c.addEventListener("click", () => { input.value = c.dataset.msg; send(); }));
-  document.getElementById("chatNew").addEventListener("click", newConversation);
-  let stq = null;
-  const searchBox = document.getElementById("chatSearch");
-  searchBox.addEventListener("input", () => {
-    clearTimeout(stq);
-    stq = setTimeout(() => loadConversations(), 250);
-  });
-  // Échap vide la recherche et restaure la liste complète
-  searchBox.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { searchBox.value = ""; loadConversations(); }
-  });
-  document.getElementById("chatExport").addEventListener("click", () => {
-    if (!state.currentConv) { flashToast("Ouvre une conversation d'abord.", true); return; }
-    window.open("api/conversations/" + state.currentConv + "/export", "_blank");
-  });
-  document.getElementById("apiKeySave").addEventListener("click", async () => {
-    const k = document.getElementById("apiKeyInput").value.trim();
-    if (!k) { flashToast("Colle ta clé API.", true); return; }
-    try {
-      const result = await fetchJSON("api/settings/apikey", { method: "POST",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api_key: k }) });
-      document.getElementById("apiKeyInput").value = "";
-      flashToast(result.claude ? "Clé enregistrée — Claude activé." : "Clé enregistrée.");
-      refreshChatMode();
-    } catch (e) {
-      flashToast("Échec : " + e.message, true);
-    }
-  });
-  const discoBtn = document.getElementById("apiKeyDisconnect");
-  if (discoBtn) discoBtn.addEventListener("click", async () => {
-    if (!confirm("Déconnecter la clé Claude ? L'assistant repassera en mode local.")) return;
-    try {
-      const r = await fetchJSON("api/settings/apikey", { method: "DELETE" });
-      flashToast(r.env_locked
-        ? "Clé locale effacée (une clé ANTHROPIC_API_KEY reste active côté serveur)."
-        : "Claude déconnecté — mode local.");
-      refreshChatMode();
-    } catch (e) { flashToast("Échec : " + e.message, true); }
-  });
-
-  state._loadConversations = loadConversations;
-}
-
-async function refreshChatMode() {
-  const badge = document.getElementById("chatMode");
-  if (!badge) return;
-  try {
-    const s = await fetchJSON("api/chat/status");
-    badge.textContent = s.claude ? "Claude " + s.model : "local";
-    badge.className = "badge " + (s.claude ? "OK" : "NA");
-    const row = document.getElementById("apiKeyRow");
-    if (row) row.style.display = s.claude ? "none" : "flex";
-    // Bouton déconnexion : visible si Claude actif ET clé stockée localement (pas env)
-    const disco = document.getElementById("apiKeyDisconnect");
-    if (disco) disco.style.display = (s.claude && s.key_source === "store") ? "inline-flex" : "none";
-  } catch (e) { badge.textContent = "?"; }
-  if (state._loadConversations) state._loadConversations();
-}
-
 function setupPhase4() {
   const run = document.getElementById("p4Run");
   if (!run) return;
@@ -2487,8 +2109,8 @@ function setupLab() {
    ==================================================================== */
 async function main() {
   setupTheme();
-  ecgInit(); setupTabs(); setupHelp(); setupRunSelect(); setupEpochTools(); setupEval();
-  setupFiles(); setupTraining(); setupResearch(); setupScreening(); setupChat(); setupLab();
+  ecgInit(); setupTabs(); setupHelp(); setupRunSelect(); setupEpochTools();
+  setupTraining(); setupResearch(); setupScreening(); setupLab();
   await loadConfig();
   renderBarème();
   await loadFiles();

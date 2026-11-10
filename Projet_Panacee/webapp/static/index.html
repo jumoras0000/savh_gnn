@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="static/style.css" />
+  <link rel="stylesheet" href="static/style.css?v=20261110-clean-legacy" />
 </head>
 <body>
   <!-- ===================== Barre d'instrument ===================== -->
@@ -75,14 +75,12 @@
     <!-- ===================== Onglets ===================== -->
     <nav class="tabs">
       <button class="tab active" data-tab="evo">📈 Évolution</button>
-      <button class="tab" data-tab="clin">🏥 Métriques cliniques</button>
       <button class="tab" data-tab="sec">🚨 Sécurité</button>
       <button class="tab" data-tab="cmp">🔬 Comparaison</button>
       <button class="tab" data-tab="train">🎛️ Entraînement</button>
       <button class="tab" data-tab="research">🧪 Recherche</button>
       <button class="tab" data-tab="screen">🧬 Criblage VIH</button>
       <button class="tab" data-tab="lab">🧫 Laboratoire VIH · Phase 4</button>
-      <button class="tab" data-tab="chat">💬 Assistant</button>
       <button class="tab" data-tab="lexique">📖 Lexique</button>
       <button class="tab" data-tab="info">ℹ️ Guide</button>
     </nav>
@@ -153,43 +151,6 @@
           </div>
           <div style="overflow-x:auto"><table id="epochTable"><thead></thead><tbody></tbody></table></div>
         </div>
-      </div>
-    </section>
-
-    <!-- ---------- Métriques cliniques ---------- -->
-    <section class="panel-view" id="view-clin">
-      <div class="card">
-        <h3>Évaluation approfondie par endpoint toxicologique</h3>
-        <div class="hint">Choisis un checkpoint Phase 2 + un CSV de validation (listes détectées automatiquement, ou importe un fichier). Calcule toutes les métriques médicales : sensibilité, spécificité, FNR, précision, F1, ROC-AUC, PR-AUC, calibration ECE.</div>
-        <div class="form-row">
-          <div class="field">
-            <label>Checkpoint (.pth)</label>
-            <select id="evalCkpt" class="picker"></select>
-          </div>
-          <div class="field">
-            <label>CSV de validation</label>
-            <select id="evalCsv" class="picker"></select>
-          </div>
-          <button class="btn" id="evalBtn">Évaluer</button>
-          <button class="btn ghost" id="refreshFiles" title="Rafraîchir les listes">⟳</button>
-        </div>
-        <div class="form-row" style="margin-top:10px">
-          <label class="upload">
-            <input type="file" id="upCkpt" accept=".pth" hidden />
-            <span>⬆️ Importer un checkpoint (.pth)</span>
-          </label>
-          <label class="upload">
-            <input type="file" id="upCsv" accept=".csv,.smi,.txt" hidden />
-            <span>⬆️ Importer un CSV</span>
-          </label>
-          <span id="uploadMsg" class="upmsg"></span>
-        </div>
-        <div id="evalAgg" style="margin-top:16px"></div>
-      </div>
-      <div class="card">
-        <h3>Détail par endpoint</h3>
-        <div class="hint" id="clinSource">Source : dernier point temps réel (per-task AUC). Lance une évaluation pour le détail complet.</div>
-        <div style="overflow-x:auto"><table id="clinTable"><thead></thead><tbody></tbody></table></div>
       </div>
     </section>
 
@@ -416,45 +377,6 @@
       </div>
     </section>
 
-    <!-- ---------- Assistant (chatbot) ---------- -->
-    <section class="panel-view" id="view-chat">
-      <div class="chat-wrap">
-        <aside class="chat-side card">
-          <button class="btn" id="chatNew" style="width:100%">＋ Nouvelle conversation</button>
-          <input id="chatSearch" class="picker" placeholder="🔎 Rechercher dans les chats…" style="margin-top:8px" />
-          <div id="convList" class="conv-list"></div>
-        </aside>
-        <div class="chat-main card">
-          <h3>💬 Assistant <span id="chatMode" class="badge NA">…</span>
-            <button class="btn ghost" id="apiKeyDisconnect" title="Déconnecter la clé Claude (revenir au mode local)" style="display:none">🔌 Déconnecter Claude</button>
-            <button class="btn ghost" id="chatExport" title="Exporter cette conversation (JSON)" style="margin-left:auto">⬇️ Exporter</button>
-          </h3>
-          <div class="hint">Le compte Claude Code connecté est utilisé en priorité pour les questions textuelles, avec les résultats locaux A'' et les hits Jupyter. L'abonnement Claude et les crédits de l'API Anthropic sont distincts. Une clé API reste nécessaire pour l'analyse d'<b>images</b> par Claude ; sans fournisseur disponible, le mode local reste actif. Les structures 2D sont générées automatiquement.</div>
-          <div id="apiKeyRow" class="form-row" style="display:none;margin-top:8px">
-            <input id="apiKeyInput" class="picker" type="password" placeholder="Clé API Anthropic (sk-ant-…) — stockée localement, active Claude + vision" style="flex:3" />
-            <button class="btn" id="apiKeySave">Activer Claude</button>
-          </div>
-          <div id="chatLog" class="chatlog"></div>
-          <div id="imgPreview" class="img-preview" style="display:none"></div>
-          <div class="form-row" style="margin-top:10px">
-            <label class="upload" title="Joindre une image (analyse vision via Claude)">
-              <input type="file" id="chatImage" accept="image/*" hidden /><span>🖼️</span>
-            </label>
-            <div class="field" style="flex:3;min-width:auto">
-              <textarea id="chatInput" rows="2" placeholder="Ex : toxicité et risque de CC(=O)Nc1ccc(O)cc1 — ou : crible la bibliothèque anti-VIH par efficacité"></textarea>
-            </div>
-            <button class="btn" id="chatSend">Envoyer</button>
-          </div>
-          <div class="ex">Suggestions :
-            <button class="lnk chip" data-msg="Quelles sont les capacités du modèle pour le VIH ?">capacités VIH</button> ·
-            <button class="lnk chip" data-msg="Toxicité, efficacité et risque de CC(=O)Nc1ccc(O)cc1">paracétamol</button> ·
-            <button class="lnk chip" data-msg="Crible la bibliothèque anti-VIH par efficacité">criblage anti-VIH</button> ·
-            <button class="lnk chip" data-msg="Statut de l'entraînement">statut</button>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- ---------- Guide / info ---------- -->
     <!-- ---------- Lexique / Dictionnaire ---------- -->
     <section class="panel-view" id="view-lexique">
@@ -516,8 +438,7 @@
         <div class="info-block">
           <p>1. <b>Entraînement</b> — lance Phase 2 (toxicité) puis Phase 3 (multi-propriétés) depuis l'onglet dédié.</p>
           <p>2. <b>Évolution / Sécurité</b> — surveille en temps réel l'AUC, le FNR et les endpoints en danger.</p>
-          <p>3. <b>Métriques cliniques</b> — évalue un checkpoint sur un CSV de validation pour le détail par endpoint.</p>
-          <p>4. <b>Recherche</b> — analyse de vraies molécules / combinaisons pour identifier des candidats médicaments.</p>
+          <p>3. <b>Recherche</b> — analyse de vraies molécules / combinaisons pour identifier des candidats médicaments.</p>
         </div>
       </div>
     </section>
@@ -536,6 +457,6 @@
     </div>
   </div>
 
-  <script src="static/app.js?v=20261110-lab-sync"></script>
+  <script src="static/app.js?v=20261110-clean-legacy"></script>
 </body>
 </html>

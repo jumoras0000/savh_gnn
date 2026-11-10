@@ -9,10 +9,12 @@ Le guide utilisateur accessible sur `/guide` explique la finalité, les quatre
 phases Jupyter, chaque partie du Studio et le sens des indicateurs. Sa source
 est `webapp/static/guide.html` ; garder les explications synchronisées avec
 les métriques reproduites et les états réels des API.
-L'Assistant historique et la revue Claude de phase 4 utilisent maintenant
-prioritairement la session Claude Code du compte pour le texte ; la clé API
-Anthropic n'est pas transmise à ce sous-processus. L'abonnement et les crédits
-API sont distincts. Voir `webapp/chatbot.py` et `webapp/lab_providers.py`.
+L'ancien onglet Assistant et l'écran d'évaluation toxicologique par endpoint
+ont été retirés de `/legacy` : ils étaient redondants ou présélectionnaient
+des données non adaptées à A''. Le Laboratoire conserve la recherche croisée
+Panacée–Claude–ChatGPT ; les adaptateurs Claude restent au backend pour ce
+Laboratoire et la phase 4. Ne pas réintroduire un sélecteur tox21/ChEMBL
+positive-only comme validation du modèle VIH A''.
 Le Laboratoire de recherche a été vérifié de bout en bout avec A'', Claude
 Code et ChatGPT connecté : deux analyses puis deux critiques croisées sur un
 dossier commun. Son score A'' passe par `studio.screen`. L'environnement

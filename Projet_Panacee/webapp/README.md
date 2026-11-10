@@ -275,46 +275,21 @@ distinct exige `PANACEE_API_TOKEN` dans l'en-tête `X-Panacee-Token` ; sans ce
 jeton, ces routes restent fermées. Sans tunnel, l'alternative reste l'**import**
 du `live_metrics.jsonl` téléchargé.
 
-## Assistant (chatbot)
+## Parcours de recherche conservé
 
-Pour les questions textuelles, l'assistant utilise d'abord une session
-`claude auth status` connectée à Claude Code via l'abonnement utilisateur ;
-le sous-processus ne reçoit **pas** `ANTHROPIC_API_KEY`. Il fournit à Claude
-les résultats locaux du modèle A'' et les hits récents de phase 4 plutôt que
-les anciens scores comme preuves. Si aucune session n'est disponible, il essaie
-l'API Anthropic puis le mode local. L'abonnement Claude et la facturation API
-sont séparés ; un abonnement actif ne crédite pas automatiquement une clé API.
-La vision nécessite toujours l'API. Le badge Assistant indique le fournisseur
-effectivement sélectionné.
+Le Studio (`/`) assure le classement A'' et la validation aveugle. Le
+Laboratoire (`/legacy`, onglet « Laboratoire VIH ») est l'unique interface de
+questionnement croisé Panacée–Claude–ChatGPT : mêmes données du dossier,
+analyses indépendantes, puis critiques croisées. L'ancien onglet « Assistant »
+était redondant et a été retiré de la navigation et du JavaScript. Les
+adaptateurs Claude restent dans le backend pour le Laboratoire et la phase 4 ;
+les anciennes conversations locales ne sont pas effacées.
 
-Le modèle A'' actuellement servi utilise quatre forêts sérialisées avec
-`scikit-learn 1.9.1`. L'environnement local a été aligné sur cette version ;
-`requirements-a-prime-runtime.txt` la fige pour les installations d'inférence
-du modèle récent. Le Laboratoire passe maintenant par le même calcul A'' que
-Studio, y compris le registre vérifié, le percentile fixe et le domaine
-train+augmentation. Avec les deux abonnements connectés, les sélecteurs du
-Laboratoire prennent par défaut A'', Claude Code et ChatGPT ; les revues sont
-indépendantes puis croisées sur le même dossier, sans fusion des poids.
-
-Onglet **💬 Assistant** : converse avec le modèle GNN. Avec **Claude
-(claude-opus-4-8)**, il orchestre les outils du modèle (toxicité, efficacité VIH,
-descripteurs, criblage, synergie, statut) pour des analyses avancées ; sans clé,
-un **assistant local** appelle quand même ces outils (détection SMILES + intention).
-
-Fonctionnalités :
-- **Multi-conversations** : créer / changer / renommer / supprimer (panneau latéral).
-- **Recherche** dans l'historique des chats.
-- **Streaming token-par-token** des réponses.
-- **Images** : joindre une image (analyse **vision** via Claude) ; **structures 2D**
-  des molécules **générées automatiquement** dans la réponse.
-- **Export** d'une conversation précise (JSON).
-- **Clé API Anthropic** : se met directement dans l'UI (champ dédié, stockée
-  localement) ou via `ANTHROPIC_API_KEY`. Installe le SDK : `pip install anthropic`.
-
-**Base de données** : tout l'historique (conversations, messages, réglages) est
-persisté dans **SQLite** (`data/panacee.db`, ignoré par git) ; les images dans
-`data/chat_images/`. Endpoints : `/api/conversations*`, `/api/chat`,
-`/api/chat/stream`, `/api/settings/apikey`, `/api/chat/image`.
+L'écran historique « Métriques cliniques » a aussi été retiré : il proposait
+par défaut un checkpoint Phase 3 et la source ChEMBL VIH positive-only pour
+une évaluation toxicologique par endpoint, ce qui ne correspond pas au
+protocole de validation d'A''. Les métriques reproductibles d'A'' et leurs
+limites restent dans « Preuves » du Studio et dans la revue scientifique.
 
 ## Thème clair / sombre
 

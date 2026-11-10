@@ -1,5 +1,19 @@
 # Handoff pour Claude — Panacée, 9 novembre 2026
 
+## Simplification de l'interface historique — 10 novembre 2026
+
+L'onglet « Assistant » a été retiré de `/legacy` : le Laboratoire de
+recherche couvre le questionnement Panacée–Claude–ChatGPT avec un dossier
+commun et critiques croisées. Les anciennes conversations SQLite sont
+préservées ; les adaptateurs internes restent nécessaires au Laboratoire et
+à la phase 4. L'écran « Métriques cliniques » a aussi été retiré. Son
+sélecteur proposait un checkpoint Phase 3 et `chembl_hiv_merged.csv` comme
+validation toxicologique, alors que cette source contient uniquement des
+positifs ChEMBL hétérogènes. Ne pas interpréter l'absence de cette page comme
+une perte de résultats : les métriques d'A'' vérifiées et la revue des quatre
+phases sont dans Studio/Preuves, tandis que les nouveaux résultats EC50/CC50
+doivent suivre le parcours de validation aveugle.
+
 ## Vérification réelle de la synchronisation — 10 novembre 2026
 
 Un appel local `lab.run` avec A'' et deux structures tests a produit des
