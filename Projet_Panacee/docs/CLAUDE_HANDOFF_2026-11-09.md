@@ -1,5 +1,16 @@
 # Handoff pour Claude — Panacée, 9 novembre 2026
 
+## Guide utilisateur livré
+
+`GET /guide` sert une page explicative reliée à la navigation et au pied de
+page du Studio. Elle présente le but du projet, l'origine des quatre phases
+Jupyter, ce que fait chaque section, un mode d'emploi et le sens de SMILES,
+rang, percentile, domaine, conformal, QED, EC50/CC50 et métriques. La page
+sépare explicitement les anciens outils `/legacy` du modèle A'' actif et
+renvoie à la revue scientifique PDF. Modifier `webapp/static/guide.html`
+quand le modèle, les métriques ou le parcours changent ; ne jamais afficher
+une preuve biologique qui n'existe pas.
+
 ## Mise à jour opérationnelle du 10 novembre — vNext
 
 Lire `docs/VNEXT_MODEL_PROTOCOL.md` avant tout réentraînement. Le code

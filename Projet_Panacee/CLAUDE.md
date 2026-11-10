@@ -5,6 +5,10 @@ puis [`docs/TRANSLATIONAL_ROADMAP.md`](docs/TRANSLATIONAL_ROADMAP.md) et
 [`docs/STUDIO_V2_DECISIONS.md`](docs/STUDIO_V2_DECISIONS.md).
 Le protocole de données et de sélection du prochain modèle est
 [`docs/VNEXT_MODEL_PROTOCOL.md`](docs/VNEXT_MODEL_PROTOCOL.md).
+Le guide utilisateur accessible sur `/guide` explique la finalité, les quatre
+phases Jupyter, chaque partie du Studio et le sens des indicateurs. Sa source
+est `webapp/static/guide.html` ; garder les explications synchronisées avec
+les métriques reproduites et les états réels des API.
 La revue scientifique des quatre phases est
 [`reports/revue_scientifique_panacee_2026-11.pdf`](reports/revue_scientifique_panacee_2026-11.pdf) ;
 sa construction traçable se trouve dans `scripts/build_scientific_review.py`.

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Guide du projet · Panacée Studio</title>
+  <link rel="stylesheet" href="static/studio.css?v=20261110-v8">
+</head>
+<body>
+  <a class="skip" href="#main">Aller au contenu</a>
+  <header class="topbar">
+    <a class="brand" href="./"><span class="brand-mark">P</span><span>Panacée <b>Studio</b></span></a>
+    <nav aria-label="Navigation du guide">
+      <a href="./">Retour au Studio</a><a href="#phases">Origine du modèle</a><a href="#parcours">Utilisation</a><a href="#glossaire">Concepts</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero shell guide-hero" aria-labelledby="guideTitle">
+      <div class="eyebrow">GUIDE DU PROJET · ÉTAT AU 10 NOVEMBRE 2026</div>
+      <h1 id="guideTitle">Comprendre Panacée, puis s'en servir.</h1>
+      <p>Panacée est un projet de recherche informatique sur la priorisation de molécules à examiner contre le VIH. Le Studio local classe des structures et rassemble les preuves disponibles. Il ne découvre pas, à lui seul, un médicament : l'activité, la sélectivité et la sécurité doivent être mesurées indépendamment.</p>
+      <a class="secondary-button guide-link" href="./">Ouvrir le Studio</a>
+    </section>
+
+    <section id="objectif" class="shell work-section guide-section" aria-labelledby="objectifTitle">
+      <div class="section-heading"><div><span class="step">01 / FINALITÉ</span><h2 id="objectifTitle">Le problème que résout l'application</h2></div></div>
+      <div class="guide-grid">
+        <article class="panel"><h3>Avant le laboratoire</h3><p>Quand beaucoup de structures sont disponibles, le modèle aide à choisir lesquelles examiner en premier. Il donne un <strong>ordre de priorité</strong>, accompagné de diagnostics chimiques et d'incertitude. Le temps et le budget d'essai sont ainsi concentrés sur un nombre limité de molécules.</p></article>
+        <article class="panel"><h3>Après le laboratoire</h3><p>Une liste de candidats a été gelée sous identifiants aveugles. Le Studio reçoit des résultats EC50/CC50, vérifie leur complétude et compare les observations aux prédictions déjà enregistrées. Un résultat partiel n'ouvre pas la clé d'identité.</p></article>
+      </div>
+      <div class="method-line"><strong>État réel</strong><p>Le modèle actif est A'' du 6 novembre 2026. Aucun nouveau candidat Panacée n'a encore une activité cellulaire indépendante confirmée dans ce projet ; les résultats prospectifs sont en attente.</p></div>
+    </section>
+
+    <section id="phases" class="shell work-section guide-section" aria-labelledby="phasesTitle">
+      <div class="section-heading"><div><span class="step">02 / ORIGINE</span><h2 id="phasesTitle">D'où vient le modèle ?</h2></div><p>Quatre phases ont été menées sur Jupyter. Elles n'ont pas toutes le même rôle dans le score affiché.</p></div>
+      <div class="guide-grid guide-four">
+        <article class="panel"><span class="small-heading">PHASE 1</span><h3>Apprendre les structures</h3><p>Pré-entraînement d'un encodeur moléculaire. Il fournit une base de représentation, mais <strong>pas un score VIH</strong> utilisable seul.</p></article>
+        <article class="panel"><span class="small-heading">PHASE 2</span><h3>Explorer la toxicité</h3><p>Travail sur Tox21. Il reste historique dans le Studio actuel : une sortie Tox21 n'est pas une mesure de sécurité clinique ou une CC50 cellulaire VIH.</p></article>
+        <article class="panel"><span class="small-heading">PHASE 3</span><h3>Classer l'activité VIH</h3><p>Le modèle A'' retenu réunit <strong>un GNN et quatre forêts aléatoires</strong> fondées sur des descripteurs chimiques. Leurs rangs sont combinés pour classer un lot de molécules.</p></article>
+        <article class="panel"><span class="small-heading">PHASE 4</span><h3>Explorer des bibliothèques</h3><p>Le pipeline a criblé des structures ZINC et des molécules de repositionnement. Les « hits » sont des <strong>pistes informatiques</strong>, non des molécules confirmées au laboratoire.</p></article>
+      </div>
+      <p class="guide-note">Le Studio vérifie les artefacts du modèle récent provenant de Jupyter et ne substitue pas les anciens modèles Kaggle. Le test interne de 3 778 structures (84 positives) donne une PRC-AUC de 0,1541 ; le classement retrouve 20 actifs parmi les 100 premiers. Ces chiffres portent sur le test historique, déjà utilisé pour choisir A'', pas sur de nouvelles molécules testées au laboratoire.</p>
+      <a class="secondary-button guide-link" href="api/studio/scientific-report" download="Panacee_revue_scientifique_2026-11.pdf">Lire la revue scientifique des quatre phases (PDF)</a>
+    </section>
+
+    <section id="parcours" class="shell work-section guide-section" aria-labelledby="parcoursTitle">
+      <div class="section-heading"><div><span class="step">03 / MODE D'EMPLOI</span><h2 id="parcoursTitle">Que fait chaque partie du Studio ?</h2></div></div>
+      <ol class="guide-steps">
+        <li class="panel"><span class="guide-number">1</span><div><h3><a href="./#screen">Cribler un lot</a></h3><p>Collez de 1 à 100 structures SMILES, une par ligne, éventuellement précédées d'un nom et d'une virgule. Cliquez sur « Classer avec A'' ». Le tableau trie <strong>ce lot</strong>, affiche un percentile de référence, le domaine, le diagnostic conformal et des descripteurs. « Exporter CSV » conserve la lecture du lot. Un rang supérieur signifie une meilleure priorité <em>dans ce lot</em>.</p></div></li>
+        <li class="panel"><span class="guide-number">2</span><div><h3><a href="./#hits">Explorer les hits</a></h3><p>Parcourez les résultats de phase 4, choisissez ZINC ou repositionnement, filtrez par texte et affichez davantage de lignes. Ces scores proviennent de bibliothèques différentes : leur rang n'est pas directement comparable au rang d'un nouveau lot saisi dans « Cribler ».</p></div></li>
+        <li class="panel"><span class="guide-number">3</span><div><h3><a href="./#evidence">Examiner les preuves</a></h3><p>Consultez les métriques reproduites du modèle, le rôle des phases, l'état de validation externe et la revue scientifique téléchargeable. Cette partie répond à « pourquoi ce modèle ? » et distingue les mesures historiques des preuves encore manquantes.</p></div></li>
+        <li class="panel"><span class="guide-number">4</span><div><h3><a href="./#translation">Suivre la validation</a></h3><p>Le ZIP laboratoire contient les 26 structures sous identifiants aveugles et un modèle de résultats, sans clé de décodage ni prédictions. Après réception, importez le CSV complet. Le Studio vérifie les identifiants, réplicats, valeurs et comparateurs ; il affiche ensuite un bilan descriptif, séparé des étapes biologiques non réalisées.</p></div></li>
+      </ol>
+      <p class="guide-note"><strong>Ancienne interface :</strong> <a href="legacy">/legacy</a> reste accessible pour compatibilité. Elle n'est pas le parcours principal et peut montrer des outils ou checkpoints historiques qui ne représentent pas A''.</p>
+    </section>
+
+    <section id="glossaire" class="shell work-section guide-section" aria-labelledby="glossaireTitle">
+      <div class="section-heading"><div><span class="step">04 / LECTURE</span><h2 id="glossaireTitle">Les concepts importants, sans jargon</h2></div></div>
+      <dl class="guide-glossary panel">
+        <div><dt>SMILES</dt><dd>Écriture textuelle de la structure d'une molécule. C'est l'entrée du criblage ; une chaîne invalide n'est pas classée.</dd></div>
+        <div><dt>GNN et forêts aléatoires (RF)</dt><dd>Deux familles de modèles : le GNN apprend sur un graphe d'atomes et de liaisons ; les RF utilisent des empreintes ou descripteurs calculés. A'' combine leurs classements.</dd></div>
+        <div><dt>Score A'' et rang</dt><dd>Mesures de priorité relative. Leur valeur dépend des molécules soumises ensemble ; elles ne sont ni une probabilité d'activité ni une EC50 prédite.</dd></div>
+        <div><dt>Percentile de référence</dt><dd>Position du score face à une référence fixe de structures de test, calculée sans leurs labels pour ce diagnostic. Elle facilite la comparaison entre sessions, sans garantir une activité.</dd></div>
+        <div><dt>Domaine d'applicabilité</dt><dd>Indication de proximité chimique avec les structures du train et de l'augmentation. « Dans le domaine » n'équivaut pas à « actif » ; hors domaine, la prédiction est plus incertaine.</dd></div>
+        <div><dt>Conformal GNN</dt><dd>Diagnostic de classification pouvant être « actif », « inactif » ou « ambigu ». Il est calibré pour le GNN seul, pas pour l'ensemble A'' ; l'ambiguïté signifie que le diagnostic ne tranche pas.</dd></div>
+        <div><dt>QED, masse, LogP, Lipinski</dt><dd>Descripteurs ou règles de chimie calculés sur la structure. Ils aident à examiner une molécule, mais ne mesurent ni efficacité antivirale ni sécurité.</dd></div>
+        <div><dt>EC50, CC50 et sélectivité</dt><dd>EC50 : concentration associée à une inhibition antivirale de 50 % dans un essai défini. CC50 : concentration associée à 50 % de cytotoxicité dans un essai défini. Le rapport CC50/EC50 aide à juger la séparation entre activité et toxicité ; les mesures doivent venir du laboratoire.</dd></div>
+        <div><dt>Valeur censurée, par exemple &gt;10</dt><dd>Le seuil de mesure est dépassé : la vraie valeur est au-delà de 10, mais n'est pas connue exactement. Le logiciel la conserve comme borne, pas comme valeur mesurée égale à 10.</dd></div>
+        <div><dt>PRC-AUC et ROC-AUC</dt><dd>Mesures de classement sur un jeu étiqueté. La PRC-AUC doit être lue avec la fréquence des actifs ; aucune des deux ne prouve une activité sur les nouveaux hits.</dd></div>
+      </dl>
+    </section>
+
+    <section id="suite" class="shell work-section guide-section" aria-labelledby="suiteTitle">
+      <div class="section-heading"><div><span class="step">05 / SUITE</span><h2 id="suiteTitle">Ce qu'il reste à démontrer</h2></div></div>
+      <div class="panel"><p>La prochaine preuve attendue est le retour indépendant du lot aveugle : activité VIH cellulaire, cytotoxicité, contrôles et qualité d'essai. Si des signaux sont confirmés, il faudra étudier leur reproductibilité, mécanisme, résistance, exposition et sécurité. Le prochain modèle « vNext » ne sera entraîné qu'avec de nouvelles données quantitatives traçables et évalué sur des campagnes inédites. A'' reste gelé jusque-là.</p><a class="secondary-button guide-link" href="./#translation">Voir l'état de validation</a></div>
+    </section>
+  </main>
+  <footer class="shell"><span>Panacée Studio · guide du projet</span><a href="./">Retour au Studio</a><span>Calcul local · données expérimentales locales</span></footer>
+</body>
+</html>

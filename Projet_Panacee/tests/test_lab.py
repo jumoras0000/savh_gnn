@@ -138,15 +138,27 @@ def test_model_bundle_resolves_relocated_gnn(monkeypatch, tmp_path):
 def test_proxy_assets_are_relative_to_jupyter_prefix(client):
     html = client.get("/").text
     js = client.get("/static/studio.js").text
-    assert 'href="static/studio.css?v=20261110-v7"' in html
+    assert 'href="static/studio.css?v=20261110-v8"' in html
     assert 'src="static/studio.js?v=20261110-v7"' in html
     assert 'api("api/studio/overview")' in js
     assert urljoin("https://jupyter.example/proxy/8080/", "api/lab/models") == (
         "https://jupyter.example/proxy/8080/api/lab/models")
     with TestClient(app, root_path="/proxy/8080", client=("127.0.0.1", 1234)) as proxied:
         assert proxied.get("/proxy/8080/").status_code == 200
+        assert proxied.get("/proxy/8080/guide").status_code == 200
         assert proxied.get("/proxy/8080/static/studio.js").status_code == 200
         assert proxied.get("/proxy/8080/api/lab/models").status_code == 200
+
+
+def test_project_guide_explains_model_and_sections(client):
+    response = client.get("/guide")
+    assert response.status_code == 200
+    html = response.text
+    for concept in ("PHASE 1", "PHASE 2", "PHASE 3", "PHASE 4", "SMILES",
+                    "Conformal GNN", "EC50", "CC50", "Cribler un lot",
+                    "Explorer les hits", "Examiner les preuves", "Suivre la validation"):
+        assert concept in html
+    assert 'href="guide"' in client.get("/").text
 
 
 def test_external_host_header_cannot_bypass_token(monkeypatch):

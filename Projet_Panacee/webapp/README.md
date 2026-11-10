@@ -302,6 +302,14 @@ persisté dans **SQLite** (`data/panacee.db`, ignoré par git) ; les images dans
 Bouton 🌙/☀️ dans la barre — bascule clair/sombre, mémorisé (localStorage), avec
 rafraîchissement des couleurs de tous les graphiques.
 
+## Guide du projet
+
+La page locale `/guide`, accessible depuis la navigation du Studio, explique
+la finalité du projet, l'origine du modèle A'' dans les quatre phases Jupyter,
+le rôle de chaque partie de la page, les concepts utilisés et la différence
+entre classement informatique et validation expérimentale. La revue
+scientifique complète reste téléchargeable dans « Preuves ».
+
 ## Tests
 
 Pour préparer un jeu quantitatif vNext sans entraîner sur des données

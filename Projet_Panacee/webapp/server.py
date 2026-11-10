@@ -98,6 +98,10 @@ async def legacy_index(request):
     return FileResponse(STATIC_DIR / "index.html")
 
 
+async def project_guide(request):
+    return FileResponse(STATIC_DIR / "guide.html")
+
+
 async def api_studio_overview(request):
     from webapp import studio
     return JSONResponse(await asyncio.to_thread(studio.overview, _ckpt_root()))
@@ -1227,6 +1231,7 @@ async def api_stream(request):
 
 routes = [
     Route("/", index),
+    Route("/guide", project_guide),
     Route("/legacy", legacy_index),
     Route("/api/studio/overview", api_studio_overview),
     Route("/api/studio/hits", api_studio_hits),
