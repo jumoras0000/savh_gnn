@@ -149,6 +149,36 @@ async def api_studio_assay_template(request):
                         media_type="text/csv")
 
 
+async def api_studio_lab_submission(request):
+    import zipfile
+
+    from webapp import translational
+
+    directory = PROJECT_ROOT / "data" / "experiment_package"
+    file = directory / "dossier_laboratoire_aveugle.zip"
+    digest_file = directory / "dossier_laboratoire_aveugle.sha256"
+    if not file.is_file() or not digest_file.is_file():
+        return JSONResponse({"error": "Dossier laboratoire indisponible"}, status_code=404)
+    try:
+        manifest, _, _ = translational.package(PROJECT_ROOT)
+        with file.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        if digest != digest_file.read_text(encoding="ascii").strip():
+            raise ValueError("Archive modifiée")
+        with zipfile.ZipFile(file) as archive:
+            names = set(archive.namelist())
+            if names != {"submission_blinded.csv", "assay_results_template.csv",
+                         "demande_essais_aveugles.pdf", "manifest_public.json"}:
+                raise ValueError("Contenu de l'archive inattendu")
+            public = json.loads(archive.read("manifest_public.json"))
+            if public.get("submission_sha256") != manifest["submission_sha256"]:
+                raise ValueError("Soumission non concordante")
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile):
+        return JSONResponse({"error": "Dossier laboratoire non vérifié"}, status_code=409)
+    return FileResponse(file, filename="Panacee_dossier_laboratoire_aveugle.zip",
+                        media_type="application/zip")
+
+
 async def api_studio_development(request):
     from webapp import translational
 
@@ -1202,6 +1232,7 @@ routes = [
     Route("/api/studio/package", api_studio_package),
     Route("/api/studio/scientific-report", api_studio_scientific_report),
     Route("/api/studio/assay-template", api_studio_assay_template),
+    Route("/api/studio/lab-submission", api_studio_lab_submission),
     Route("/api/studio/development", api_studio_development),
     Route("/api/studio/assays", api_studio_assay_upload, methods=["POST"]),
     Route("/api/studio/screen", api_studio_screen, methods=["POST"]),

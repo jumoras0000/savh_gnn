@@ -6,6 +6,9 @@ puis [`docs/TRANSLATIONAL_ROADMAP.md`](docs/TRANSLATIONAL_ROADMAP.md) et
 La revue scientifique des quatre phases est
 [`reports/revue_scientifique_panacee_2026-11.pdf`](reports/revue_scientifique_panacee_2026-11.pdf) ;
 sa construction traçable se trouve dans `scripts/build_scientific_review.py`.
+L'audit ChEMBL du 10 novembre est dans
+`reports/chembl_source_audit_2026-11.json` ; il établit pourquoi les données
+actuelles ne suffisent pas pour un modèle d'EC50/CC50 cellulaire.
 
 L'objectif est de transformer le classement VIH A'' en **candidats testables**,
 sans présenter une prédiction informatique comme une efficacité biologique.

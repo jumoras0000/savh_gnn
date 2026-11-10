@@ -1,0 +1,63 @@
+{
+  "source": "JupyterHub panacee/Projet_Panacee/data/external/chembl_hiv/chembl_hiv_merged.csv",
+  "source_sha256": "f2af13d83334c0a99b3421cb238144260ec5cb73c6f1a57d2b42013f9b94e459",
+  "n_rows": 15842,
+  "n_valid_smiles": 15842,
+  "n_unique_canonical": 15842,
+  "assay_types": {
+    "IC50": 12624,
+    "EC50": 564,
+    "Ki": 2582,
+    "Kd": 72
+  },
+  "targets": {
+    "CHEMBL247": 4908,
+    "CHEMBL243": 4471,
+    "CHEMBL3471": 2496,
+    "CHEMBL274": 2173,
+    "CHEMBL5658": 1794
+  },
+  "units": {
+    "nM": 15842
+  },
+  "labels": {
+    "1": 15842
+  },
+  "pchembl_min": 5.0,
+  "pchembl_median": 7.285,
+  "pchembl_max": 11.0,
+  "overlap_with_moleculenet": {
+    "train": {
+      "exact": 77,
+      "scaffold": 1423
+    },
+    "val": {
+      "exact": 5,
+      "scaffold": 46
+    },
+    "test": {
+      "exact": 4,
+      "scaffold": 99
+    }
+  },
+  "missing_columns": {
+    "chembl_id": 0,
+    "hiv_active_chembl": 0,
+    "pchembl_value": 0,
+    "smiles": 0,
+    "standard_type": 0,
+    "standard_units": 0,
+    "standard_value": 0,
+    "target": 0
+  },
+  "assessment": {
+    "binary_classification_possible_from_this_file_alone": false,
+    "cellular_hiv_ec50_model_ready": false,
+    "reason": "Source positive-only avec pChEMBL >= 5, mélange IC50/Ki/Kd/EC50 et cibles différentes ; pas de provenance cellulaire ni CC50. Les valeurs ne sont pas interchangeables comme mesure unique d'efficacité antivirale ou de sélectivité.",
+    "next_dataset_requirements": [
+      "mesures cellulaires VIH EC50 et CC50 avec essai, laboratoire, date, unités et censure",
+      "témoins et composés inactifs mesurés dans le même contexte",
+      "séparation de développement/validation par campagne, temps et scaffold"
+    ]
+  }
+}

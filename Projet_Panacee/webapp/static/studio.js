@@ -186,6 +186,8 @@ function renderDevelopment(data) {
     frozen: "Gelé", unavailable: "Indisponible", awaiting_lab_results: "En attente",
     partial: "Partiel", data_inconsistent: "Incohérent", data_complete: "Données complètes",
     evidence_recorded: "Pièce archivée, non validée",
+    requires_cellular_data: "Données cellulaires manquantes",
+    source_audit_unavailable: "Audit source indisponible",
     not_performed: "Non réalisé", not_started: "Non commencé"
   };
   const list = $("developmentGates"); list.replaceChildren();
@@ -201,6 +203,10 @@ function renderDevelopment(data) {
   $("assayState").textContent = assay.status === "awaiting_lab_results"
     ? "Aucun résultat expérimental reçu. Le paquet aveugle est prêt pour un laboratoire partenaire."
     : `${names[assay.status] || assay.status} · ${assay.n_measured}/${assay.n_expected} structures mesurées.${assay.issues?.length ? ` ${assay.issues.join(" ; ")}` : ""}`;
+  const readiness = data.model_readiness;
+  $("modelReadiness").textContent = readiness.status === "requires_cellular_data"
+    ? `La source ChEMBL disponible contient ${readiness.n_chembl.toLocaleString("fr-FR")} mesures positives, dont ${readiness.assay_types.EC50 || 0} EC50, sans couples EC50/CC50 cellulaires exploitables. Le prochain modèle doit apprendre une activité et une sélectivité mesurées, sur des campagnes indépendantes ; A'' reste gelé en attendant ces données.`
+    : "Audit des données quantitatives indisponible.";
 }
 
 async function loadDevelopment() {

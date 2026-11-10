@@ -47,8 +47,11 @@ laboratoire partenaire ; le logiciel n'en crée aucune donnée.
 
 1. `python scripts/build_candidate_package.py` crée le paquet **une seule fois**.
    Un paquet déjà gelé est vérifié et réutilisé, non régénéré.
-2. Envoyer uniquement `data/experiment_package/submission_blinded.csv` au
-   laboratoire. La clé et les prédictions restent locales.
+2. `python scripts/build_lab_submission.py` assemble le dossier aveugle
+   `data/experiment_package/dossier_laboratoire_aveugle.zip` : liste des 26
+   structures, modèle de résultats, demande de mesures et manifeste public.
+   Le ZIP est téléchargeable dans Studio. Il **ne contient pas** la clé locale
+   ni les prédictions.
 3. Le modèle `data/experiment_package/assay_results_template.csv` comporte
    `blind_id,assay_id,replicate,ec50_um,cc50_um`. Les concentrations sont en µM ;
    une borne droite s'écrit `>10`. Deux réplicats par structure sont requis.
@@ -123,3 +126,21 @@ externe générale ; l'analyse de corrélation avec la puissance est descriptive
 La prochaine décision scientifique dépend des résultats indépendants du gate
 1 ; réentraîner immédiatement sur les mêmes données binaires sans nouveaux
 résultats ne résoudrait pas l'incertitude biologique.
+
+### Audit quantitatif ChEMBL du 10 novembre
+
+La source Jupyter `chembl_hiv_merged.csv` a été copiée localement et auditée par
+`python scripts/audit_chembl_source.py` (rapport :
+`reports/chembl_source_audit_2026-11.json`). Elle contient **15 842 lignes
+toutes positives** et sélectionnées à `pChEMBL ≥ 5` : 12 624 IC50, 2 582 Ki,
+564 EC50 et 72 Kd, sur cinq cibles. Elle ne contient ni CC50 ni métadonnées
+d'essai cellulaire permettant de déclarer ces 564 EC50 comme une mesure
+homogène d'inhibition de la réplication VIH. Les structures brutes recouvrent
+exactement 77 molécules du train, cinq de validation et quatre du test ; les
+filtres du modèle A'' ont écarté les recouvrements pertinents avant entraînement.
+Cette source est utile pour une analyse *par cible*, mais **ne suffit pas**
+à entraîner honnêtement un modèle quantitatif d'efficacité cellulaire et de
+sélectivité. Elle ne fournit pas non plus de classe inactive mesurée dans le
+même contexte. La prochaine donnée décisive reste donc le résultat du
+laboratoire sur le lot aveugle et, ensuite, une campagne plus large avec
+activité et cytotoxicité appariées.

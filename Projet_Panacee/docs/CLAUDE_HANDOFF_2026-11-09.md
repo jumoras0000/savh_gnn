@@ -7,6 +7,16 @@ depuis la section « Preuves » de Studio ou l'API
 `scripts/build_scientific_review.py` crée huit figures fondées sur les données
 archivées et documente explicitement les versions incompatibles.
 
+**Mise à jour du 10 novembre :** la source ChEMBL Jupyter brute a été copiée
+localement (`data/external/chembl_hiv/chembl_hiv_merged.csv`) et auditée dans
+`reports/chembl_source_audit_2026-11.json`. Les 15 842 lignes sont toutes
+positives et mélangent IC50, Ki, Kd et seulement 564 EC50, sans CC50 ni
+provenance d'essai cellulaire exploitable. Ne pas entraîner un modèle de
+puissance/sélectivité cellulaire en traitant ces valeurs comme un endpoint
+homogène. Le dossier de demande au laboratoire est généré par
+`scripts/build_lab_submission.py` et téléchargeable dans Studio ; la clé et les
+prédictions en sont exclues.
+
 ## Finalité et état réel
 
 L'utilisateur veut un outil local utile pour identifier un **candidat

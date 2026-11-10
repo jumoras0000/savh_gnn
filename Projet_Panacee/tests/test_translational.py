@@ -27,7 +27,10 @@ def _package(root):
     (folder / "predictions_local.json").write_text(json.dumps({
         row["blind_id"]: {"reference_percentile": 90.0, "rank_average": 3.0}
         for row in key}), encoding="utf-8")
-    manifest = {"model_id": "model_A_prime_augmented", "count": 5,
+    (folder / "assay_results_template.csv").write_text(
+        "blind_id,assay_id,replicate,ec50_um,cc50_um\n", encoding="utf-8")
+    manifest = {"model_id": "model_A_prime_augmented", "model_created": "2026-11-06",
+                "count": 5,
                 "submission_sha256": translational.sha256(folder / "submission_blinded.csv"),
                 "key_sha256": translational.sha256(folder / "key_local.json"),
                 "predictions_sha256": translational.sha256(folder / "predictions_local.json"),
@@ -118,3 +121,26 @@ def test_evidence_archive_is_hashed_but_not_marked_validated(tmp_path):
                 if row["id"] == "lab_qc")
     assert gate["status"] == "evidence_recorded"
     assert gate["files"] == 1
+
+
+def test_lab_submission_zip_excludes_key_and_predictions(client, monkeypatch,
+                                                          tmp_path):
+    import zipfile
+
+    from scripts import build_lab_submission
+    from webapp import server
+
+    _package(tmp_path)
+    monkeypatch.setattr(build_lab_submission, "ROOT", tmp_path)
+    monkeypatch.setattr(build_lab_submission, "OUT",
+                        tmp_path / "data" / "experiment_package")
+    file = build_lab_submission.build()
+    with zipfile.ZipFile(file) as archive:
+        names = set(archive.namelist())
+        assert "key_local.json" not in names
+        assert "predictions_local.json" not in names
+        assert "submission_blinded.csv" in names
+    monkeypatch.setattr(server, "PROJECT_ROOT", tmp_path)
+    response = client.get("/api/studio/lab-submission")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")

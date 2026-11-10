@@ -22,6 +22,9 @@ avant les mesures ; aucune donnée biologique n'est créée par l'application.
 Routes : `GET /api/studio/development`, `GET /api/studio/assay-template`,
 `POST /api/studio/assays` (CSV UTF-8, 256 Ko maximum). Les fichiers bruts et
 rapports restent sous `data/assay_results/` et sont exclus de Git.
+`GET /api/studio/lab-submission` fournit le ZIP aveugle vérifié pour le
+laboratoire ; il n'inclut ni clé ni scores. L'audit de la source ChEMBL est dans
+`reports/chembl_source_audit_2026-11.json`.
 
 La page d'accueil `http://127.0.0.1:8000/` est désormais un outil centré sur
 le modèle A'' validé : criblage d'un lot de SMILES, exploration des 124 hits

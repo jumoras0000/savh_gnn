@@ -270,13 +270,28 @@ def development_status(root: Path) -> dict:
         manifest, package_state = {}, "unavailable"
     lab = latest_report(root)
     evidence = evidence_counts(root)
+    audit_file = root / "reports" / "chembl_source_audit_2026-11.json"
+    try:
+        audit = json.loads(audit_file.read_text(encoding="utf-8"))
+        model_readiness = {
+            "status": "requires_cellular_data",
+            "n_chembl": audit["n_rows"],
+            "assay_types": audit["assay_types"],
+            "positive_only": len(audit["labels"]) == 1,
+            "has_cellular_ec50_cc50_pairs": False,
+            "source_sha256": audit["source_sha256"],
+        }
+    except (OSError, ValueError, KeyError, TypeError):
+        model_readiness = {"status": "source_audit_unavailable"}
     def recorded(gate: str) -> str:
         return "evidence_recorded" if evidence[gate] else "not_performed"
     return {
         "package": package_state, "package_count": manifest.get("count", 0),
-        "assay": lab,
+        "assay": lab, "model_readiness": model_readiness,
         "gates": [
             {"id": "prediction", "name": "Prédictions gelées", "status": package_state},
+            {"id": "vnext_data", "name": "Données quantitatives pour le modèle vNext",
+             "status": model_readiness["status"]},
             {"id": "cell_activity", "name": "Mesures cellulaires et cytotoxicité",
              "status": lab["status"]},
             {"id": "lab_qc", "name": "Contrôle qualité attesté par le laboratoire",

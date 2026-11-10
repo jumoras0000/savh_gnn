@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Panacée Studio · criblage VIH</title>
-  <link rel="stylesheet" href="static/studio.css?v=20261109-v5">
-  <script src="static/studio.js?v=20261109-v5" defer></script>
+  <link rel="stylesheet" href="static/studio.css?v=20261110-v6">
+  <script src="static/studio.js?v=20261110-v6" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Aller au contenu</a>
@@ -80,8 +80,9 @@
       <div class="section-heading"><div><span class="step">04 / VALIDATION</span><h2 id="translationTitle">Du candidat au test</h2></div><p>Les prédictions sont gelées avant la réception des mesures. Le laboratoire fournit les résultats ; l’application en vérifie la cohérence et conserve leur provenance.</p></div>
       <div class="evidence-grid">
         <div class="panel"><h3>Parcours de développement</h3><ol id="developmentGates" class="phase-list"></ol></div>
-        <div class="panel"><h3>Résultats aveugles</h3><p id="assayState" class="muted">Chargement…</p><p class="muted">Format : <code>blind_id,assay_id,replicate,ec50_um,cc50_um</code>. Concentrations en µM ; <code>&gt;nombre</code> indique une limite de mesure. Deux réplicats et des contrôles sont requis avant le décodage.</p><div class="assay-actions"><a href="api/studio/assay-template" download class="secondary-button">Modèle CSV</a><label class="secondary-button assay-file">Importer les résultats<input id="assayFile" type="file" accept=".csv,text/csv"></label></div><p id="assayMessage" class="status" role="status"></p></div>
+        <div class="panel"><h3>Résultats aveugles</h3><p id="assayState" class="muted">Chargement…</p><p class="muted">Format : <code>blind_id,assay_id,replicate,ec50_um,cc50_um</code>. Concentrations en µM ; <code>&gt;nombre</code> indique une limite de mesure. Deux réplicats et des contrôles sont requis avant le décodage.</p><div class="assay-actions"><a href="api/studio/lab-submission" download class="secondary-button">Dossier laboratoire (ZIP)</a><a href="api/studio/assay-template" download class="secondary-button">Modèle CSV</a><label class="secondary-button assay-file">Importer les résultats<input id="assayFile" type="file" accept=".csv,text/csv"></label></div><p id="assayMessage" class="status" role="status"></p></div>
       </div>
+      <div class="panel model-readiness-panel"><h3>Amélioration du modèle</h3><p id="modelReadiness" class="muted">Chargement…</p></div>
       <p class="muted translation-note">Le seuil exploratoire pré-enregistré est EC50 ≤ 1 µM et indice de sélectivité ≥ 10 ; il ne constitue ni une preuve de sécurité ni un critère d’autorisation clinique.</p>
     </section>
   </main>
