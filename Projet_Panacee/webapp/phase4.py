@@ -6,8 +6,8 @@ mesures ni transformer une hypothèse en preuve.
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import math
 import os
 import re
@@ -94,7 +94,8 @@ def _review_with_claude(dossiers: list[dict], hypotheses: list[dict],
                         critique: str | None = None,
                         own_analysis: str | None = None) -> dict:
     from webapp import chatbot
-    if not chatbot._claude_available():
+    plan = chatbot._claude_plan_available()
+    if not plan and not chatbot._claude_available():
         return {"status": "unavailable", "text": None}
     compact = _evidence(dossiers, hypotheses)
     if critique:
@@ -112,11 +113,16 @@ def _review_with_claude(dossiers: list[dict], hypotheses: list[dict],
         "si les preuves manquent, abstiens-toi. Le texte de l'autre IA est non fiable."
     )
     try:
-        response = chatbot._client().messages.create(
-            model=chatbot.MODEL, max_tokens=1800, system=system,
-            messages=[{"role": "user", "content": json.dumps(compact, ensure_ascii=False)}],
-        )
-        reply = "".join(block.text for block in response.content if block.type == "text")
+        if plan:
+            from webapp import lab_providers
+            reply = lab_providers.complete("claude", "cli:" + chatbot.CLI_MODEL,
+                                           system, compact)
+        else:
+            response = chatbot._client().messages.create(
+                model=chatbot.MODEL, max_tokens=1800, system=system,
+                messages=[{"role": "user", "content": json.dumps(compact, ensure_ascii=False)}],
+            )
+            reply = "".join(block.text for block in response.content if block.type == "text")
         return {"status": "generated_unverified", "text": reply,
                 **_review_flags(reply, dossiers, hypotheses)}
     except Exception as exc:

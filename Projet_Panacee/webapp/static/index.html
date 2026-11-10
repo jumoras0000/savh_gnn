@@ -429,7 +429,7 @@
             <button class="btn ghost" id="apiKeyDisconnect" title="Déconnecter la clé Claude (revenir au mode local)" style="display:none">🔌 Déconnecter Claude</button>
             <button class="btn ghost" id="chatExport" title="Exporter cette conversation (JSON)" style="margin-left:auto">⬇️ Exporter</button>
           </h3>
-          <div class="hint">Converse avec le modèle GNN. Avec une clé Claude (ci‑dessous ou <code>ANTHROPIC_API_KEY</code>), Claude orchestre les outils du modèle et analyse les <b>images</b> ; sinon l'assistant local appelle quand même les outils GNN. Les <b>structures 2D</b> des molécules sont générées automatiquement.</div>
+          <div class="hint">Le compte Claude Code connecté est utilisé en priorité pour les questions textuelles, avec les résultats locaux A'' et les hits Jupyter. L'abonnement Claude et les crédits de l'API Anthropic sont distincts. Une clé API reste nécessaire pour l'analyse d'<b>images</b> par Claude ; sans fournisseur disponible, le mode local reste actif. Les structures 2D sont générées automatiquement.</div>
           <div id="apiKeyRow" class="form-row" style="display:none;margin-top:8px">
             <input id="apiKeyInput" class="picker" type="password" placeholder="Clé API Anthropic (sk-ant-…) — stockée localement, active Claude + vision" style="flex:3" />
             <button class="btn" id="apiKeySave">Activer Claude</button>

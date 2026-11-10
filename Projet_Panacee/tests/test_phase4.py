@@ -72,6 +72,7 @@ def test_phase4_three_way_review_is_bounded_and_unverified(monkeypatch):
     monkeypatch.setattr(research, "predict", lambda _: {"mode": "descriptors", "results": [
         {"descriptors": {"valid": True}, "risk": {"level": "OK"}}]})
     monkeypatch.setattr(chatbot, "_claude_available", lambda: True)
+    monkeypatch.setattr(chatbot, "_claude_plan_available", lambda: False)
     claude_calls = []
 
     def claude_create(**kwargs):
@@ -141,11 +142,25 @@ def test_claude_billing_error_is_not_mistaken_for_available_review(monkeypatch):
             raise RuntimeError("Your credit balance is too low")
 
     monkeypatch.setattr(chatbot, "_claude_available", lambda: True)
+    monkeypatch.setattr(chatbot, "_claude_plan_available", lambda: False)
     monkeypatch.setattr(chatbot, "_client", lambda: SimpleNamespace(messages=FailingMessages()))
     review = phase4._review_with_claude([], [])
     assert review["status"] == "billing_required"
     assert review["text"] is None
-    assert "Crédit" in review["error"]
+    assert "Crédits" in review["error"]
+
+
+def test_phase4_uses_connected_claude_plan_without_api(monkeypatch):
+    from webapp import chatbot, lab_providers
+
+    monkeypatch.setattr(chatbot, "_claude_plan_available", lambda: True)
+    monkeypatch.setattr(chatbot, "_client", lambda:
+                        (_ for _ in ()).throw(AssertionError("API appelée")))
+    monkeypatch.setattr(lab_providers, "complete", lambda provider, model,
+                        instructions, evidence: "H1 : données insuffisantes")
+    review = phase4._review_with_claude([], [{"id": "H1", "text": "Piste"}])
+    assert review["status"] == "generated_unverified"
+    assert review["text"].startswith("H1")
 
 
 def test_phase4_limits_hypotheses():

@@ -698,7 +698,12 @@ async def api_chat_status(request):
     from webapp import chatbot
     key = chatbot._get_api_key()
     source = "env" if os.environ.get("ANTHROPIC_API_KEY") else ("store" if key else "none")
-    return JSONResponse({"claude": chatbot._claude_available(), "model": chatbot.MODEL,
+    plan = chatbot._claude_plan_available()
+    return JSONResponse({"claude": plan or chatbot._claude_available(),
+                         "model": ("Code · " + chatbot.CLI_MODEL + " (abonnement)"
+                                   if plan else chatbot.MODEL),
+                         "backend": "claude_code_plan" if plan else
+                         ("anthropic_api" if chatbot._claude_available() else "local"),
                          "has_key": bool(key), "key_source": source})
 
 

@@ -1,5 +1,20 @@
 # Handoff pour Claude — Panacée, 9 novembre 2026
 
+## Correctif de connexion Claude — 10 novembre 2026
+
+La clé `ANTHROPIC_API_KEY` locale est valide et le modèle API
+`claude-opus-4-7` est actif, mais un appel minimal `messages.create` renvoie
+HTTP 400 `credit balance is too low`. La session `claude auth status --json`
+est connectée en mode `claude.ai` avec abonnement Pro ; un appel Claude Code
+CLI `-p --model sonnet` a répondu. L'abonnement ne crédite pas la même
+facturation que la clé API. Le backend privilégie désormais Claude Code pour
+les questions textuelles de l'Assistant et les revues de phase 4, sans hériter
+de `ANTHROPIC_API_KEY` dans le sous-processus. Les résultats récents A'' et
+phase 4 sont transmis comme preuves locales à l'Assistant ; la vision reste
+liée à l'API. `GET /api/chat/status` indique `claude_code_plan` lorsque cette
+session est disponible. Ne pas changer le modèle A'' ni la source des données
+pour contourner une erreur de facturation API.
+
 ## Guide utilisateur livré
 
 `GET /guide` sert une page explicative reliée à la navigation et au pied de

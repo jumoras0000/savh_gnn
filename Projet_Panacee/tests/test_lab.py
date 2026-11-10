@@ -225,6 +225,17 @@ def test_offline_mode_uses_only_local_ollama_and_no_pubmed(monkeypatch):
     assert result["evidence"]["literature_status"] == "not_requested"
 
 
+def test_connected_claude_plan_is_first_lab_choice(monkeypatch):
+    from webapp import chatbot, lab_providers
+
+    monkeypatch.delenv("PANACEE_OFFLINE", raising=False)
+    monkeypatch.setattr(chatbot, "_claude_plan_available", lambda: True)
+    monkeypatch.setattr(lab_providers, "catalog", lambda: {
+        "claude_cli": ["cli:sonnet"], "codex_cli": [], "codex_ollama": [],
+        "claude_installed": True, "codex_installed": False, "ollama_models": []})
+    assert lab.catalog()["claude"][0] == "cli:sonnet"
+
+
 def test_offline_http_blocks_network_features(client, monkeypatch):
     monkeypatch.setenv("PANACEE_OFFLINE", "1")
     assert client.get("/api/config").json()["offline"] is True
@@ -239,6 +250,7 @@ def test_cli_adapters_use_no_tools_and_read_only_sandbox(monkeypatch):
     from webapp import lab_providers
 
     monkeypatch.setattr(lab_providers.shutil, "which", lambda name: name + ".cmd")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "unpaid-api-key")
     calls = []
 
     def fake_run(args, **kwargs):
@@ -253,6 +265,7 @@ def test_cli_adapters_use_no_tools_and_read_only_sandbox(monkeypatch):
     monkeypatch.setattr(lab_providers.subprocess, "run", fake_run)
     assert lab_providers.complete("claude", "cli:sonnet", "Consigne", {"q": "VIH"}) == "Réponse Claude"
     assert "--tools" in calls[0][0] and "" in calls[0][0]
+    assert "ANTHROPIC_API_KEY" not in calls[0][1]["env"]
     assert lab_providers.complete("openai", "cli:gpt-test", "Consigne", {"q": "VIH"}) == "Réponse Codex"
     assert ["--sandbox", "read-only"] == calls[1][0][
         calls[1][0].index("--sandbox"):calls[1][0].index("--sandbox") + 2]

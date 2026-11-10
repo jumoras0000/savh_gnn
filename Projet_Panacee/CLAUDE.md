@@ -9,6 +9,10 @@ Le guide utilisateur accessible sur `/guide` explique la finalité, les quatre
 phases Jupyter, chaque partie du Studio et le sens des indicateurs. Sa source
 est `webapp/static/guide.html` ; garder les explications synchronisées avec
 les métriques reproduites et les états réels des API.
+L'Assistant historique et la revue Claude de phase 4 utilisent maintenant
+prioritairement la session Claude Code du compte pour le texte ; la clé API
+Anthropic n'est pas transmise à ce sous-processus. L'abonnement et les crédits
+API sont distincts. Voir `webapp/chatbot.py` et `webapp/lab_providers.py`.
 La revue scientifique des quatre phases est
 [`reports/revue_scientifique_panacee_2026-11.pdf`](reports/revue_scientifique_panacee_2026-11.pdf) ;
 sa construction traçable se trouve dans `scripts/build_scientific_review.py`.

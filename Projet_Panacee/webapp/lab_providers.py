@@ -113,10 +113,17 @@ def complete(provider: str, model: str, instructions: str, evidence: dict) -> st
         if provider == "openai":
             output = Path(folder) / "answer.txt"
             args += ["-C", folder, "--output-last-message", str(output), "-"]
+        child_env = os.environ.copy()
+        if provider == "claude":
+            # La clé API héritée prendrait le pas sur la session Claude Code
+            # du plan utilisateur et réintroduirait l'erreur de crédits API.
+            child_env.pop("ANTHROPIC_API_KEY", None)
+            child_env.pop("ANTHROPIC_AUTH_TOKEN", None)
         try:
             result = subprocess.run(
                 args, input=prompt, cwd=folder, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=180, check=False,
+                env=child_env,
             )
         except subprocess.TimeoutExpired as exc:
             raise ProviderError("Délai du modèle local dépassé") from exc

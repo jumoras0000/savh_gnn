@@ -91,6 +91,10 @@ def catalog(allow_plan: bool = False) -> dict:
                    if model["id"] == "descriptors" or model["id"] == current_id]
     local = lab_providers.catalog()
     offline = os.environ.get("PANACEE_OFFLINE") == "1"
+    plan = not offline and chatbot._claude_plan_available()
+    claude_api = _models_from_env("PANACEE_CLAUDE_MODELS", chatbot.MODEL)
+    claude_models = (local["claude_cli"] + claude_api if plan else
+                     claude_api + local["claude_cli"])
     plan_models = []
     if allow_plan and not offline:
         try:
@@ -102,12 +106,12 @@ def catalog(allow_plan: bool = False) -> dict:
             pass
     return {
         "panacee": panacee,
-        "claude": [] if offline else _models_from_env("PANACEE_CLAUDE_MODELS", chatbot.MODEL) + local["claude_cli"],
+        "claude": [] if offline else claude_models,
         "openai": (local["codex_ollama"] if offline else
                    _models_from_env("PANACEE_OPENAI_MODELS", os.environ.get("OPENAI_MODEL", ""))
                    + local["codex_cli"] + local["codex_ollama"] + plan_models),
         "local_providers": local,
-        "claude_configured": not offline and (chatbot._claude_available() or local["claude_installed"]),
+        "claude_configured": not offline and (plan or chatbot._claude_available()),
         "openai_api_configured": not offline and bool(os.environ.get("OPENAI_API_KEY")),
         "offline": offline,
     }

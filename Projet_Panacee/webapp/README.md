@@ -277,6 +277,16 @@ du `live_metrics.jsonl` téléchargé.
 
 ## Assistant (chatbot)
 
+Pour les questions textuelles, l'assistant utilise d'abord une session
+`claude auth status` connectée à Claude Code via l'abonnement utilisateur ;
+le sous-processus ne reçoit **pas** `ANTHROPIC_API_KEY`. Il fournit à Claude
+les résultats locaux du modèle A'' et les hits récents de phase 4 plutôt que
+les anciens scores comme preuves. Si aucune session n'est disponible, il essaie
+l'API Anthropic puis le mode local. L'abonnement Claude et la facturation API
+sont séparés ; un abonnement actif ne crédite pas automatiquement une clé API.
+La vision nécessite toujours l'API. Le badge Assistant indique le fournisseur
+effectivement sélectionné.
+
 Onglet **💬 Assistant** : converse avec le modèle GNN. Avec **Claude
 (claude-opus-4-8)**, il orchestre les outils du modèle (toxicité, efficacité VIH,
 descripteurs, criblage, synergie, statut) pour des analyses avancées ; sans clé,
