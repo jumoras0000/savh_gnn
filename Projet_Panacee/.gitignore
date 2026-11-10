@@ -67,6 +67,7 @@ data/assay_results/
 data/model_audit/
 data/development_evidence/
 data/external_validation/
+data/vnext_audit/
 
 # Checkpoints et modèles
 checkpoints/**

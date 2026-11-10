@@ -3,6 +3,8 @@
 Lire d'abord [`docs/CLAUDE_HANDOFF_2026-11-09.md`](docs/CLAUDE_HANDOFF_2026-11-09.md),
 puis [`docs/TRANSLATIONAL_ROADMAP.md`](docs/TRANSLATIONAL_ROADMAP.md) et
 [`docs/STUDIO_V2_DECISIONS.md`](docs/STUDIO_V2_DECISIONS.md).
+Le protocole de données et de sélection du prochain modèle est
+[`docs/VNEXT_MODEL_PROTOCOL.md`](docs/VNEXT_MODEL_PROTOCOL.md).
 La revue scientifique des quatre phases est
 [`reports/revue_scientifique_panacee_2026-11.pdf`](reports/revue_scientifique_panacee_2026-11.pdf) ;
 sa construction traçable se trouve dans `scripts/build_scientific_review.py`.

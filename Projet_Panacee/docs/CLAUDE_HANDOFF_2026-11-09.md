@@ -1,5 +1,27 @@
 # Handoff pour Claude — Panacée, 9 novembre 2026
 
+## Mise à jour opérationnelle du 10 novembre — vNext
+
+Lire `docs/VNEXT_MODEL_PROTOCOL.md` avant tout réentraînement. Le code
+`scripts/audit_vnext_dataset.py` audite localement un CSV EC50/CC50 apparié,
+les réplicats, campagnes et chevauchements exacts/de scaffold d'une proposition
+de split chronologique ; ses rapports sont sous `data/vnext_audit/` (hors Git).
+Il n'entraîne aucun modèle, car aucun jeu cellulaire indépendant utilisable
+n'est encore présent. `webapp.translational.evaluate_assay` produit maintenant
+un bilan prospectif par provenance et budgets 5/10/18 après réception complète
+du lot aveugle ; une mesure censurée non concluante est `indeterminate`, pas
+un négatif. Le bilan ne mesure **pas** une performance externe générale.
+
+Point de jugement indépendant : les scores des membres A'' sont mal calibrés,
+le GNN seul est moins bon que l'ensemble en PRC-AUC sur le test historique,
+et ce même test a déjà été exploité pour choisir A''. Ne pas augmenter la
+complexité du réseau ou recalibrer les poids sur ce test. Priorité réelle :
+EC50/CC50 cellulaires appariées avec inactifs mesurés, provenance et QC ;
+nouvelle validation chronologique/chimique ; comparaison RF/GNN à budget fixe.
+Ne promouvoir vNext qu'après gain prospectif reproductible. Le paquet gelé de
+26 structures ne doit pas être modifié ni utilisé pour former rétroactivement
+A''.
+
 La revue scientifique consolidée, générée après ce handoff initial, se trouve
 dans `reports/revue_scientifique_panacee_2026-11.pdf`. Elle est téléchargeable
 depuis la section « Preuves » de Studio ou l'API

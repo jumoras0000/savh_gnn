@@ -76,6 +76,13 @@ externe générale ; l'analyse de corrélation avec la puissance est descriptive
 
 ## Amélioration du modèle : ordre de travail
 
+Le contrat exécutable du jeu vNext, l'audit sans entraînement et les règles
+de promotion figurent dans [`VNEXT_MODEL_PROTOCOL.md`](VNEXT_MODEL_PROTOCOL.md).
+Le rapport prospectif des résultats aveugles distingue désormais les signaux
+déterminés des mesures censurées indéterminées, par source et par budget de
+sélection gelé (5/10/18). Aucun résultat biologique n'étant encore présent,
+aucune métrique prospective n'est revendiquée à ce stade.
+
 1. **Changer la cible d'apprentissage.** Le binaire `HIV_active` mélange des
    contextes d'essai. Pour sélectionner un médicament, constituer des données
    de puissance quantitative, cytotoxicité, limites de mesure, mécanisme et

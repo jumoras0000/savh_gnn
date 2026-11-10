@@ -191,6 +191,44 @@ def evaluate_assay(csv_file: Path, root: Path, *, min_replicates: int = 2) -> di
             "spearman_reference_vs_potency": association,
             "gates": gate,
             "interpretation": "Cohorte enrichie, non représentative d'une performance externe générale"}
+        for row in noncontrols:
+            if row["ec50_um"] is None or row["cc50_um"] is None:
+                row["exploratory_status"] = "indeterminate"
+            else:
+                row["exploratory_status"] = (
+                    "hit" if row["exploratory_hit"] else "not_hit")
+        ranked = sorted(noncontrols,
+                        key=lambda row: (-row["prediction"]["rank_average"],
+                                         row["blind_id"]))
+        by_source = {}
+        for role in sorted({row["role"] for row in noncontrols}):
+            cohort = [row for row in noncontrols if row["role"] == role]
+            by_source[role] = {
+                "n": len(cohort),
+                "hit": sum(row["exploratory_status"] == "hit" for row in cohort),
+                "not_hit": sum(row["exploratory_status"] == "not_hit" for row in cohort),
+                "indeterminate": sum(row["exploratory_status"] == "indeterminate"
+                                     for row in cohort),
+            }
+        top_budget = []
+        for budget in (5, 10, 18):
+            selected = ranked[:min(budget, len(ranked))]
+            if not selected:
+                continue
+            hit = sum(row["exploratory_status"] == "hit" for row in selected)
+            unknown = sum(row["exploratory_status"] == "indeterminate"
+                          for row in selected)
+            top_budget.append({
+                "budget": len(selected), "hit": hit, "indeterminate": unknown,
+                "hit_fraction_lower": round(hit / len(selected), 4),
+                "hit_fraction_upper": round((hit + unknown) / len(selected), 4),
+            })
+        report["prospective_evaluation"] = {
+            "population": "selected_18_noncontrols_only",
+            "ranking": "frozen_rank_average_descending",
+            "by_source": by_source, "top_budget": top_budget,
+            "interpretation": "Bornes descriptives du lot enrichi ; aucune performance de bibliothèque ni calibration externe",
+        }
     return report
 
 
@@ -203,7 +241,8 @@ def latest_report(root: Path) -> dict:
             report = json.loads(file.read_text(encoding="utf-8"))
             return {"status": report["status"], "n_measured": report["n_measured"],
                     "n_expected": report["n_expected"], "issues": report["issues"],
-                    "source_sha256": report["source_sha256"]}
+                    "source_sha256": report["source_sha256"],
+                    "prospective_evaluation": report.get("prospective_evaluation")}
         except (OSError, ValueError, KeyError):
             continue
     return {"status": "awaiting_lab_results", "n_measured": 0}

@@ -304,6 +304,12 @@ rafraîchissement des couleurs de tous les graphiques.
 
 ## Tests
 
+Pour préparer un jeu quantitatif vNext sans entraîner sur des données
+hétérogènes : `python scripts/audit_vnext_dataset.py mesures_appariees.csv`.
+Le schéma, les règles de censure et de split sont dans
+`docs/VNEXT_MODEL_PROTOCOL.md`. Après import d'un lot aveugle complet, le
+rapport local contient un bilan descriptif par source et aux budgets 5/10/18.
+
 ```bash
 cd Projet_Panacee
 pip install httpx           # requis par le TestClient

@@ -69,6 +69,31 @@ def test_assay_qc_and_exploratory_analysis(tmp_path):
     assert report["exploratory_analysis"]["n_exploratory_hits"] == 1
     assert next(row for row in report["candidates"] if row["role"] == "ZINC clean hit")[
         "selectivity_index"] == 50.0
+    prospective = report["prospective_evaluation"]
+    assert prospective["top_budget"][0] == {
+        "budget": 1, "hit": 1, "indeterminate": 0,
+        "hit_fraction_lower": 1.0, "hit_fraction_upper": 1.0}
+    assert prospective["by_source"]["ZINC clean hit"]["hit"] == 1
+
+
+def test_censored_result_is_not_counted_as_negative(tmp_path):
+    _package(tmp_path)
+    file = _assay_file(tmp_path)
+    with file.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    for row in rows:
+        if row["blind_id"] == "PZ-005":
+            row["cc50_um"] = ">10"
+    with file.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=sorted(translational.FIELDS))
+        writer.writeheader()
+        writer.writerows(rows)
+    report = translational.evaluate_assay(file, tmp_path)
+    assert report["status"] == "data_complete"
+    cohort = report["prospective_evaluation"]["by_source"]["ZINC clean hit"]
+    assert cohort == {"n": 1, "hit": 0, "not_hit": 0, "indeterminate": 1}
+    assert report["prospective_evaluation"]["top_budget"][0][
+        "hit_fraction_upper"] == 1.0
 
 
 def test_assay_rejects_tampered_package(tmp_path):
@@ -109,6 +134,22 @@ def test_assay_api_accepts_partial_csv_without_revealing_key(client, monkeypatch
     assert response.json()["status"] == "partial"
     assert "candidates" not in response.json()
     assert client.get("/api/studio/development").json()["assay"]["status"] == "partial"
+
+
+def test_assay_api_exposes_only_aggregate_prospective_metrics(client, monkeypatch,
+                                                               tmp_path):
+    from webapp import server
+
+    _package(tmp_path)
+    monkeypatch.setattr(server, "PROJECT_ROOT", tmp_path)
+    response = client.post("/api/studio/assays",
+                           content=_assay_file(tmp_path).read_bytes(),
+                           headers={"Content-Type": "text/csv"})
+    assert response.status_code == 200
+    assert response.json()["prospective_evaluation"]["top_budget"][0]["hit"] == 1
+    assert "candidates" not in response.json()
+    summary = client.get("/api/studio/development").json()["assay"]
+    assert summary["prospective_evaluation"]["by_source"]["ZINC clean hit"]["hit"] == 1
 
 
 def test_evidence_archive_is_hashed_but_not_marked_validated(tmp_path):

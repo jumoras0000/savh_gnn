@@ -222,7 +222,8 @@ async def api_studio_assay_upload(request):
     return JSONResponse({"status": report["status"], "n_measured": report["n_measured"],
                          "n_expected": report["n_expected"], "issues": report["issues"],
                          "source_sha256": digest,
-                         "analysis": report.get("exploratory_analysis")})
+                           "analysis": report.get("exploratory_analysis"),
+                           "prospective_evaluation": report.get("prospective_evaluation")})
 
 
 async def api_studio_screen(request):

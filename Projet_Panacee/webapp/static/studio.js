@@ -203,6 +203,11 @@ function renderDevelopment(data) {
   $("assayState").textContent = assay.status === "awaiting_lab_results"
     ? "Aucun résultat expérimental reçu. Le paquet aveugle est prêt pour un laboratoire partenaire."
     : `${names[assay.status] || assay.status} · ${assay.n_measured}/${assay.n_expected} structures mesurées.${assay.issues?.length ? ` ${assay.issues.join(" ; ")}` : ""}`;
+    if (assay.prospective_evaluation?.top_budget?.length) {
+      const budgets = assay.prospective_evaluation.top_budget.map(item =>
+        `top ${item.budget} : ${item.hit} signal(s), ${item.indeterminate} indéterminé(s)`).join(" ; ");
+      $("assayState").textContent += ` Bilan descriptif du lot présélectionné : ${budgets}.`;
+    }
   const readiness = data.model_readiness;
   $("modelReadiness").textContent = readiness.status === "requires_cellular_data"
     ? `La source ChEMBL disponible contient ${readiness.n_chembl.toLocaleString("fr-FR")} mesures positives, dont ${readiness.assay_types.EC50 || 0} EC50, sans couples EC50/CC50 cellulaires exploitables. Le prochain modèle doit apprendre une activité et une sélectivité mesurées, sur des campagnes indépendantes ; A'' reste gelé en attendant ces données.`
